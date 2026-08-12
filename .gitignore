@@ -1,0 +1,13 @@
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Environment
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
