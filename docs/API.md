@@ -40,14 +40,19 @@ POST   /cash/sessions                   (Bearer) → abre sessão (409 se já ex
 PATCH  /cash/sessions/:id/close         (Bearer) → fecha sessão; calcula expectedAmount = abertura + suprimento - sangria + ajuste
 POST   /cash/sessions/:id/movements     (Bearer) → registra sangria/suprimento/ajuste
 
-GET    /sales/:id                       (Bearer) → detalhe da venda com itens
+GET    /sales/:id                       (Bearer) → detalhe da venda com itens e pagamentos
 POST   /sales                           (Bearer) → inicia venda (status draft), exige cashSessionId aberta
 POST   /sales/:id/items                 (Bearer) → adiciona item (preço resolvido via Catalog); só em draft
 DELETE /sales/:id/items/:itemId         (Bearer) → remove item; só em draft
+POST   /sales/:id/payments              (Bearer) → registra pagamento (dinheiro/cartao/pix/outro); só em draft;
+                                         cartão em V1 é declarado manualmente já "aprovado" (sem TEF, ver ROADMAP.md)
+POST   /sales/:id/confirm               (Bearer) → confirma a venda: exige itens + pagamento total >= totalAmount;
+                                         debita o estoque do depósito padrão numa transação atômica única
+                                         (Sale.status→confirmed + StockMovement tipo "venda" + StockItem.decrement);
+                                         409 se sem itens, sem pagamento suficiente, ou já não estiver em draft
 POST   /sales/:id/cancel                (Bearer) → cancela; só em draft
 
 /customers        + /:id/sales
-/payments         Sprint 5 — pagamento + confirmação da venda
 /fiscal           documents/:saleId, reissue, cancel
 /reports          sales, cash-sessions, stock, dashboard
 /settings

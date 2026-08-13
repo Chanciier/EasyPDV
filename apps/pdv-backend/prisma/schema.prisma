@@ -260,7 +260,8 @@ model Sale {
   createdAt      DateTime    @default(now())
   confirmedAt    DateTime?
 
-  items SaleItem[]
+  items    SaleItem[]
+  payments Payment[]
 
   @@index([cashSessionId])
 }
@@ -274,6 +275,35 @@ model SaleItem {
   unitPrice      Float
   discountAmount Float  @default(0)
   totalAmount    Float
+
+  @@index([saleId])
+}
+
+enum PaymentMethod {
+  dinheiro
+  cartao
+  pix
+  outro
+}
+
+enum PaymentStatus {
+  aprovado
+  pendente
+  recusado
+}
+
+// V1 sem TEF/gateway real — pagamento em cartão é declarado manualmente pelo
+// operador (a maquininha física já aprovou) e entra direto como "aprovado".
+// Ver docs/ROADMAP.md "por que fica fora da V1".
+model Payment {
+  id                String        @id @default(cuid())
+  saleId            String
+  sale              Sale          @relation(fields: [saleId], references: [id])
+  method            PaymentMethod
+  amount            Float
+  status            PaymentStatus @default(aprovado)
+  authorizationCode String?
+  createdAt         DateTime      @default(now())
 
   @@index([saleId])
 }

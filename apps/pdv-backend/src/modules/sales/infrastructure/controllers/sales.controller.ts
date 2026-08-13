@@ -1,8 +1,10 @@
 import { Body, Controller, Delete, Get, Param, Post, UseGuards } from "@nestjs/common";
 import {
   addSaleItemSchema,
+  registerPaymentSchema,
   startSaleSchema,
   type AddSaleItemInput,
+  type RegisterPaymentInput,
   type StartSaleInput,
 } from "@easypdv/shared-validation";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe.js";
@@ -13,6 +15,8 @@ import { AddSaleItemUseCase } from "../../application/use-cases/add-sale-item.us
 import { RemoveSaleItemUseCase } from "../../application/use-cases/remove-sale-item.use-case.js";
 import { CancelSaleUseCase } from "../../application/use-cases/cancel-sale.use-case.js";
 import { GetSaleUseCase } from "../../application/use-cases/get-sale.use-case.js";
+import { RegisterPaymentUseCase } from "../../application/use-cases/register-payment.use-case.js";
+import { ConfirmSaleUseCase } from "../../application/use-cases/confirm-sale.use-case.js";
 
 @Controller("sales")
 @UseGuards(JwtAuthGuard)
@@ -23,6 +27,8 @@ export class SalesController {
     private readonly removeSaleItemUseCase: RemoveSaleItemUseCase,
     private readonly cancelSaleUseCase: CancelSaleUseCase,
     private readonly getSaleUseCase: GetSaleUseCase,
+    private readonly registerPaymentUseCase: RegisterPaymentUseCase,
+    private readonly confirmSaleUseCase: ConfirmSaleUseCase,
   ) {}
 
   @Get(":id")
@@ -43,6 +49,19 @@ export class SalesController {
   @Delete(":id/items/:itemId")
   removeItem(@Param("id") id: string, @Param("itemId") itemId: string) {
     return this.removeSaleItemUseCase.execute(id, itemId);
+  }
+
+  @Post(":id/payments")
+  registerPayment(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(registerPaymentSchema)) body: RegisterPaymentInput,
+  ) {
+    return this.registerPaymentUseCase.execute(id, body);
+  }
+
+  @Post(":id/confirm")
+  confirm(@Param("id") id: string) {
+    return this.confirmSaleUseCase.execute(id);
   }
 
   @Post(":id/cancel")

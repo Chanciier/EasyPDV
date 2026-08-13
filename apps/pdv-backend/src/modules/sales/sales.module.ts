@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { CatalogModule } from "../catalog/catalog.module.js";
+import { InventoryModule } from "../inventory/inventory.module.js";
 import { CashController } from "./infrastructure/controllers/cash.controller.js";
 import { SalesController } from "./infrastructure/controllers/sales.controller.js";
 import { PrismaCashRepository } from "./infrastructure/repositories/prisma-cash.repository.js";
@@ -18,9 +19,11 @@ import { AddSaleItemUseCase } from "./application/use-cases/add-sale-item.use-ca
 import { RemoveSaleItemUseCase } from "./application/use-cases/remove-sale-item.use-case.js";
 import { CancelSaleUseCase } from "./application/use-cases/cancel-sale.use-case.js";
 import { GetSaleUseCase } from "./application/use-cases/get-sale.use-case.js";
+import { RegisterPaymentUseCase } from "./application/use-cases/register-payment.use-case.js";
+import { ConfirmSaleUseCase } from "./application/use-cases/confirm-sale.use-case.js";
 
 @Module({
-  imports: [CatalogModule],
+  imports: [CatalogModule, InventoryModule],
   controllers: [CashController, SalesController],
   providers: [
     CreateCashRegisterUseCase,
@@ -35,6 +38,8 @@ import { GetSaleUseCase } from "./application/use-cases/get-sale.use-case.js";
     RemoveSaleItemUseCase,
     CancelSaleUseCase,
     GetSaleUseCase,
+    RegisterPaymentUseCase,
+    ConfirmSaleUseCase,
     { provide: CASH_REPOSITORY, useClass: PrismaCashRepository },
     { provide: SALE_REPOSITORY, useClass: PrismaSaleRepository },
   ],

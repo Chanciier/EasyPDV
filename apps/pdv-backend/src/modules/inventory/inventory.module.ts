@@ -22,5 +22,8 @@ import { ListStockMovementsUseCase } from "./application/use-cases/list-stock-mo
     { provide: WAREHOUSE_REPOSITORY, useClass: PrismaWarehouseRepository },
     { provide: STOCK_REPOSITORY, useClass: PrismaStockRepository },
   ],
+  // ListWarehousesUseCase é consumido pelo módulo Sales (ConfirmSaleUseCase)
+  // pra resolver o depósito padrão — leitura síncrona entre módulos, ver docs/MODULES.md.
+  exports: [ListWarehousesUseCase],
 })
 export class InventoryModule {}

@@ -48,3 +48,24 @@ export class SaleItemNotFoundError extends DomainError {
     super(`Item ${id} não encontrado na venda`);
   }
 }
+
+export class SaleHasNoItemsError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(id: string) {
+    super(`Venda ${id} não tem itens — não pode ser confirmada`);
+  }
+}
+
+export class InsufficientPaymentError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(id: string, paid: number, total: number) {
+    super(`Venda ${id} tem pagamento insuficiente: pago ${paid}, total ${total}`);
+  }
+}
+
+export class NoWarehouseAvailableError extends DomainError {
+  readonly kind: DomainErrorKind = "not_found";
+  constructor() {
+    super("Nenhum depósito cadastrado para debitar o estoque da venda");
+  }
+}

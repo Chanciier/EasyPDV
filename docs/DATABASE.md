@@ -14,7 +14,7 @@ Duas bases de dados distintas, sem se misturar. Ver [ARCHITECTURE.md](./ARCHITEC
 | PriceList / PriceListItem | Preço vigente | Preço nunca é campo direto no produto |
 | Warehouse / StockItem / StockMovement | Estoque | StockMovement é o ledger append-only (fonte da verdade); StockItem é projeção. `StockMovement.quantity` é sempre o delta assinado já aplicado ao saldo (negativo = saída) — `type` só documenta o motivo, nunca determina o sinal |
 | CashRegister / CashSession / CashMovement | Caixa | Sessão é o vínculo temporário operador↔caixa. `expectedAmount` = abertura + suprimento - sangria + ajuste (soma de vendas em dinheiro entra na Sprint 5, junto com Payment) |
-| Sale / SaleItem / Payment | Venda | Sale.status: draft → confirmed \| cancelled. **Implementado até a Sprint 4: só draft e cancelled** (sem desconto, sem Payment, sem confirmação) — confirmed + débito de estoque + Payment entram juntos na Sprint 5, na mesma transação atômica (ver evento central) |
+| Sale / SaleItem / Payment | Venda | Sale.status: draft → confirmed \| cancelled. **Implementado desde a Sprint 5**: confirm() exige itens + pagamentos aprovados >= totalAmount, e debita o estoque de cada item na mesma transação Prisma (`Sale.update` + `StockMovement.create` tipo "venda" + `StockItem.upsert` com `decrement` atômico). Payment.status entra direto "aprovado" em V1 (sem TEF/gateway real — cartão é declarado manualmente pelo operador, ver ROADMAP.md) |
 | FiscalDocument | Comprovante/NFC-e da venda | type: nfce \| comprovante_nao_fiscal |
 | Customer | Cliente da loja | |
 | AuditLog | Trilha imutável de ações sensíveis | |

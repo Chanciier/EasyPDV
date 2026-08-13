@@ -1,6 +1,15 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Sprint 5 — Pagamentos + Confirmação
+- Modelo `Payment` (method: dinheiro/cartao/pix/outro; status: aprovado/pendente/recusado — em V1 sem TEF/gateway real, cartão entra direto "aprovado" pois a maquininha física já aprovou, ver docs/ROADMAP.md).
+- `RegisterPaymentUseCase`: registra pagamento numa venda em draft.
+- `ConfirmSaleUseCase`: exige venda em draft, com itens, e pagamentos aprovados cobrindo o total (`InsufficientPaymentError` caso contrário); resolve o depósito padrão via `ListWarehousesUseCase` (exportado pelo `InventoryModule`, mesmo padrão de injeção cross-módulo já usado com `ResolvePriceUseCase` na Sprint 4).
+- **Evento central `SaleConfirmed` implementado**: `PrismaSaleRepository.confirm()` atualiza `Sale.status` para `confirmed` e debita o estoque de cada item (`StockMovement` tipo "venda" + `StockItem.decrement`) numa única transação Prisma — exceção deliberada e documentada à separação estrita de dados por módulo, justificada pela exigência de atomicidade (a camada de use-case continua dependendo só de `SaleRepositoryPort`).
+- **Race condition de estoque resolvida** (risco aberto desde a Sprint 3): débito via `{ decrement: n }` do Prisma (SQL `UPDATE ... SET quantity = quantity - n` atômico) em vez de read-modify-write em código de aplicação; combinado com a serialização de escrita do SQLite, elimina a corrupção quando dois caixas confirmam o mesmo produto ao mesmo tempo. Validado empiricamente: duas confirmações simultâneas debitando 5 unidades cada de um estoque de 60 resultaram em 50, com dois `StockMovement` distintos — nenhuma escrita perdida. Ver docs/ERROR-HANDLING.md.
+- Endpoints: `POST /sales/:id/payments`, `POST /sales/:id/confirm`.
+- Testado ponta a ponta manualmente: confirmação de venda sem itens (409), sem pagamento (409), com pagamento parcial (409), pagamento completo + confirmação (201, estoque debitado, `StockMovement` conferido), reconfirmação de venda já confirmada (409), e o teste de concorrência descrito acima.
+
 ### Sprint 4 — Caixa e Venda (núcleo)
 - Módulo Sales completo em `apps/pdv-backend` (bundla Caixa + Venda, conforme docs/MODULES.md): CashRegister, CashSession, CashMovement, Sale, SaleItem.
 - Caixa: abrir sessão (409 se já existe uma aberta no registrador), sangria/suprimento/ajuste, fechar com cálculo automático de `expectedAmount` (abertura + suprimento - sangria + ajuste), sessão atual do operador.

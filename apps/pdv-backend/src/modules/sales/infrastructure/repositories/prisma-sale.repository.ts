@@ -1,14 +1,15 @@
 import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../../../../prisma/prisma.service.js";
 import { Sale } from "../../domain/entities/sale.entity.js";
+import { PrismaService } from "../../../../prisma/prisma.service.js";
 import type {
   AddSaleItemData,
+  RegisterPaymentData,
   SaleRepositoryPort,
   StartSaleData,
 } from "../../application/ports/sale-repository.port.js";
 import { toDomainSale } from "../mappers/sales.mapper.js";
 
-const SALE_INCLUDE = { items: true } as const;
+const SALE_INCLUDE = { items: true, payments: true } as const;
 
 @Injectable()
 export class PrismaSaleRepository implements SaleRepositoryPort {
@@ -57,6 +58,60 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
       include: SALE_INCLUDE,
     });
     return toDomainSale(record);
+  }
+
+  async registerPayment(data: RegisterPaymentData): Promise<Sale> {
+    await this.prisma.payment.create({
+      data: {
+        saleId: data.saleId,
+        method: data.method,
+        amount: data.amount,
+        authorizationCode: data.authorizationCode,
+      },
+    });
+    const record = await this.prisma.sale.findUniqueOrThrow({ where: { id: data.saleId }, include: SALE_INCLUDE });
+    return toDomainSale(record);
+  }
+
+  /**
+   * Confirma a venda e debita o estoque de cada item na mesma transação.
+   * O débito usa `decrement` atômico (SQL `SET quantity = quantity - X`),
+   * não um read-modify-write em código de aplicação — combinado com a
+   * serialização de escrita do próprio SQLite, isso resolve a race condition
+   * de dois caixas confirmando o último item do mesmo produto ao mesmo tempo
+   * (risco documentado desde a Sprint 3). Ver docs/DATABASE.md.
+   */
+  async confirm(saleId: string, warehouseId: string): Promise<Sale> {
+    const sale = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
+
+    const stockOperations = sale.items.flatMap((item) => [
+      this.prisma.stockMovement.create({
+        data: {
+          warehouseId,
+          productId: item.productId,
+          type: "venda",
+          quantity: -item.quantity,
+          referenceType: "sale",
+          referenceId: saleId,
+        },
+      }),
+      this.prisma.stockItem.upsert({
+        where: { warehouseId_productId: { warehouseId, productId: item.productId } },
+        create: { warehouseId, productId: item.productId, quantity: -item.quantity },
+        update: { quantity: { decrement: item.quantity } },
+      }),
+    ]);
+
+    await this.prisma.$transaction([
+      this.prisma.sale.update({
+        where: { id: saleId },
+        data: { status: "confirmed", confirmedAt: new Date() },
+      }),
+      ...stockOperations,
+    ]);
+
+    const confirmed = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
+    return toDomainSale(confirmed);
   }
 
   private async recalculateTotal(saleId: string): Promise<Sale> {

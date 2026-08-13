@@ -1,4 +1,5 @@
 import type { SaleStatus } from "@easypdv/shared-types";
+import type { Payment } from "./payment.entity.js";
 
 export interface SaleItemProps {
   id: string;
@@ -38,6 +39,7 @@ export interface SaleProps {
   createdAt: Date;
   confirmedAt: Date | null;
   items: SaleItem[];
+  payments: Payment[];
 }
 
 export class Sale {
@@ -51,6 +53,7 @@ export class Sale {
   readonly createdAt: Date;
   readonly confirmedAt: Date | null;
   readonly items: SaleItem[];
+  readonly payments: Payment[];
 
   constructor(props: SaleProps) {
     this.id = props.id;
@@ -63,10 +66,20 @@ export class Sale {
     this.createdAt = props.createdAt;
     this.confirmedAt = props.confirmedAt;
     this.items = props.items;
+    this.payments = props.payments;
   }
 
-  /** Só é possível alterar itens enquanto a venda está em rascunho. */
+  /** Só é possível alterar itens/pagamentos enquanto a venda está em rascunho. */
   get canBeModified(): boolean {
     return this.status === "draft";
+  }
+
+  get approvedPaymentsTotal(): number {
+    return this.payments.filter((p) => p.status === "aprovado").reduce((sum, p) => sum + p.amount, 0);
+  }
+
+  /** Pagamento aprovado cobre o total — condição pra confirmar. Ver docs/DATABASE.md "evento central". */
+  get isFullyPaid(): boolean {
+    return this.approvedPaymentsTotal >= this.totalAmount;
   }
 }

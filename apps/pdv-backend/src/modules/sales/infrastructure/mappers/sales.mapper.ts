@@ -1,9 +1,11 @@
 import type {
   CashSession as PrismaCashSession,
+  Payment as PrismaPayment,
   Sale as PrismaSale,
   SaleItem as PrismaSaleItem,
 } from "@prisma/client";
 import { CashSession } from "../../domain/entities/cash-session.entity.js";
+import { Payment } from "../../domain/entities/payment.entity.js";
 import { Sale, SaleItem } from "../../domain/entities/sale.entity.js";
 
 export function toDomainCashSession(record: PrismaCashSession): CashSession {
@@ -20,9 +22,21 @@ export function toDomainCashSession(record: PrismaCashSession): CashSession {
   });
 }
 
-type PrismaSaleWithItems = PrismaSale & { items: PrismaSaleItem[] };
+export function toDomainPayment(record: PrismaPayment): Payment {
+  return new Payment({
+    id: record.id,
+    saleId: record.saleId,
+    method: record.method,
+    amount: record.amount,
+    status: record.status,
+    authorizationCode: record.authorizationCode,
+    createdAt: record.createdAt,
+  });
+}
 
-export function toDomainSale(record: PrismaSaleWithItems): Sale {
+type PrismaSaleWithRelations = PrismaSale & { items: PrismaSaleItem[]; payments: PrismaPayment[] };
+
+export function toDomainSale(record: PrismaSaleWithRelations): Sale {
   return new Sale({
     id: record.id,
     cashSessionId: record.cashSessionId,
@@ -44,5 +58,6 @@ export function toDomainSale(record: PrismaSaleWithItems): Sale {
           totalAmount: item.totalAmount,
         }),
     ),
+    payments: record.payments.map(toDomainPayment),
   });
 }

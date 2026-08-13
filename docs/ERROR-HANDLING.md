@@ -12,4 +12,4 @@
 | Conflito de sincronização (preço divergente Bling×local) | Nunca sobrescreve silenciosamente — gera item de revisão manual | Central de Erros de Sincronização |
 | Falha de conexão PDV local ↔ Intermediador | Só afeta sincronização, nunca a venda em si | Fila local aguarda reconexão |
 
-Concorrência na baixa de estoque (dois caixas confirmando o último item ao mesmo tempo) precisa de lock otimista/pessimista explícito — ver Sprint 5 em [ROADMAP.md](./ROADMAP.md).
+**Resolvido na Sprint 5:** concorrência na baixa de estoque (dois caixas confirmando venda do mesmo produto ao mesmo tempo) foi resolvida sem lock explícito — `PrismaSaleRepository.confirm()` usa `StockItem.update({ quantity: { decrement: n } })`, que o Prisma traduz num `UPDATE ... SET quantity = quantity - n` atômico no SQL, e a serialização de escritas do próprio SQLite garante que as duas transações não se intercalem. Validado empiricamente disparando duas confirmações simultâneas do mesmo produto (5 unidades cada, estoque inicial 60): resultado final 50 (60-5-5), com dois `StockMovement` distintos — nenhuma escrita perdida. Ver [DATABASE.md](./DATABASE.md).
