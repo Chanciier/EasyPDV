@@ -10,9 +10,20 @@ POST   /auth/logout    { refreshToken } → revoga a sessão
 GET    /auth/me        (Bearer token) → usuário atual
 POST   /users          (Bearer + role administrador) → cria usuário
 PATCH  /users/:id/role (Bearer + role administrador) → troca o papel
-/products         CRUD + /search?barcode=
-/categories
-/price-lists      + /items
+
+GET    /products/search?query=          (Bearer) → busca textual por nome/SKU
+GET    /products/by-barcode/:code       (Bearer) → produto + preço vigente
+GET    /products/:id/price              (Bearer) → preço vigente (ResolvePriceUseCase)
+POST   /products                        (Bearer + administrador/gerente) → cria produto
+PATCH  /products/:id                    (Bearer + administrador/gerente) → atualiza produto
+POST   /products/:id/barcodes           (Bearer + administrador/gerente) → adiciona código de barras
+
+GET    /categories                      (Bearer) → lista
+POST   /categories                      (Bearer + administrador/gerente) → cria
+
+POST   /price-lists                     (Bearer + administrador/gerente) → cria tabela de preço
+POST   /price-lists/:id/items           (Bearer + administrador/gerente) → define/atualiza preço de um produto
+
 /warehouses
 /stock            movements, adjustments
 /customers        + /:id/sales

@@ -36,6 +36,12 @@ export interface Store {
   timezone: string;
 }
 
+export interface Category {
+  id: string;
+  name: string;
+  parentCategoryId: string | null;
+}
+
 export interface Product {
   id: string;
   sku: string;
@@ -43,6 +49,34 @@ export interface Product {
   categoryId: string | null;
   unit: string;
   active: boolean;
+}
+
+export interface Barcode {
+  id: string;
+  productId: string;
+  code: string;
+  type: string;
+}
+
+export interface PriceList {
+  id: string;
+  name: string;
+  active: boolean;
+}
+
+export interface PriceListItem {
+  id: string;
+  priceListId: string;
+  productId: string;
+  price: number;
+  promotionalPrice: number | null;
+}
+
+export interface ResolvedPrice {
+  productId: string;
+  price: number;
+  promotionalPrice: number | null;
+  effectivePrice: number;
 }
 
 export interface StockItem {

@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { APP_FILTER } from "@nestjs/core";
 import { LoggerModule } from "nestjs-pino";
 import { DomainExceptionFilter } from "./common/filters/domain-exception.filter.js";
+import { CatalogModule } from "./modules/catalog/catalog.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { IdentityModule } from "./modules/identity/identity.module.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
@@ -18,7 +19,8 @@ import { PrismaModule } from "./prisma/prisma.module.js";
     PrismaModule,
     HealthModule,
     IdentityModule,
-    // Sprint 2+: CatalogModule, InventoryModule, CustomersModule, SalesModule, FiscalModule
+    CatalogModule,
+    // Sprint 3+: InventoryModule, CustomersModule, SalesModule, FiscalModule
     // Ver docs/MODULES.md para a lista completa de módulos.
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],

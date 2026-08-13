@@ -58,3 +58,72 @@ model AuthSession {
 
   @@index([userId])
 }
+
+model Category {
+  id              String     @id @default(cuid())
+  name            String
+  parentCategoryId String?
+  parentCategory  Category?  @relation("CategoryToCategory", fields: [parentCategoryId], references: [id])
+  subcategories   Category[] @relation("CategoryToCategory")
+  products        Product[]
+  createdAt       DateTime   @default(now())
+}
+
+model Product {
+  id         String     @id @default(cuid())
+  sku        String     @unique
+  name       String
+  categoryId String?
+  category   Category?  @relation(fields: [categoryId], references: [id])
+  unit       String     @default("un")
+  active     Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  barcodes       Barcode[]
+  priceListItems PriceListItem[]
+
+  @@index([categoryId])
+}
+
+// Um produto pode ter mais de um código (unidade, caixa, fornecedor) — ver docs/DATABASE.md.
+model Barcode {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  code      String   @unique
+  type      String   @default("ean13")
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+}
+
+// V1 usa uma única PriceList "padrão" (active=true); múltiplas tabelas em
+// uso real (por canal/segmento) são V2 — ver docs/ROADMAP.md.
+model PriceList {
+  id        String   @id @default(cuid())
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  items PriceListItem[]
+}
+
+// Preço nunca é campo direto no Product — sempre resolvido via PriceListItem
+// vigente. Ver docs/CODING-STANDARDS.md / princípios de arquitetura.
+model PriceListItem {
+  id                String    @id @default(cuid())
+  priceListId       String
+  priceList         PriceList @relation(fields: [priceListId], references: [id])
+  productId         String
+  product           Product   @relation(fields: [productId], references: [id])
+  price             Float
+  promotionalPrice  Float?
+  validFrom         DateTime?
+  validTo           DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([priceListId, productId])
+  @@index([productId])
+}
