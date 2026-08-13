@@ -8,7 +8,8 @@ Duas bases de dados distintas, sem se misturar. Ver [ARCHITECTURE.md](./ARCHITEC
 |---|---|---|
 | StoreIdentity | Identifica a loja/organização deste install | Uma linha só, criada no provisionamento do terminal |
 | Terminal | Instalação registrada do Electron | lastSeenAt, appVersion, status |
-| User / UserStoreRole | Login e papel do operador nesta loja | Papéis: operador, supervisor, gerente, administrador, proprietario, auditor, tecnico |
+| User | Login e papel do operador nesta loja | `role` direto no usuário (não uma tabela separada) — como o banco local já representa uma única loja, escopar por `storeId` como no Intermediador seria redundante. Papéis: operador, supervisor, gerente, administrador, proprietario, auditor, tecnico |
+| AuthSession | Sessão de refresh token | Rotacionada a cada uso; `refreshTokenHash` nunca guarda o token em texto puro |
 | Product / Category / Barcode | Catálogo | Um produto pode ter N códigos de barras |
 | PriceList / PriceListItem | Preço vigente | Preço nunca é campo direto no produto |
 | Warehouse / StockItem / StockMovement | Estoque | StockMovement é o ledger append-only (fonte da verdade); StockItem é projeção |

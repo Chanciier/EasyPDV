@@ -4,7 +4,12 @@
 
 ```
 /health
-/auth            login, refresh, logout, me
+POST   /auth/login     { email, password } → { user, tokens }
+POST   /auth/refresh   { refreshToken } → tokens (rotaciona — o antigo é revogado)
+POST   /auth/logout    { refreshToken } → revoga a sessão
+GET    /auth/me        (Bearer token) → usuário atual
+POST   /users          (Bearer + role administrador) → cria usuário
+PATCH  /users/:id/role (Bearer + role administrador) → troca o papel
 /products         CRUD + /search?barcode=
 /categories
 /price-lists      + /items

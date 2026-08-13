@@ -1,7 +1,6 @@
 // Backend local do PDV — banco SQLite, um arquivo por loja.
-// Schema inicial do Sprint 0: só o suficiente para a loja se identificar.
-// Entidades completas (Product, Sale, CashSession etc.) entram nos Sprints 1-5 —
-// ver Claude/Projetos/EasyPDV/Modelo de Domínio.md no cofre Obsidian.
+// Sprint 1 adiciona Identity & Access. Entidades de Catálogo/Estoque/Vendas
+// entram nos Sprints 2-5 — ver docs/DATABASE.md e docs/MODULES.md.
 
 generator client {
   provider = "prisma-client-js"
@@ -18,4 +17,44 @@ model StoreIdentity {
   storeId        String
   storeName      String
   activatedAt    DateTime @default(now())
+}
+
+// Papel do usuário. O banco local representa uma única loja (StoreIdentity),
+// então diferente do UserStoreRole documentado para o Intermediador (que
+// escopa por loja para administradores multi-loja), aqui o papel já é
+// implicitamente "nesta loja" — sem precisar de storeId. Ver docs/DATABASE.md.
+enum UserRole {
+  operador
+  supervisor
+  gerente
+  administrador
+  proprietario
+  auditor
+  tecnico
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  authSessions AuthSession[]
+}
+
+model AuthSession {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id])
+  refreshTokenHash String
+  terminalId       String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([userId])
 }

@@ -15,17 +15,25 @@ import type {
  * Ver Claude/Projetos/EasyPDV/Modelo de Domínio.md no cofre Obsidian para o desenho completo.
  */
 
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  active: boolean;
+}
+
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: string;
+}
+
 export interface Store {
   id: string;
   name: string;
   document: string | null;
   timezone: string;
-}
-
-export interface UserStoreRole {
-  userId: string;
-  storeId: string | null;
-  role: UserRole;
 }
 
 export interface Product {
