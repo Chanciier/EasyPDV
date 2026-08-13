@@ -1,0 +1,157 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import {
+  ShoppingCart,
+  Wallet,
+  Package,
+  Receipt,
+  Users,
+  ScanBarcode,
+  Lock,
+  Unlock,
+} from 'lucide-react'
+import { usePOS } from './pos-provider'
+import { formatBRL } from '@/lib/pos-data'
+import { SaleView } from './sale-view'
+import { CashView } from './cash-view'
+import { ProductsView } from './products-view'
+import { HistoryView } from './history-view'
+import { CustomersView } from './customers-view'
+import { ShortcutsBar } from './shortcuts-bar'
+
+const NAV = [
+  { key: 'venda', label: 'Venda', icon: ShoppingCart, hint: 'F1' },
+  { key: 'caixa', label: 'Caixa', icon: Wallet, hint: 'F6' },
+  { key: 'produtos', label: 'Produtos', icon: Package, hint: 'F7' },
+  { key: 'historico', label: 'Histórico', icon: Receipt, hint: 'F8' },
+  { key: 'clientes', label: 'Clientes', icon: Users, hint: 'F9' },
+] as const
+
+export function POSShell() {
+  const { view, setView, cashSession, operator } = usePOS()
+  const [today, setToday] = useState('')
+
+  useEffect(() => {
+    setToday(
+      new Date().toLocaleDateString('pt-BR', {
+        weekday: 'short',
+        day: '2-digit',
+        month: 'short',
+      }),
+    )
+  }, [])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const map: Record<string, (typeof NAV)[number]['key']> = {
+        F1: 'venda',
+        F6: 'caixa',
+        F7: 'produtos',
+        F8: 'historico',
+        F9: 'clientes',
+      }
+      const target = map[e.key]
+      if (target) {
+        e.preventDefault()
+        setView(target)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [setView])
+
+  const cashOpen = cashSession?.status === 'aberto'
+
+  return (
+    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
+      {/* Sidebar */}
+      <aside className="flex w-56 shrink-0 flex-col bg-sidebar text-sidebar-foreground">
+        <div className="flex items-center gap-2.5 px-5 py-5">
+          <div className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
+            <ScanBarcode className="size-5" />
+          </div>
+          <div className="leading-tight">
+            <p className="text-sm font-bold tracking-tight">PDV Express</p>
+            <p className="text-xs text-sidebar-foreground/60">Ponto de Venda</p>
+          </div>
+        </div>
+
+        <nav className="flex flex-1 flex-col gap-1 px-3">
+          {NAV.map((item) => {
+            const Icon = item.icon
+            const active = view === item.key
+            return (
+              <button
+                key={item.key}
+                onClick={() => setView(item.key)}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                  active
+                    ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                    : 'text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+                }`}
+                aria-current={active ? 'page' : undefined}
+              >
+                <Icon className="size-4.5 shrink-0" />
+                <span className="flex-1 text-left">{item.label}</span>
+                <kbd
+                  className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${
+                    active
+                      ? 'bg-sidebar-primary-foreground/15 text-sidebar-primary-foreground'
+                      : 'bg-sidebar-accent text-sidebar-foreground/60'
+                  }`}
+                >
+                  {item.hint}
+                </kbd>
+              </button>
+            )
+          })}
+        </nav>
+
+        <div className="border-t border-sidebar-border px-4 py-3 text-xs">
+          <div className="flex items-center gap-2">
+            {cashOpen ? (
+              <Unlock className="size-3.5 text-primary" />
+            ) : (
+              <Lock className="size-3.5 text-sidebar-foreground/50" />
+            )}
+            <span className={cashOpen ? 'text-primary' : 'text-sidebar-foreground/60'}>
+              Caixa {cashOpen ? 'aberto' : 'fechado'}
+            </span>
+          </div>
+          <p className="mt-1 text-sidebar-foreground/50">{operator}</p>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-5">
+          <h1 className="text-lg font-semibold capitalize">
+            {NAV.find((n) => n.key === view)?.label}
+          </h1>
+          <div className="flex items-center gap-4 text-sm">
+            <span className="text-muted-foreground" suppressHydrationWarning>
+              {today}
+            </span>
+            <span className="hidden items-center gap-1.5 rounded-full bg-muted px-3 py-1 sm:flex">
+              <Wallet className="size-3.5 text-muted-foreground" />
+              <span className="font-mono font-medium">
+                {formatBRL(cashSession?.openingAmount ?? 0)}
+              </span>
+            </span>
+          </div>
+        </header>
+
+        <main className="min-h-0 flex-1 overflow-hidden">
+          {view === 'venda' && <SaleView />}
+          {view === 'caixa' && <CashView />}
+          {view === 'produtos' && <ProductsView />}
+          {view === 'historico' && <HistoryView />}
+          {view === 'clientes' && <CustomersView />}
+        </main>
+
+        <ShortcutsBar />
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,22 @@
+# Imagem de produção do apps/intermediador, para deploy no Railway.
+FROM node:20-alpine AS base
+WORKDIR /repo
+
+FROM base AS deps
+RUN corepack enable
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
+COPY packages ./packages
+COPY apps/intermediador ./apps/intermediador
+RUN pnpm install --frozen-lockfile --filter @easypdv/intermediador...
+
+FROM deps AS build
+RUN pnpm --filter @easypdv/intermediador run prisma:generate
+RUN pnpm --filter @easypdv/intermediador run build
+
+FROM base AS runtime
+ENV NODE_ENV=production
+COPY --from=build /repo/apps/intermediador/dist ./dist
+COPY --from=build /repo/apps/intermediador/node_modules ./node_modules
+COPY --from=build /repo/apps/intermediador/prisma ./prisma
+EXPOSE 4002
+CMD ["node", "dist/main.js"]

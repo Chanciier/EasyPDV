@@ -1,0 +1,32 @@
+// Intermediador — hospedado no Railway, banco PostgreSQL.
+// Único lugar que fala com o Bling. Schema inicial do Sprint 0: só o suficiente
+// para uma organização/loja se registrar. ErpIntegration, ErpSyncMapping e SyncJob
+// entram no Sprint 6-7 — ver Claude/Projetos/EasyPDV/Modelo de Domínio.md no cofre Obsidian.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  document  String?
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  stores    Store[]
+}
+
+model Store {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  document       String?
+  timezone       String       @default("America/Sao_Paulo")
+  createdAt      DateTime     @default(now())
+}

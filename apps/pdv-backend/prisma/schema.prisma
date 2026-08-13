@@ -1,0 +1,21 @@
+// Backend local do PDV — banco SQLite, um arquivo por loja.
+// Schema inicial do Sprint 0: só o suficiente para a loja se identificar.
+// Entidades completas (Product, Sale, CashSession etc.) entram nos Sprints 1-5 —
+// ver Claude/Projetos/EasyPDV/Modelo de Domínio.md no cofre Obsidian.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model StoreIdentity {
+  id             String   @id @default(cuid())
+  organizationId String
+  storeId        String
+  storeName      String
+  activatedAt    DateTime @default(now())
+}

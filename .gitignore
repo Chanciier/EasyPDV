@@ -1,5 +1,9 @@
-.claude/settings.local.json
-.claude/scheduled_tasks.lock
+# Claude Code / ruflo local tooling — não é parte do produto
+.claude/
+.mcp.json
+.claude-flow/
+.swarm/
+ruvector.db
 
 # Environment
 .env
@@ -7,6 +11,23 @@
 
 # Dependencies
 node_modules/
+
+# Build outputs
+dist/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# Prisma
+apps/pdv-backend/prisma/*.db
+apps/pdv-backend/prisma/*.db-journal
+apps/pdv-backend/prisma/*.db-shm
+apps/pdv-backend/prisma/*.db-wal
+
+# Electron
+apps/electron/dist/
+apps/electron/out/
 
 # OS
 .DS_Store
