@@ -6,6 +6,7 @@ import { DomainExceptionFilter } from "./common/filters/domain-exception.filter.
 import { CatalogModule } from "./modules/catalog/catalog.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { IdentityModule } from "./modules/identity/identity.module.js";
+import { InventoryModule } from "./modules/inventory/inventory.module.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
 
 @Module({
@@ -20,7 +21,8 @@ import { PrismaModule } from "./prisma/prisma.module.js";
     HealthModule,
     IdentityModule,
     CatalogModule,
-    // Sprint 3+: InventoryModule, CustomersModule, SalesModule, FiscalModule
+    InventoryModule,
+    // Sprint 4+: CustomersModule, SalesModule, FiscalModule
     // Ver docs/MODULES.md para a lista completa de módulos.
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],

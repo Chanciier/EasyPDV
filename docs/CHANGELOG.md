@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Sprint 3 — Estoque
+- Módulo Inventory completo em `apps/pdv-backend`: Warehouse, StockItem (saldo materializado), StockMovement (ledger append-only) — registro de movimento grava as duas tabelas na mesma transação Prisma.
+- Endpoints: consultar saldo, listar movimentos, registrar movimento (`quantity` sempre como delta assinado). Mutações protegidas por RBAC (`administrador`/`gerente`/`supervisor`).
+- Seed estendido com depósito "Depósito Principal" e estoque inicial para os 3 produtos de exemplo.
+- **Bug real encontrado e corrigido em todos os módulos**: `@UsePipes(new ZodValidationPipe(schema))` no nível do método aplicava o mesmo pipe a todos os parâmetros do handler, não só ao `@Body()` — quebrava qualquer rota com `@Param()` ou `@CurrentUser()` além do body (`PATCH /users/:id/role`, `PATCH /products/:id`, `POST /products/:id/barcodes`, `POST /price-lists/:id/items`, `POST /stock/movements`). Corrigido movendo a validação para `@Body(new ZodValidationPipe(schema))` no parâmetro, em todos os controllers — regra registrada em `docs/CODING-STANDARDS.md` para não repetir.
+- Banco de dev resetado (`prisma migrate reset`, com consentimento explícito do usuário — Prisma bloqueia essa operação para agentes de IA por padrão) para limpar dados de teste e validar o seed do zero.
+- Testado ponta a ponta manualmente, incluindo as rotas que estavam quebradas: entrada/saída de estoque com saldo final conferido, `PATCH /users/:id/role`, `PATCH /products/:id`, RBAC.
+
 ### Sprint 2 — Catálogo
 - Módulo Catalog completo em `apps/pdv-backend`: Product, Category, Barcode, PriceList/PriceListItem (domain/application/infrastructure), incluindo `ResolvePriceUseCase` (preço vigente + promocional).
 - Endpoints: busca textual, busca por código de barras (retorna produto + preço), CRUD de produto/categoria/tabela de preço — mutações protegidas por RBAC (`administrador`/`gerente`).

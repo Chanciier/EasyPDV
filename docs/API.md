@@ -24,8 +24,14 @@ POST   /categories                      (Bearer + administrador/gerente) → cri
 POST   /price-lists                     (Bearer + administrador/gerente) → cria tabela de preço
 POST   /price-lists/:id/items           (Bearer + administrador/gerente) → define/atualiza preço de um produto
 
-/warehouses
-/stock            movements, adjustments
+GET    /warehouses                      (Bearer) → lista
+POST   /warehouses                      (Bearer + administrador/gerente) → cria depósito
+
+GET    /stock/:warehouseId/:productId   (Bearer) → saldo atual (zerado se nunca movimentado)
+GET    /stock/movements?warehouseId=&productId=  (Bearer) → últimos 100 movimentos
+POST   /stock/movements                 (Bearer + administrador/gerente/supervisor) → registra movimento;
+                                         `quantity` é sempre o delta assinado (negativo para saída)
+
 /customers        + /:id/sales
 /cash             sessions (open/close/current), movements
 /sales            CRUD de itens, /confirm, /cancel

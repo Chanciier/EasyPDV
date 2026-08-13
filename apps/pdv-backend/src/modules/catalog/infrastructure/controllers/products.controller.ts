@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards, UsePipes } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import {
   addBarcodeSchema,
   createProductSchema,
@@ -51,24 +51,27 @@ export class ProductsController {
 
   @Post()
   @Roles("administrador", "gerente")
-  @UsePipes(new ZodValidationPipe(createProductSchema))
-  async create(@Body() body: CreateProductInput) {
+  async create(@Body(new ZodValidationPipe(createProductSchema)) body: CreateProductInput) {
     const product = await this.createProductUseCase.execute(body);
     return toProductResponseDto(product);
   }
 
   @Patch(":id")
   @Roles("administrador", "gerente")
-  @UsePipes(new ZodValidationPipe(updateProductSchema))
-  async update(@Param("id") id: string, @Body() body: UpdateProductInput) {
+  async update(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(updateProductSchema)) body: UpdateProductInput,
+  ) {
     const product = await this.updateProductUseCase.execute(id, body);
     return toProductResponseDto(product);
   }
 
   @Post(":id/barcodes")
   @Roles("administrador", "gerente")
-  @UsePipes(new ZodValidationPipe(addBarcodeSchema))
-  async addBarcode(@Param("id") id: string, @Body() body: AddBarcodeInput) {
+  async addBarcode(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(addBarcodeSchema)) body: AddBarcodeInput,
+  ) {
     await this.addBarcodeUseCase.execute(id, body);
     return { success: true };
   }

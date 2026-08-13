@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Patch, Post, UseGuards, UsePipes } from "@nestjs/common";
+import { Body, Controller, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import {
   createUserSchema,
   updateUserRoleSchema,
@@ -23,16 +23,17 @@ export class UsersController {
 
   @Post()
   @Roles("administrador")
-  @UsePipes(new ZodValidationPipe(createUserSchema))
-  async create(@Body() body: CreateUserInput) {
+  async create(@Body(new ZodValidationPipe(createUserSchema)) body: CreateUserInput) {
     const user = await this.createUserUseCase.execute(body);
     return toUserResponseDto(user);
   }
 
   @Patch(":id/role")
   @Roles("administrador")
-  @UsePipes(new ZodValidationPipe(updateUserRoleSchema))
-  async updateRole(@Param("id") id: string, @Body() body: UpdateUserRoleInput) {
+  async updateRole(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(updateUserRoleSchema)) body: UpdateUserRoleInput,
+  ) {
     const user = await this.updateUserRoleUseCase.execute(id, body.role);
     return toUserResponseDto(user);
   }

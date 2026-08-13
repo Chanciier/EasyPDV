@@ -12,7 +12,7 @@ Duas bases de dados distintas, sem se misturar. Ver [ARCHITECTURE.md](./ARCHITEC
 | AuthSession | Sessão de refresh token | Rotacionada a cada uso; `refreshTokenHash` nunca guarda o token em texto puro |
 | Product / Category / Barcode | Catálogo | Um produto pode ter N códigos de barras |
 | PriceList / PriceListItem | Preço vigente | Preço nunca é campo direto no produto |
-| Warehouse / StockItem / StockMovement | Estoque | StockMovement é o ledger append-only (fonte da verdade); StockItem é projeção |
+| Warehouse / StockItem / StockMovement | Estoque | StockMovement é o ledger append-only (fonte da verdade); StockItem é projeção. `StockMovement.quantity` é sempre o delta assinado já aplicado ao saldo (negativo = saída) — `type` só documenta o motivo, nunca determina o sinal |
 | CashRegister / CashSession / CashMovement | Caixa | Sessão é o vínculo temporário operador↔caixa |
 | Sale / SaleItem / Payment | Venda | Sale.status: draft → confirmed / cancelled |
 | FiscalDocument | Comprovante/NFC-e da venda | type: nfce \| comprovante_nao_fiscal |

@@ -14,3 +14,4 @@
 - **Factories**: constroem agregados complexos respeitando invariantes de criação (`SaleFactory.startNew(...)`).
 - **Specifications**: regra estrutural reutilizável e testável (`IsCashSessionOpenSpecification`).
 - **Policies**: decisão de autorização dependente de papel (`DiscountAuthorizationPolicy`) — distinta de Specification.
+- **Validação Zod nos controllers**: sempre `@Body(new ZodValidationPipe(schema))` no parâmetro, **nunca** `@UsePipes(new ZodValidationPipe(schema))` no método. `@UsePipes` a nível de método aplica o mesmo pipe a **todos** os parâmetros do handler — incluindo `@Param()` e decorators customizados como `@CurrentUser()` — e o Zod falha ao tentar validar esses valores contra o schema do body. Bug real encontrado e corrigido na Sprint 3 (ver `docs/CHANGELOG.md`), presente desde a Sprint 1 em toda rota com mais de um parâmetro.

@@ -127,3 +127,54 @@ model PriceListItem {
   @@unique([priceListId, productId])
   @@index([productId])
 }
+
+// V1 tem 1 depósito por loja; a estrutura já suporta N — ver docs/ROADMAP.md.
+model Warehouse {
+  id        String   @id @default(cuid())
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  stockItems     StockItem[]
+  stockMovements StockMovement[]
+}
+
+// Saldo materializado — projeção de StockMovement, nunca a fonte da verdade.
+model StockItem {
+  id               String    @id @default(cuid())
+  warehouseId      String
+  warehouse        Warehouse @relation(fields: [warehouseId], references: [id])
+  productId        String
+  quantity         Float     @default(0)
+  reservedQuantity Float     @default(0)
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([warehouseId, productId])
+  @@index([productId])
+}
+
+enum StockMovementType {
+  entrada
+  saida
+  ajuste
+  venda
+  devolucao
+}
+
+// Ledger append-only — é a fonte da verdade real do estoque. `quantity` é
+// sempre o delta assinado já aplicado ao StockItem (positivo = aumentou o
+// saldo, negativo = diminuiu) — `type` só documenta o motivo, não o sinal.
+model StockMovement {
+  id            String            @id @default(cuid())
+  warehouseId   String
+  warehouse     Warehouse         @relation(fields: [warehouseId], references: [id])
+  productId     String
+  type          StockMovementType
+  quantity      Float
+  referenceType String?
+  referenceId   String?
+  createdByUserId String?
+  createdAt     DateTime          @default(now())
+
+  @@index([warehouseId, productId])
+}

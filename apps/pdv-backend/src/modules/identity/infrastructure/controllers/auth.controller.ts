@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards, UsePipes } from "@nestjs/common";
+import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { loginSchema, refreshTokenSchema, type LoginInput, type RefreshTokenInput } from "@easypdv/shared-validation";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe.js";
 import { LoginUseCase } from "../../application/use-cases/login.use-case.js";
@@ -19,20 +19,17 @@ export class AuthController {
   ) {}
 
   @Post("login")
-  @UsePipes(new ZodValidationPipe(loginSchema))
-  login(@Body() body: LoginInput) {
+  login(@Body(new ZodValidationPipe(loginSchema)) body: LoginInput) {
     return this.loginUseCase.execute(body);
   }
 
   @Post("refresh")
-  @UsePipes(new ZodValidationPipe(refreshTokenSchema))
-  refresh(@Body() body: RefreshTokenInput) {
+  refresh(@Body(new ZodValidationPipe(refreshTokenSchema)) body: RefreshTokenInput) {
     return this.refreshTokenUseCase.execute(body.refreshToken);
   }
 
   @Post("logout")
-  @UsePipes(new ZodValidationPipe(refreshTokenSchema))
-  async logout(@Body() body: RefreshTokenInput) {
+  async logout(@Body(new ZodValidationPipe(refreshTokenSchema)) body: RefreshTokenInput) {
     await this.logoutUseCase.execute(body.refreshToken);
     return { success: true };
   }

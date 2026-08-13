@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards, UsePipes } from "@nestjs/common";
+import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { createCategorySchema, type CreateCategoryInput } from "@easypdv/shared-validation";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe.js";
 import { JwtAuthGuard } from "../../../identity/infrastructure/guards/jwt-auth.guard.js";
@@ -22,8 +22,7 @@ export class CategoriesController {
 
   @Post()
   @Roles("administrador", "gerente")
-  @UsePipes(new ZodValidationPipe(createCategorySchema))
-  create(@Body() body: CreateCategoryInput) {
+  create(@Body(new ZodValidationPipe(createCategorySchema)) body: CreateCategoryInput) {
     return this.createCategoryUseCase.execute(body);
   }
 }

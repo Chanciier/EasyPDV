@@ -79,6 +79,12 @@ export interface ResolvedPrice {
   effectivePrice: number;
 }
 
+export interface Warehouse {
+  id: string;
+  name: string;
+  active: boolean;
+}
+
 export interface StockItem {
   warehouseId: string;
   productId: string;

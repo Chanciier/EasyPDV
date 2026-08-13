@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, UseGuards, UsePipes } from "@nestjs/common";
+import { Body, Controller, Param, Post, UseGuards } from "@nestjs/common";
 import {
   createPriceListSchema,
   upsertPriceListItemSchema,
@@ -22,14 +22,15 @@ export class PriceListsController {
   ) {}
 
   @Post()
-  @UsePipes(new ZodValidationPipe(createPriceListSchema))
-  create(@Body() body: CreatePriceListInput) {
+  create(@Body(new ZodValidationPipe(createPriceListSchema)) body: CreatePriceListInput) {
     return this.createPriceListUseCase.execute(body.name);
   }
 
   @Post(":id/items")
-  @UsePipes(new ZodValidationPipe(upsertPriceListItemSchema))
-  upsertItem(@Param("id") id: string, @Body() body: UpsertPriceListItemInput) {
+  upsertItem(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(upsertPriceListItemSchema)) body: UpsertPriceListItemInput,
+  ) {
     return this.upsertPriceListItemUseCase.execute(id, body);
   }
 }
