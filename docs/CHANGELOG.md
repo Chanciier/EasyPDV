@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Sprint 4 — Caixa e Venda (núcleo)
+- Módulo Sales completo em `apps/pdv-backend` (bundla Caixa + Venda, conforme docs/MODULES.md): CashRegister, CashSession, CashMovement, Sale, SaleItem.
+- Caixa: abrir sessão (409 se já existe uma aberta no registrador), sangria/suprimento/ajuste, fechar com cálculo automático de `expectedAmount` (abertura + suprimento - sangria + ajuste), sessão atual do operador.
+- Venda: iniciar (draft, exige sessão de caixa aberta), adicionar/remover item (preço resolvido via `CatalogModule.ResolvePriceUseCase`, exportado para consumo entre módulos), cancelar — total recalculado a cada mudança de item.
+- **Escopo deliberadamente limitado**: sem desconto, sem Payment, sem confirmação — venda só transita entre `draft` e `cancelled`. `confirmed` + débito de estoque + Payment entram juntos na Sprint 5, numa única transação atômica (é o "evento central" `SaleConfirmed` documentado desde o início).
+- Seed estendido com um `CashRegister` ("Caixa 1").
+- Testado ponta a ponta manualmente: abrir/duplicar-caixa (409), sangria/suprimento, iniciar venda, adicionar 2 itens (total conferido), remover item (total recalculado), cancelar (imutabilidade depois confirmada com 409), fechar caixa com divergência zero conferida.
+
 ### Sprint 3 — Estoque
 - Módulo Inventory completo em `apps/pdv-backend`: Warehouse, StockItem (saldo materializado), StockMovement (ledger append-only) — registro de movimento grava as duas tabelas na mesma transação Prisma.
 - Endpoints: consultar saldo, listar movimentos, registrar movimento (`quantity` sempre como delta assinado). Mutações protegidas por RBAC (`administrador`/`gerente`/`supervisor`).

@@ -103,6 +103,12 @@ export interface StockMovement {
   createdAt: string;
 }
 
+export interface CashRegister {
+  id: string;
+  name: string;
+  active: boolean;
+}
+
 export interface CashSession {
   id: string;
   cashRegisterId: string;
@@ -127,7 +133,6 @@ export interface CashMovement {
 
 export interface Sale {
   id: string;
-  storeId: string;
   cashSessionId: string;
   operatorUserId: string;
   customerId: string | null;

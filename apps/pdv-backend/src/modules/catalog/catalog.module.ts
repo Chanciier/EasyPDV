@@ -36,5 +36,8 @@ import { ResolvePriceUseCase } from "./application/use-cases/resolve-price.use-c
     { provide: CATEGORY_REPOSITORY, useClass: PrismaCategoryRepository },
     { provide: PRICE_LIST_REPOSITORY, useClass: PrismaPriceListRepository },
   ],
+  // ResolvePriceUseCase é consumido pelo módulo Sales (AddSaleItemUseCase) — leitura
+  // síncrona entre módulos, permitida por docs/MODULES.md.
+  exports: [ResolvePriceUseCase],
 })
 export class CatalogModule {}

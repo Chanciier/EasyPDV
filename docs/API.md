@@ -32,10 +32,22 @@ GET    /stock/movements?warehouseId=&productId=  (Bearer) → últimos 100 movim
 POST   /stock/movements                 (Bearer + administrador/gerente/supervisor) → registra movimento;
                                          `quantity` é sempre o delta assinado (negativo para saída)
 
+GET    /cash/registers                  (Bearer) → lista caixas
+POST   /cash/registers                  (Bearer + administrador/gerente) → cria caixa
+GET    /cash/sessions/current           (Bearer) → sessão aberta do operador atual (null se nenhuma)
+GET    /cash/sessions/:id               (Bearer) → detalhe da sessão
+POST   /cash/sessions                   (Bearer) → abre sessão (409 se já existe uma aberta no caixa)
+PATCH  /cash/sessions/:id/close         (Bearer) → fecha sessão; calcula expectedAmount = abertura + suprimento - sangria + ajuste
+POST   /cash/sessions/:id/movements     (Bearer) → registra sangria/suprimento/ajuste
+
+GET    /sales/:id                       (Bearer) → detalhe da venda com itens
+POST   /sales                           (Bearer) → inicia venda (status draft), exige cashSessionId aberta
+POST   /sales/:id/items                 (Bearer) → adiciona item (preço resolvido via Catalog); só em draft
+DELETE /sales/:id/items/:itemId         (Bearer) → remove item; só em draft
+POST   /sales/:id/cancel                (Bearer) → cancela; só em draft
+
 /customers        + /:id/sales
-/cash             sessions (open/close/current), movements
-/sales            CRUD de itens, /confirm, /cancel
-/payments         (sub-rota de /sales/:id/payments)
+/payments         Sprint 5 — pagamento + confirmação da venda
 /fiscal           documents/:saleId, reissue, cancel
 /reports          sales, cash-sessions, stock, dashboard
 /settings

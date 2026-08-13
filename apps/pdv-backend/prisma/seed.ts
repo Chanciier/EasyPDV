@@ -85,12 +85,23 @@ async function seedInventory(prisma: PrismaClient, products: { id: string; initi
   console.log(`Depósito "Depósito Principal" criado com estoque inicial para ${products.length} produtos.`);
 }
 
+async function seedCashRegister(prisma: PrismaClient) {
+  const existing = await prisma.cashRegister.count();
+  if (existing > 0) {
+    console.log("Já existe caixa — seed de caixa ignorado.");
+    return;
+  }
+  await prisma.cashRegister.create({ data: { name: "Caixa 1" } });
+  console.log('Caixa "Caixa 1" criado.');
+}
+
 async function main() {
   const prisma = new PrismaClient();
   try {
     await seedAdmin(prisma);
     const products = await seedCatalog(prisma);
     await seedInventory(prisma, products);
+    await seedCashRegister(prisma);
   } finally {
     await prisma.$disconnect();
   }

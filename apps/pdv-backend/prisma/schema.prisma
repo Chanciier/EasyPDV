@@ -44,6 +44,7 @@ model User {
   updatedAt    DateTime @updatedAt
 
   authSessions AuthSession[]
+  cashSessions CashSession[]
 }
 
 model AuthSession {
@@ -177,4 +178,102 @@ model StockMovement {
   createdAt     DateTime          @default(now())
 
   @@index([warehouseId, productId])
+}
+
+model CashRegister {
+  id        String   @id @default(cuid())
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  sessions CashSession[]
+}
+
+enum CashSessionStatus {
+  open
+  closed
+  reconciled
+}
+
+// Sessão é o vínculo temporário operador↔caixa — o caixa em si é um recurso
+// independente, reutilizado por operadores diferentes em turnos diferentes.
+// Ver docs/DATABASE.md.
+model CashSession {
+  id             String            @id @default(cuid())
+  cashRegisterId String
+  cashRegister   CashRegister      @relation(fields: [cashRegisterId], references: [id])
+  operatorUserId String
+  operator       User              @relation(fields: [operatorUserId], references: [id])
+  terminalId     String?
+  openingAmount  Float
+  closingAmount  Float?
+  expectedAmount Float?
+  status         CashSessionStatus @default(open)
+  openedAt       DateTime          @default(now())
+  closedAt       DateTime?
+
+  movements CashMovement[]
+  sales     Sale[]
+
+  @@index([cashRegisterId])
+  @@index([operatorUserId])
+}
+
+enum CashMovementType {
+  sangria
+  suprimento
+  ajuste
+}
+
+model CashMovement {
+  id                 String           @id @default(cuid())
+  cashSessionId      String
+  cashSession        CashSession      @relation(fields: [cashSessionId], references: [id])
+  type               CashMovementType
+  amount             Float
+  reason             String?
+  authorizedByUserId String?
+  createdAt          DateTime         @default(now())
+
+  @@index([cashSessionId])
+}
+
+enum SaleStatus {
+  draft
+  pending
+  confirmed
+  cancelled
+}
+
+// Sprint 4: só draft/cancelled (sem pagamento ainda). confirmed + débito de
+// estoque + auditoria entram juntos na Sprint 5, numa única transação
+// atômica — ver docs/DATABASE.md "evento central".
+model Sale {
+  id             String      @id @default(cuid())
+  cashSessionId  String
+  cashSession    CashSession @relation(fields: [cashSessionId], references: [id])
+  operatorUserId String
+  customerId     String?
+  status         SaleStatus  @default(draft)
+  totalAmount    Float       @default(0)
+  discountAmount Float       @default(0)
+  createdAt      DateTime    @default(now())
+  confirmedAt    DateTime?
+
+  items SaleItem[]
+
+  @@index([cashSessionId])
+}
+
+model SaleItem {
+  id             String @id @default(cuid())
+  saleId         String
+  sale           Sale   @relation(fields: [saleId], references: [id])
+  productId      String
+  quantity       Float
+  unitPrice      Float
+  discountAmount Float  @default(0)
+  totalAmount    Float
+
+  @@index([saleId])
 }

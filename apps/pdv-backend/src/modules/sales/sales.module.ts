@@ -1,0 +1,42 @@
+import { Module } from "@nestjs/common";
+import { CatalogModule } from "../catalog/catalog.module.js";
+import { CashController } from "./infrastructure/controllers/cash.controller.js";
+import { SalesController } from "./infrastructure/controllers/sales.controller.js";
+import { PrismaCashRepository } from "./infrastructure/repositories/prisma-cash.repository.js";
+import { PrismaSaleRepository } from "./infrastructure/repositories/prisma-sale.repository.js";
+import { CASH_REPOSITORY } from "./application/ports/cash-repository.port.js";
+import { SALE_REPOSITORY } from "./application/ports/sale-repository.port.js";
+import { CreateCashRegisterUseCase } from "./application/use-cases/create-cash-register.use-case.js";
+import { ListCashRegistersUseCase } from "./application/use-cases/list-cash-registers.use-case.js";
+import { OpenCashSessionUseCase } from "./application/use-cases/open-cash-session.use-case.js";
+import { CloseCashSessionUseCase } from "./application/use-cases/close-cash-session.use-case.js";
+import { RegisterCashMovementUseCase } from "./application/use-cases/register-cash-movement.use-case.js";
+import { GetCurrentCashSessionUseCase } from "./application/use-cases/get-current-cash-session.use-case.js";
+import { GetCashSessionUseCase } from "./application/use-cases/get-cash-session.use-case.js";
+import { StartSaleUseCase } from "./application/use-cases/start-sale.use-case.js";
+import { AddSaleItemUseCase } from "./application/use-cases/add-sale-item.use-case.js";
+import { RemoveSaleItemUseCase } from "./application/use-cases/remove-sale-item.use-case.js";
+import { CancelSaleUseCase } from "./application/use-cases/cancel-sale.use-case.js";
+import { GetSaleUseCase } from "./application/use-cases/get-sale.use-case.js";
+
+@Module({
+  imports: [CatalogModule],
+  controllers: [CashController, SalesController],
+  providers: [
+    CreateCashRegisterUseCase,
+    ListCashRegistersUseCase,
+    OpenCashSessionUseCase,
+    CloseCashSessionUseCase,
+    RegisterCashMovementUseCase,
+    GetCurrentCashSessionUseCase,
+    GetCashSessionUseCase,
+    StartSaleUseCase,
+    AddSaleItemUseCase,
+    RemoveSaleItemUseCase,
+    CancelSaleUseCase,
+    GetSaleUseCase,
+    { provide: CASH_REPOSITORY, useClass: PrismaCashRepository },
+    { provide: SALE_REPOSITORY, useClass: PrismaSaleRepository },
+  ],
+})
+export class SalesModule {}
