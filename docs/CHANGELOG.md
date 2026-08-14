@@ -1,6 +1,15 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Sprint 6 — Outbox, Fila e Workers
+- **PDV local**: modelo `SyncOutbox` (transactional outbox) — `PrismaSaleRepository.confirm()` grava uma entrada `entityType="sale"` na mesma transação do `SaleConfirmed` (mesma exceção pragmática já usada pro débito de estoque). `SyncOutboxWorker` (`@nestjs/schedule`, a cada 15s) varre entradas `pending` e faz `POST /sync` no Intermediador via `HttpSyncGateway`; sucesso marca `synced`, falha incrementa `attempts` e retenta (teto de 5 antes de virar `failed`). Endpoint `GET /sync/outbox` para visibilidade/depuração.
+- **Intermediador**: modelo `SyncJob` (Postgres) + fila BullMQ (`@nestjs/bullmq`, Redis). `POST /sync` cria (ou reaproveita, idempotente por `@@unique([entityType, entityId])`) um `SyncJob` e enfileira; `SyncProcessor` (worker BullMQ) processa cada job via `SyncTargetPort` — Sprint 6 só tem o `NoopSyncTargetAdapter` (loga e confirma "synced", sem falar com nenhum ERP de verdade), Sprint 7 substitui pelo Adapter Bling sem tocar no processor. `GET /sync/jobs/:id` consulta status.
+- Scaffolding base do Intermediador completado: `PrismaModule`/`PrismaService`, `ConfigModule`, `BullModule`, `DomainError`/`DomainExceptionFilter` — mesmo padrão já usado no pdv-backend.
+- **Bug real de monorepo encontrado e corrigido**: pdv-backend e intermediador compartilham a mesma versão de `@prisma/client`, que o pnpm deduplica numa única pasta física — `prisma generate` de um app sobrescrevia o client gerado do outro (schemas diferentes, mesmo destino), quebrando em runtime quem não gerou por último. Só apareceu ao rodar os dois servidores juntos pela primeira vez (nenhuma sprint anterior precisou disso). Corrigido dando ao intermediador um `output` próprio (`src/generated/prisma`) no `generator client`, com ajustes em `tsconfig.json` (exclude), `nest-cli.json` (assets copiados pro `dist/`) e `eslint-config` (`**/generated/**` ignorado). Ver docs/BACKEND.md.
+- `docker-compose.yml`: portas de Postgres/Redis viraram configuráveis via env (`POSTGRES_PORT`/`REDIS_PORT`, default 5433/6380) — a máquina de dev já tinha outro projeto ocupando 5432/6379.
+- Testado ponta a ponta manualmente com Postgres+Redis reais via Docker: venda confirmada → outbox local `synced` → `SyncJob` criado e processado (`synced`, 1 tentativa) no Intermediador → reenvio do mesmo `entityId` não duplica o job (idempotência confirmada) → `GET /sync/jobs/:id` inexistente retorna 404.
+- **Gap aberto e documentado**: `POST /sync` sem autenticação (provisionamento de terminal é Sprint 10); varredura de reconciliação para `SyncJob`s órfãos por perda do Redis fica pra Central de Erros de Sincronização (Sprint 8). Ver docs/ERROR-HANDLING.md.
+
 ### Sprint 5 — Pagamentos + Confirmação
 - Modelo `Payment` (method: dinheiro/cartao/pix/outro; status: aprovado/pendente/recusado — em V1 sem TEF/gateway real, cartão entra direto "aprovado" pois a maquininha física já aprovou, ver docs/ROADMAP.md).
 - `RegisterPaymentUseCase`: registra pagamento numa venda em draft.

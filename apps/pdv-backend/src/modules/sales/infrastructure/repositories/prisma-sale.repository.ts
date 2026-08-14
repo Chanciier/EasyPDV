@@ -74,15 +74,20 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
   }
 
   /**
-   * Confirma a venda e debita o estoque de cada item na mesma transação.
-   * O débito usa `decrement` atômico (SQL `SET quantity = quantity - X`),
-   * não um read-modify-write em código de aplicação — combinado com a
-   * serialização de escrita do próprio SQLite, isso resolve a race condition
-   * de dois caixas confirmando o último item do mesmo produto ao mesmo tempo
-   * (risco documentado desde a Sprint 3). Ver docs/DATABASE.md.
+   * Confirma a venda, debita o estoque de cada item e grava a entrada de
+   * sincronização — tudo na mesma transação. O débito usa `decrement` atômico
+   * (SQL `SET quantity = quantity - X`), não um read-modify-write em código
+   * de aplicação — combinado com a serialização de escrita do próprio SQLite,
+   * isso resolve a race condition de dois caixas confirmando o último item do
+   * mesmo produto ao mesmo tempo (risco documentado desde a Sprint 3). O
+   * SyncOutbox segue o mesmo raciocínio: se a venda foi commitada, a entrada
+   * de sync também foi, sem exceção — grava-se aqui em vez de via
+   * SyncOutboxRepositoryPort para não sair do escopo desta transação (mesma
+   * exceção pragmática documentada em docs/DATABASE.md).
    */
   async confirm(saleId: string, warehouseId: string): Promise<Sale> {
     const sale = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
+    const confirmedAt = new Date();
 
     const stockOperations = sale.items.flatMap((item) => [
       this.prisma.stockMovement.create({
@@ -102,12 +107,22 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
       }),
     ]);
 
+    const syncPayload = JSON.stringify({
+      saleId,
+      totalAmount: sale.totalAmount,
+      confirmedAt: confirmedAt.toISOString(),
+      items: sale.items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+    });
+
     await this.prisma.$transaction([
       this.prisma.sale.update({
         where: { id: saleId },
-        data: { status: "confirmed", confirmedAt: new Date() },
+        data: { status: "confirmed", confirmedAt },
       }),
       ...stockOperations,
+      this.prisma.syncOutbox.create({
+        data: { entityType: "sale", entityId: saleId, payload: syncPayload },
+      }),
     ]);
 
     const confirmed = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });

@@ -24,6 +24,7 @@ apps/pdv-backend/prisma/*.db
 apps/pdv-backend/prisma/*.db-journal
 apps/pdv-backend/prisma/*.db-shm
 apps/pdv-backend/prisma/*.db-wal
+apps/intermediador/src/generated/
 
 # Electron
 apps/electron/dist/

@@ -7,6 +7,7 @@ import type {
   PaymentStatus,
   SaleStatus,
   StockMovementType,
+  SyncStatus,
   UserRole,
 } from "./enums.js";
 
@@ -178,4 +179,32 @@ export interface Customer {
   document: string | null;
   phone: string | null;
   email: string | null;
+}
+
+// Outbox local (PDV, SQLite) — fila de sincronização com o Intermediador.
+export interface SyncOutboxEntry {
+  id: string;
+  entityType: string;
+  entityId: string;
+  payload: string;
+  status: SyncStatus;
+  attempts: number;
+  lastError: string | null;
+  createdAt: string;
+  sentAt: string | null;
+}
+
+// Job de sincronização no Intermediador (PostgreSQL) — um por SyncOutboxEntry
+// recebido via POST /sync, processado pela fila BullMQ.
+export interface SyncJob {
+  id: string;
+  storeId: string | null;
+  entityType: string;
+  entityId: string;
+  payload: unknown;
+  status: SyncStatus;
+  attempts: number;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

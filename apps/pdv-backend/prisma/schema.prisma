@@ -307,3 +307,29 @@ model Payment {
 
   @@index([saleId])
 }
+
+enum SyncStatus {
+  pending
+  processing
+  synced
+  failed
+}
+
+// Transactional outbox: gravado na mesma transação que SaleConfirmed (ver
+// PrismaSaleRepository.confirm()) — se a venda foi commitada, a entrada de
+// sync também foi, sem exceção. `SyncOutboxWorker` varre por status=pending
+// e faz POST /sync no Intermediador; "synced" aqui só significa "entregue
+// à fila do Intermediador", não que o Bling já processou. Ver docs/DATABASE.md.
+model SyncOutbox {
+  id         String     @id @default(cuid())
+  entityType String
+  entityId   String
+  payload    String
+  status     SyncStatus @default(pending)
+  attempts   Int        @default(0)
+  lastError  String?
+  createdAt  DateTime   @default(now())
+  sentAt     DateTime?
+
+  @@index([status])
+}

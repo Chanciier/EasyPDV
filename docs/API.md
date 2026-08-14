@@ -52,6 +52,10 @@ POST   /sales/:id/confirm               (Bearer) → confirma a venda: exige ite
                                          409 se sem itens, sem pagamento suficiente, ou já não estiver em draft
 POST   /sales/:id/cancel                (Bearer) → cancela; só em draft
 
+GET    /sync/outbox?status=             (Bearer + administrador/gerente/tecnico) → lista entradas do
+                                         outbox local (visibilidade/depuração — base da Central de Erros
+                                         de Sincronização da Sprint 8)
+
 /customers        + /:id/sales
 /fiscal           documents/:saleId, reissue, cancel
 /reports          sales, cash-sessions, stock, dashboard
@@ -63,9 +67,15 @@ POST   /sales/:id/cancel                (Bearer) → cancela; só em draft
 
 ```
 /health
+POST   /sync              recebe uma entrada de sync do SyncOutboxWorker do PDV local
+                           { entityType, entityId, payload, storeId? } → cria/reaproveita um SyncJob
+                           (idempotente por entityType+entityId) e enfileira no BullMQ (fila "sync");
+                           SEM autenticação por enquanto — provisionamento de terminal e autenticação
+                           PDV local ↔ Intermediador ainda não existem (risco aberto, ver docs/ERROR-HANDLING.md)
+GET    /sync/jobs/:id     status de um SyncJob (pending/processing/synced/failed)
+
 /organizations    provisionamento de organização/loja
 /terminals        registro/ativação de terminal
-/sync             POST recebido do PDV local (SyncRequested), status de jobs
 /integrations     conexão com Bling, status, retry de sync-job
 ```
 

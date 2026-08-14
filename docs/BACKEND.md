@@ -30,6 +30,25 @@ Na mesma transação que grava a mudança de estado, o Use Case grava uma linha 
 
 Processo separado consumindo as filas BullMQ (`erp-sync`, `fiscal-emission`), reutilizando os mesmos Use Cases/Adapters da API — nunca duplicando regra de negócio.
 
+## Prisma em monorepo: um client por app (Sprint 6)
+
+`apps/pdv-backend` e `apps/intermediador` dependem da mesma versão de
+`@prisma/client`, que o pnpm deduplica para uma única pasta física no store —
+sem cuidado extra, `prisma generate` de um app sobrescreve o client gerado do
+outro (schemas diferentes, mesmo destino físico), e o app que não gerou por
+último quebra em runtime com o schema errado (bug real, encontrado ao rodar os
+dois servidores juntos pela primeira vez nesta sprint). Resolvido dando ao
+`intermediador` um `output` próprio no `generator client` do seu
+`schema.prisma` (`src/generated/prisma`, fora do caminho padrão) — `pdv-backend`
+continua usando o caminho padrão (`@prisma/client`) sem mudança. Consequências:
+- Imports em `apps/intermediador` usam caminho relativo pro client gerado, não
+  `from "@prisma/client"`.
+- `tsconfig.json` do intermediador exclui `src/generated` (senão o `tsc` tenta
+  fazer declaration emit do client gerado e quebra).
+- `nest-cli.json` copia `generated/**` pra dentro de `dist/` no build (senão o
+  import relativo do código compilado não encontra o client em produção).
+- `eslint-config/base.js` ignora `**/generated/**` globalmente.
+
 ## Autenticação
 
 JWT de acesso curto + refresh token (hash em `AuthSession`, rotacionado a cada uso). Guard de RBAC lê o papel do usuário escopado pela loja ativa.

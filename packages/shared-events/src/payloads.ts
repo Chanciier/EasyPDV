@@ -7,6 +7,21 @@ export interface SaleConfirmedPayload {
   sale: Sale;
 }
 
+export interface SyncRequestedPayload {
+  name: typeof EventName.SYNC_REQUESTED;
+  occurredAt: string;
+  entityType: string;
+  localEntityId: string;
+}
+
+export interface SyncSucceededPayload {
+  name: typeof EventName.SYNC_SUCCEEDED;
+  occurredAt: string;
+  entityType: string;
+  localEntityId: string;
+  remoteEntityId?: string;
+}
+
 export interface SyncFailedPayload {
   name: typeof EventName.SYNC_FAILED;
   occurredAt: string;

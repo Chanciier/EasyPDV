@@ -19,19 +19,19 @@ Duas bases de dados distintas, sem se misturar. Ver [ARCHITECTURE.md](./ARCHITEC
 | Customer | Cliente da loja | |
 | AuditLog | Trilha imutável de ações sensíveis | |
 | Setting | Configuração key-value | |
-| SyncOutbox | Fila local de sincronização pendente com o Intermediador | Transactional outbox — grava na mesma transação que `SaleConfirmed` |
+| SyncOutbox | Fila local de sincronização pendente com o Intermediador | **Implementado na Sprint 6.** Transactional outbox — gravado na mesma transação que `SaleConfirmed` (dentro de `PrismaSaleRepository.confirm()`, mesma exceção pragmática documentada para o débito de estoque). `SyncOutboxWorker` varre por status=pending a cada 15s e faz `POST /sync` no Intermediador; "synced" aqui só significa "entregue à fila do Intermediador", não que o Bling já processou. Teto de 5 tentativas antes de virar "failed" (SLA de retry configurável continua em aberto, ver docs/ERROR-HANDLING.md) |
 
 ## Intermediador (PostgreSQL, `apps/intermediador`)
 
 | Entidade | Finalidade | Observações |
 |---|---|---|
 | Organization / Store | Espelho central de todas as lojas de todos os clientes | Multi-tenant real — isolar por `organizationId` em toda query |
-| ErpIntegration | Config de qual ERP está conectado por organização | provider: bling \| tiny \| omie \| conta_azul \| proprio (só bling na V1) |
-| ErpSyncMapping | Mapeamento de ID externo (Bling) por entidade local | **Fica fora dos agregados de domínio** — é o que impede o Bling de contaminar a arquitetura |
-| SyncJob | Job de sincronização (outbox durável) | status: pending → processing → synced \| failed |
+| ErpIntegration | Config de qual ERP está conectado por organização | provider: bling \| tiny \| omie \| conta_azul \| proprio (só bling na V1) — **Sprint 7** |
+| ErpSyncMapping | Mapeamento de ID externo (Bling) por entidade local | **Fica fora dos agregados de domínio** — é o que impede o Bling de contaminar a arquitetura — **Sprint 7** |
+| SyncJob | Job de sincronização (outbox durável) | **Implementado na Sprint 6.** status: pending → processing → synced \| failed. `@@unique([entityType, entityId])` garante idempotência — reenvio do mesmo entityId (timeout ambíguo do lado do PDV local) não duplica o job. Enfileirado no BullMQ (fila "sync", 5 tentativas com backoff exponencial); processado por um `NoopSyncTargetAdapter` até a Sprint 7 trocar pelo Adapter Bling real, sem tocar no processor nem nos use-cases (Ports & Adapters) |
 
 ## Evento central
 
-`SaleConfirmed` é o gatilho para: débito de estoque (mesma transação local), auditoria (mesma transação local), impressão do comprovante não-fiscal (imediato), e gravação no SyncOutbox local (assíncrono → Intermediador → Bling → emissão fiscal).
+`SaleConfirmed` é o gatilho para: débito de estoque (mesma transação local), auditoria (mesma transação local, ainda não implementada), impressão do comprovante não-fiscal (imediato, ainda não implementada), e gravação no SyncOutbox local (**implementado na Sprint 6** — assíncrono → Intermediador → Bling → emissão fiscal; o Adapter Bling real entra na Sprint 7, até lá o Intermediador só prova a fila ponta a ponta com um processor no-op).
 
 Ver [EVENTS.md](./EVENTS.md) para o catálogo completo de eventos.

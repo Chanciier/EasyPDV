@@ -1,10 +1,15 @@
 // Intermediador — hospedado no Railway, banco PostgreSQL.
 // Único lugar que fala com o Bling. Schema inicial do Sprint 0: só o suficiente
-// para uma organização/loja se registrar. ErpIntegration, ErpSyncMapping e SyncJob
-// entram no Sprint 6-7 — ver Claude/Projetos/EasyPDV/Modelo de Domínio.md no cofre Obsidian.
+// para uma organização/loja se registrar. ErpIntegration e ErpSyncMapping
+// entram no Sprint 7 (Adapter Bling) — ver Claude/Projetos/EasyPDV/Modelo de Domínio.md no cofre Obsidian.
 
+// output custom: pdv-backend e intermediador dependem da mesma versão de
+// @prisma/client, que o pnpm deduplica para uma única pasta física no store —
+// sem isso, `prisma generate` de um app sobrescreve o client gerado do outro
+// (schemas diferentes, mesmo destino). Ver docs/BACKEND.md.
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
@@ -29,4 +34,36 @@ model Store {
   document       String?
   timezone       String       @default("America/Sao_Paulo")
   createdAt      DateTime     @default(now())
+}
+
+enum SyncStatus {
+  pending
+  processing
+  synced
+  failed
+}
+
+// Recebido via POST /sync (chamado pelo SyncOutboxWorker do PDV local).
+// Enfileirado no BullMQ (fila "sync") para processamento assíncrono.
+// `@@unique([entityType, entityId])` garante idempotência: reenvio do mesmo
+// entityId (ex: timeout ambíguo do lado do PDV local) não duplica o job.
+// Sem Adapter real ainda (ver Sprint 7 — Adapter Bling): o processor desta
+// Sprint 6 usa um NoopSyncTargetAdapter só para provar a fila ponta a ponta.
+// storeId é opcional porque o provisionamento de terminal (Sprint 10) e a
+// autenticação PDV local ↔ Intermediador ainda não existem — ver
+// Claude/Projetos/EasyPDV/Decisões e Riscos Abertos.md no cofre Obsidian.
+model SyncJob {
+  id         String     @id @default(cuid())
+  storeId    String?
+  entityType String
+  entityId   String
+  payload    Json
+  status     SyncStatus @default(pending)
+  attempts   Int        @default(0)
+  lastError  String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([entityType, entityId])
+  @@index([status])
 }
