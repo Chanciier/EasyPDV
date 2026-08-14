@@ -21,6 +21,7 @@ import { CloseCashSessionUseCase } from "../../application/use-cases/close-cash-
 import { RegisterCashMovementUseCase } from "../../application/use-cases/register-cash-movement.use-case.js";
 import { GetCurrentCashSessionUseCase } from "../../application/use-cases/get-current-cash-session.use-case.js";
 import { GetCashSessionUseCase } from "../../application/use-cases/get-cash-session.use-case.js";
+import { ListCashMovementsUseCase } from "../../application/use-cases/list-cash-movements.use-case.js";
 
 @Controller("cash")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -33,6 +34,7 @@ export class CashController {
     private readonly registerCashMovementUseCase: RegisterCashMovementUseCase,
     private readonly getCurrentCashSessionUseCase: GetCurrentCashSessionUseCase,
     private readonly getCashSessionUseCase: GetCashSessionUseCase,
+    private readonly listCashMovementsUseCase: ListCashMovementsUseCase,
   ) {}
 
   @Get("registers")
@@ -79,5 +81,10 @@ export class CashController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.registerCashMovementUseCase.execute(id, body, user.userId);
+  }
+
+  @Get("sessions/:id/movements")
+  listMovements(@Param("id") id: string) {
+    return this.listCashMovementsUseCase.execute(id);
   }
 }

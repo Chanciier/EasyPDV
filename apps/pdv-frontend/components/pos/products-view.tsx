@@ -2,47 +2,113 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Search, Plus, Pencil, Trash2, Package } from 'lucide-react'
-import { usePOS } from './pos-provider'
-import { formatBRL, uid, normalize, type Product } from '@/lib/pos-data'
+import type { Product } from '@easypdv/shared-types'
+import { formatBRL } from '@/lib/pos-data'
+import { ApiError } from '@/lib/api-client'
+import { useProductPrices } from '@/hooks/use-sales'
+import {
+  useActivePriceList,
+  useAddBarcode,
+  useCategories,
+  useCreateCategory,
+  useCreateProduct,
+  useProductList,
+  useProductPrice,
+  useSetPrice,
+  useUpdateProduct,
+} from '@/hooks/use-catalog'
 import { Modal } from './ui/modal'
 
-const empty: Product = {
-  id: '',
+interface ProductForm {
+  sku: string
+  name: string
+  categoryId: string
+  unit: string
+  active: boolean
+  price: string
+  newBarcode: string
+}
+
+const emptyForm: ProductForm = {
   sku: '',
-  barcode: '',
   name: '',
-  price: 0,
-  stock: 0,
-  category: '',
+  categoryId: '',
+  unit: 'un',
+  active: true,
+  price: '',
+  newBarcode: '',
+}
+
+function describeError(e: unknown, fallback: string) {
+  if (e instanceof ApiError) return e.code
+  if (e instanceof Error) return e.message
+  return fallback
 }
 
 export function ProductsView() {
-  const { products, saveProduct, deleteProduct } = usePOS()
   const [term, setTerm] = useState('')
-  const [editing, setEditing] = useState<Product | null>(null)
-  const [form, setForm] = useState<Product>(empty)
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [debouncedTerm, setDebouncedTerm] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedTerm(term), 250)
+    return () => clearTimeout(t)
+  }, [term])
 
-  const filtered = useMemo(() => {
-    const t = normalize(term)
-    if (!t) return products
-    return products.filter(
-      (p) =>
-        normalize(p.name).includes(t) ||
-        normalize(p.sku).includes(t) ||
-        p.barcode.includes(t) ||
-        normalize(p.category).includes(t),
-    )
-  }, [term, products])
+  const { data: products = [], isLoading } = useProductList(debouncedTerm)
+  const { data: categories = [] } = useCategories()
+  const { data: activePriceList } = useActivePriceList()
+
+  const priceQueries = useProductPrices(products.map((p) => p.id))
+  const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories])
+
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [form, setForm] = useState<ProductForm>(emptyForm)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState<Product | null>(null)
+
+  const editingPrice = useProductPrice(editingProduct?.id ?? null)
+  const createCategory = useCreateCategory()
+  const createProduct = useCreateProduct()
+  const updateProduct = useUpdateProduct()
+  const addBarcode = useAddBarcode()
+  const setPrice = useSetPrice()
+
+  useEffect(() => {
+    if (!editingProduct) return
+    if (editingPrice.data) {
+      setForm((f) => ({ ...f, price: String(editingPrice.data.effectivePrice) }))
+    } else if (editingPrice.isError) {
+      setForm((f) => ({ ...f, price: '' }))
+    }
+  }, [editingProduct, editingPrice.data, editingPrice.isError])
 
   const openNew = () => {
-    setForm({ ...empty, id: uid('p') })
-    setEditing({ ...empty, id: uid('p') })
+    setForm(emptyForm)
+    setFormError(null)
+    setNewCategoryName('')
+    setCreating(true)
   }
 
   const openEdit = (p: Product) => {
-    setForm(p)
-    setEditing(p)
+    setForm({
+      sku: p.sku,
+      name: p.name,
+      categoryId: p.categoryId ?? '',
+      unit: p.unit,
+      active: p.active,
+      price: '',
+      newBarcode: '',
+    })
+    setFormError(null)
+    setNewCategoryName('')
+    setEditingProduct(p)
+  }
+
+  const closeModal = () => {
+    setCreating(false)
+    setEditingProduct(null)
   }
 
   useEffect(() => {
@@ -59,11 +125,86 @@ export function ProductsView() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const submit = () => {
-    if (!form.name.trim()) return
-    saveProduct(form)
-    setEditing(null)
+  async function handleCreateCategory() {
+    const name = newCategoryName.trim()
+    if (!name) return
+    try {
+      const category = await createCategory.mutateAsync({ name })
+      setForm((f) => ({ ...f, categoryId: category.id }))
+      setNewCategoryName('')
+    } catch (e) {
+      setFormError(describeError(e, 'Erro ao criar categoria.'))
+    }
   }
+
+  async function submit() {
+    if (!form.name.trim()) return
+    setFormError(null)
+    setSubmitting(true)
+    try {
+      const priceNum = Number(form.price.replace(',', '.')) || 0
+
+      if (creating) {
+        if (!form.sku.trim()) {
+          setFormError('Informe o SKU.')
+          return
+        }
+        const product = await createProduct.mutateAsync({
+          sku: form.sku.trim(),
+          name: form.name.trim(),
+          categoryId: form.categoryId || undefined,
+          unit: form.unit.trim() || 'un',
+        })
+        if (form.newBarcode.trim()) {
+          await addBarcode.mutateAsync({ productId: product.id, code: form.newBarcode.trim() })
+        }
+        if (priceNum > 0 && activePriceList) {
+          await setPrice.mutateAsync({ priceListId: activePriceList.id, productId: product.id, price: priceNum })
+        }
+      } else if (editingProduct) {
+        await updateProduct.mutateAsync({
+          id: editingProduct.id,
+          data: {
+            name: form.name.trim(),
+            categoryId: form.categoryId || null,
+            unit: form.unit.trim() || 'un',
+            active: form.active,
+          },
+        })
+        if (priceNum > 0 && activePriceList) {
+          await setPrice.mutateAsync({
+            priceListId: activePriceList.id,
+            productId: editingProduct.id,
+            price: priceNum,
+          })
+        }
+        if (form.newBarcode.trim()) {
+          await addBarcode.mutateAsync({ productId: editingProduct.id, code: form.newBarcode.trim() })
+        }
+      }
+      closeModal()
+    } catch (e) {
+      setFormError(describeError(e, 'Erro ao salvar produto.'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function deactivate() {
+    if (!confirmDelete) return
+    setSubmitting(true)
+    try {
+      await updateProduct.mutateAsync({ id: confirmDelete.id, data: { active: false } })
+      setConfirmDelete(null)
+    } catch (e) {
+      setFormError(describeError(e, 'Erro ao desativar produto.'))
+      setConfirmDelete(null)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const modalOpen = creating || editingProduct !== null
 
   return (
     <div className="flex h-full flex-col p-4">
@@ -73,7 +214,7 @@ export function ProductsView() {
           <input
             value={term}
             onChange={(e) => setTerm(e.target.value)}
-            placeholder="Buscar produto, SKU, código ou categoria"
+            placeholder="Buscar produto por nome ou SKU"
             className="h-10 w-full bg-transparent text-sm outline-none"
           />
         </div>
@@ -88,74 +229,79 @@ export function ProductsView() {
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card">
         <div className="grid grid-cols-[8rem_1fr_9rem_6rem_6rem_5rem] items-center gap-3 border-b border-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <span>Código</span>
+          <span>SKU</span>
           <span>Produto</span>
           <span>Categoria</span>
+          <span>Unidade</span>
           <span className="text-right">Preço</span>
-          <span className="text-right">Estoque</span>
           <span className="text-right">Ações</span>
         </div>
         <div className="h-full overflow-y-auto pb-16">
-          {filtered.length === 0 ? (
+          {!isLoading && products.length === 0 ? (
             <div className="flex h-40 flex-col items-center justify-center gap-2 text-muted-foreground">
               <Package className="size-8 opacity-30" />
               <p className="text-sm">Nenhum produto encontrado.</p>
             </div>
           ) : (
-            filtered.map((p) => (
-              <div
-                key={p.id}
-                className="grid grid-cols-[8rem_1fr_9rem_6rem_6rem_5rem] items-center gap-3 border-b border-border/60 px-4 py-2.5 text-sm hover:bg-muted/50"
-              >
-                <span className="font-mono text-xs text-muted-foreground">{p.barcode}</span>
-                <span className="truncate font-medium">{p.name}</span>
-                <span className="text-muted-foreground">{p.category}</span>
-                <span className="text-right font-mono font-semibold">{formatBRL(p.price)}</span>
-                <span
-                  className={`text-right font-mono ${p.stock <= 10 ? 'font-bold text-accent' : ''}`}
+            products.map((p, i) => {
+              const price = priceQueries[i]?.data
+              return (
+                <div
+                  key={p.id}
+                  className="grid grid-cols-[8rem_1fr_9rem_6rem_6rem_5rem] items-center gap-3 border-b border-border/60 px-4 py-2.5 text-sm hover:bg-muted/50"
                 >
-                  {p.stock}
-                </span>
-                <div className="flex justify-end gap-1">
-                  <button
-                    onClick={() => openEdit(p)}
-                    className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="Editar"
-                  >
-                    <Pencil className="size-4" />
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(p.id)}
-                    className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    aria-label="Excluir"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
+                  <span className="font-mono text-xs text-muted-foreground">{p.sku}</span>
+                  <span className="truncate font-medium">{p.name}</span>
+                  <span className="truncate text-muted-foreground">
+                    {p.categoryId ? (categoryById.get(p.categoryId) ?? '—') : '—'}
+                  </span>
+                  <span className="text-muted-foreground">{p.unit}</span>
+                  <span className="text-right font-mono font-semibold">
+                    {price ? formatBRL(price.effectivePrice) : '—'}
+                  </span>
+                  <div className="flex justify-end gap-1">
+                    <button
+                      onClick={() => openEdit(p)}
+                      className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label="Editar"
+                    >
+                      <Pencil className="size-4" />
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(p)}
+                      className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      aria-label="Desativar"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
       </div>
 
       {/* Modal novo/editar */}
       <Modal
-        open={editing !== null}
-        onClose={() => setEditing(null)}
-        title={products.some((p) => p.id === form.id) ? 'Editar produto' : 'Novo produto'}
+        open={modalOpen}
+        onClose={closeModal}
+        title={creating ? 'Novo produto' : 'Editar produto'}
         footer={
           <>
             <button
-              onClick={() => setEditing(null)}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted"
+              onClick={closeModal}
+              disabled={submitting}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               onClick={submit}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+              disabled={submitting}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Salvar
+              {submitting ? 'Salvando…' : 'Salvar'}
             </button>
           </>
         }
@@ -169,53 +315,90 @@ export function ProductsView() {
               className="pos-input"
             />
           </Field>
-          <Field label="Código de barras">
-            <input
-              value={form.barcode}
-              onChange={(e) => setForm({ ...form, barcode: e.target.value })}
-              className="pos-input font-mono"
-            />
-          </Field>
           <Field label="SKU">
             <input
               value={form.sku}
+              disabled={!creating}
               onChange={(e) => setForm({ ...form, sku: e.target.value })}
+              className="pos-input font-mono disabled:opacity-50"
+            />
+          </Field>
+          <Field label="Unidade">
+            <input
+              value={form.unit}
+              onChange={(e) => setForm({ ...form, unit: e.target.value })}
               className="pos-input font-mono"
             />
           </Field>
-          <Field label="Categoria">
-            <input
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className="pos-input"
-            />
+          <Field label="Categoria" className="col-span-2">
+            <div className="flex gap-2">
+              <select
+                value={form.categoryId}
+                onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+                className="pos-input flex-1"
+              >
+                <option value="">Nenhuma</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-1.5 flex gap-2">
+              <input
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="Nova categoria"
+                className="pos-input flex-1 text-xs"
+              />
+              <button
+                onClick={handleCreateCategory}
+                disabled={!newCategoryName.trim() || createCategory.isPending}
+                className="shrink-0 rounded-lg border border-border px-3 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Criar
+              </button>
+            </div>
           </Field>
-          <Field label="Preço (R$)">
+          <Field label={`Preço${activePriceList ? '' : ' (sem tabela ativa)'}`}>
             <input
               inputMode="decimal"
-              value={form.price || ''}
-              onChange={(e) =>
-                setForm({ ...form, price: Number(e.target.value.replace(',', '.')) || 0 })
-              }
-              className="pos-input font-mono"
+              value={form.price}
+              disabled={!activePriceList}
+              onChange={(e) => setForm({ ...form, price: e.target.value.replace(',', '.') })}
+              placeholder={!creating && editingPrice.isLoading ? '…' : 'R$ 0,00'}
+              className="pos-input font-mono disabled:opacity-50"
             />
           </Field>
-          <Field label="Estoque">
+          <Field label={creating ? 'Código de barras' : 'Adicionar código de barras'}>
             <input
-              inputMode="numeric"
-              value={form.stock || ''}
-              onChange={(e) => setForm({ ...form, stock: Number(e.target.value) || 0 })}
+              value={form.newBarcode}
+              onChange={(e) => setForm({ ...form, newBarcode: e.target.value })}
               className="pos-input font-mono"
             />
           </Field>
+          {!creating && (
+            <label className="col-span-2 flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.active}
+                onChange={(e) => setForm({ ...form, active: e.target.checked })}
+              />
+              Produto ativo
+            </label>
+          )}
         </div>
+        {formError && (
+          <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{formError}</p>
+        )}
       </Modal>
 
-      {/* Confirmar exclusão */}
+      {/* Confirmar desativação */}
       <Modal
         open={confirmDelete !== null}
         onClose={() => setConfirmDelete(null)}
-        title="Excluir produto"
+        title="Desativar produto"
         size="sm"
         footer={
           <>
@@ -226,19 +409,18 @@ export function ProductsView() {
               Cancelar
             </button>
             <button
-              onClick={() => {
-                if (confirmDelete) deleteProduct(confirmDelete)
-                setConfirmDelete(null)
-              }}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent/90"
+              onClick={deactivate}
+              disabled={submitting}
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Excluir
+              Desativar
             </button>
           </>
         }
       >
         <p className="text-sm text-muted-foreground">
-          Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.
+          O produto deixa de aparecer na busca de venda e nesta lista. O histórico de vendas já
+          confirmadas não é afetado. Não é possível excluir um produto definitivamente.
         </p>
       </Modal>
     </div>

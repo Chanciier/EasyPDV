@@ -12,11 +12,13 @@ import { CreateProductUseCase } from "./application/use-cases/create-product.use
 import { UpdateProductUseCase } from "./application/use-cases/update-product.use-case.js";
 import { AddBarcodeUseCase } from "./application/use-cases/add-barcode.use-case.js";
 import { FindProductByBarcodeUseCase } from "./application/use-cases/find-product-by-barcode.use-case.js";
+import { GetProductUseCase } from "./application/use-cases/get-product.use-case.js";
 import { SearchProductsUseCase } from "./application/use-cases/search-products.use-case.js";
 import { CreateCategoryUseCase } from "./application/use-cases/create-category.use-case.js";
 import { ListCategoriesUseCase } from "./application/use-cases/list-categories.use-case.js";
 import { CreatePriceListUseCase } from "./application/use-cases/create-price-list.use-case.js";
 import { UpsertPriceListItemUseCase } from "./application/use-cases/upsert-price-list-item.use-case.js";
+import { GetActivePriceListUseCase } from "./application/use-cases/get-active-price-list.use-case.js";
 import { ResolvePriceUseCase } from "./application/use-cases/resolve-price.use-case.js";
 
 @Module({
@@ -26,11 +28,13 @@ import { ResolvePriceUseCase } from "./application/use-cases/resolve-price.use-c
     UpdateProductUseCase,
     AddBarcodeUseCase,
     FindProductByBarcodeUseCase,
+    GetProductUseCase,
     SearchProductsUseCase,
     CreateCategoryUseCase,
     ListCategoriesUseCase,
     CreatePriceListUseCase,
     UpsertPriceListItemUseCase,
+    GetActivePriceListUseCase,
     ResolvePriceUseCase,
     { provide: PRODUCT_REPOSITORY, useClass: PrismaProductRepository },
     { provide: CATEGORY_REPOSITORY, useClass: PrismaCategoryRepository },

@@ -2,14 +2,35 @@
 
 import { useEffect } from 'react'
 import { CheckCircle2 } from 'lucide-react'
+import type { Sale, PaymentMethod } from '@easypdv/shared-types'
 import { Modal } from './ui/modal'
-import { formatBRL, PAYMENT_LABELS, type Sale } from '@/lib/pos-data'
+import { formatBRL } from '@/lib/pos-data'
 
+const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+  dinheiro: 'Dinheiro',
+  cartao: 'Cartão',
+  pix: 'PIX',
+  outro: 'Outro',
+}
+
+/**
+ * `received`/`change` só existem no cupom, não no backend (Payment guarda
+ * apenas `amount` — o valor efetivamente aplicado à venda). São calculados
+ * no momento do pagamento em sale-view.tsx e passados aqui só para exibição.
+ */
 export function ReceiptDialog({
   sale,
+  productNames,
+  paymentMethod,
+  received,
+  change,
   onClose,
 }: {
   sale: Sale | null
+  productNames: Record<string, string>
+  paymentMethod: PaymentMethod | null
+  received: number
+  change: number
   onClose: () => void
 }) {
   useEffect(() => {
@@ -43,10 +64,12 @@ export function ReceiptDialog({
         <div className="space-y-4">
           <div className="flex flex-col items-center gap-2 py-2 text-center">
             <CheckCircle2 className="size-12 text-primary" />
-            <div>
-              <p className="text-sm text-muted-foreground">Troco</p>
-              <p className="font-mono text-3xl font-bold">{formatBRL(sale.change)}</p>
-            </div>
+            {change > 0 && (
+              <div>
+                <p className="text-sm text-muted-foreground">Troco</p>
+                <p className="font-mono text-3xl font-bold">{formatBRL(change)}</p>
+              </div>
+            )}
           </div>
 
           <div className="rounded-lg border border-dashed border-border p-4 font-mono text-xs">
@@ -56,30 +79,23 @@ export function ReceiptDialog({
             </div>
             <div className="my-2 border-t border-dashed border-border" />
             {sale.items.map((i) => (
-              <div key={i.productId} className="flex justify-between py-0.5">
+              <div key={i.id} className="flex justify-between py-0.5">
                 <span className="truncate pr-2">
-                  {i.qty}x {i.name}
+                  {i.quantity}x {productNames[i.productId] ?? i.productId}
                 </span>
-                <span>{formatBRL(i.price * i.qty - i.discount)}</span>
+                <span>{formatBRL(i.totalAmount)}</span>
               </div>
             ))}
             <div className="my-2 border-t border-dashed border-border" />
-            {sale.discount > 0 && (
-              <div className="flex justify-between text-accent">
-                <span>Desconto</span>
-                <span>- {formatBRL(sale.discount)}</span>
-              </div>
-            )}
             <div className="flex justify-between text-sm font-bold">
               <span>Total</span>
-              <span>{formatBRL(sale.total)}</span>
+              <span>{formatBRL(sale.totalAmount)}</span>
             </div>
-            <div className="mt-1 flex justify-between text-muted-foreground">
-              <span>{PAYMENT_LABELS[sale.paymentMethod]}</span>
-              <span>Recebido {formatBRL(sale.received)}</span>
-            </div>
-            {sale.customerName && (
-              <div className="mt-2 text-muted-foreground">Cliente: {sale.customerName}</div>
+            {paymentMethod && (
+              <div className="mt-1 flex justify-between text-muted-foreground">
+                <span>{PAYMENT_LABELS[paymentMethod]}</span>
+                <span>Recebido {formatBRL(received)}</span>
+              </div>
             )}
           </div>
         </div>

@@ -1,59 +1,157 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, Plus, Minus, Trash2, ShoppingCart, User, Percent } from 'lucide-react'
-import { usePOS } from './pos-provider'
-import { formatBRL, normalize, type Product, type Sale, type PaymentMethod } from '@/lib/pos-data'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Lock } from 'lucide-react'
+import type { PaymentMethod, Product, Sale, SaleItem } from '@easypdv/shared-types'
+import { formatBRL } from '@/lib/pos-data'
+import { ApiError } from '@/lib/api-client'
+import { useCartStore } from '@/lib/cart-store'
+import { useCurrentCashSession } from '@/hooks/use-cash'
+import {
+  findProductByBarcode,
+  useAddSaleItem,
+  useCancelSale,
+  useConfirmSale,
+  useProductPrices,
+  useProductSearch,
+  useProducts,
+  useRegisterPayment,
+  useRemoveSaleItem,
+  useSale,
+  useStartSale,
+} from '@/hooks/use-sales'
 import { PaymentDialog } from './payment-dialog'
 import { ReceiptDialog } from './receipt-dialog'
 
+type Receipt = { sale: Sale; method: PaymentMethod; received: number; change: number }
+
 export function SaleView() {
-  const {
-    products,
-    cart,
-    addToCart,
-    updateQty,
-    removeItem,
-    setItemDiscount,
-    clearCart,
-    subtotal,
-    totalDiscount,
-    total,
-    customers,
-    selectedCustomerId,
-    setSelectedCustomerId,
-    checkout,
-  } = usePOS()
+  const { data: cashSession } = useCurrentCashSession()
+  const cashOpen = cashSession?.status === 'open'
+
+  const { saleId, selectedProductId, setSaleId, setSelectedProductId, reset } = useCartStore()
+  const { data: sale } = useSale(saleId)
+
+  const startSale = useStartSale()
+  const addItem = useAddSaleItem()
+  const removeItemMut = useRemoveSaleItem()
+  const registerPayment = useRegisterPayment()
+  const confirmSale = useConfirmSale()
+  const cancelSale = useCancelSale()
 
   const [term, setTerm] = useState('')
+  const [debouncedTerm, setDebouncedTerm] = useState('')
   const [highlight, setHighlight] = useState(0)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [pendingProductId, setPendingProductId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [paymentOpen, setPaymentOpen] = useState(false)
-  const [lastSale, setLastSale] = useState<Sale | null>(null)
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false)
+  const [paymentError, setPaymentError] = useState<string | null>(null)
+  const [receipt, setReceipt] = useState<Receipt | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
-  const matches = useMemo(() => {
-    const t = normalize(term)
-    if (!t) return []
-    return products
-      .filter(
-        (p) =>
-          normalize(p.name).includes(t) ||
-          normalize(p.sku).includes(t) ||
-          p.barcode.includes(t),
-      )
-      .slice(0, 6)
-  }, [term, products])
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedTerm(term), 250)
+    return () => clearTimeout(t)
+  }, [term])
 
-  const addProduct = (p: Product) => {
-    addToCart(p)
-    setSelectedId(p.id)
-    setTerm('')
-    setHighlight(0)
-    searchRef.current?.focus()
+  const { data: searchResults = [] } = useProductSearch(debouncedTerm)
+  const matches = useMemo(() => searchResults.slice(0, 6), [searchResults])
+  const priceQueries = useProductPrices(matches.map((p) => p.id))
+
+  const itemProductIds = useMemo(() => sale?.items.map((i) => i.productId) ?? [], [sale])
+  // Inclui os itens do último cupom também: reset() já limpou o saleId do
+  // carrinho no momento em que o ReceiptDialog é exibido, então sale.items
+  // sozinho não cobre mais os produtos daquela venda confirmada.
+  const receiptProductIds = useMemo(
+    () => receipt?.sale.items.map((i) => i.productId) ?? [],
+    [receipt],
+  )
+  const allProductIds = useMemo(
+    () => Array.from(new Set([...itemProductIds, ...receiptProductIds])),
+    [itemProductIds, receiptProductIds],
+  )
+  const productQueries = useProducts(allProductIds)
+  const productNames = useMemo(() => {
+    const map: Record<string, string> = {}
+    allProductIds.forEach((id, idx) => {
+      const name = productQueries[idx]?.data?.name
+      if (name) map[id] = name
+    })
+    return map
+  }, [allProductIds, productQueries])
+
+  const describeError = (e: unknown, fallback: string) => {
+    if (e instanceof ApiError) return e.code
+    if (e instanceof Error) return e.message
+    return fallback
   }
 
-  const handleSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  async function ensureSale(): Promise<Sale> {
+    if (sale) return sale
+    if (!cashSession || cashSession.status !== 'open') {
+      throw new Error('Abra o caixa antes de iniciar uma venda.')
+    }
+    const newSale = await startSale.mutateAsync({ cashSessionId: cashSession.id })
+    setSaleId(newSale.id)
+    return newSale
+  }
+
+  async function changeQty(currentSaleId: string, item: SaleItem, newQty: number) {
+    setPendingProductId(item.productId)
+    try {
+      if (newQty <= 0) {
+        await removeItemMut.mutateAsync({ saleId: currentSaleId, itemId: item.id })
+        if (selectedProductId === item.productId) setSelectedProductId(null)
+      } else {
+        await removeItemMut.mutateAsync({ saleId: currentSaleId, itemId: item.id })
+        await addItem.mutateAsync({ saleId: currentSaleId, productId: item.productId, quantity: newQty })
+      }
+    } catch (e) {
+      setError(describeError(e, 'Erro ao atualizar quantidade.'))
+    } finally {
+      setPendingProductId(null)
+    }
+  }
+
+  async function removeLine(item: SaleItem) {
+    if (!sale) return
+    setPendingProductId(item.productId)
+    try {
+      await removeItemMut.mutateAsync({ saleId: sale.id, itemId: item.id })
+      if (selectedProductId === item.productId) setSelectedProductId(null)
+    } catch (e) {
+      setError(describeError(e, 'Erro ao remover item.'))
+    } finally {
+      setPendingProductId(null)
+    }
+  }
+
+  async function addProduct(product: Product) {
+    setError(null)
+    setAdding(true)
+    try {
+      const currentSale = await ensureSale()
+      const existing = currentSale.items.find((i) => i.productId === product.id)
+      if (existing) {
+        await changeQty(currentSale.id, existing, existing.quantity + 1)
+      } else {
+        await addItem.mutateAsync({ saleId: currentSale.id, productId: product.id, quantity: 1 })
+      }
+      setSelectedProductId(product.id)
+      setTerm('')
+      setDebouncedTerm('')
+      setHighlight(0)
+      searchRef.current?.focus()
+    } catch (e) {
+      setError(describeError(e, 'Erro ao adicionar item.'))
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const handleSearchKey = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setHighlight((h) => Math.min(h + 1, matches.length - 1))
@@ -67,6 +165,18 @@ export function SaleView() {
         addProduct(matches[highlight])
       } else if (matches.length === 1) {
         addProduct(matches[0])
+      } else if (term.trim()) {
+        // Sem match por nome/SKU — busca não indexa código de barras, tenta leitura exata.
+        setError(null)
+        setAdding(true)
+        try {
+          const { product } = await findProductByBarcode(term.trim())
+          await addProduct(product)
+        } catch {
+          setError('Produto não encontrado.')
+        } finally {
+          setAdding(false)
+        }
       }
     } else if (e.key === 'Escape') {
       e.stopPropagation()
@@ -88,37 +198,71 @@ export function SaleView() {
       }
       if (e.key === 'F4') {
         e.preventDefault()
-        if (cart.length > 0) setPaymentOpen(true)
+        if (sale && sale.items.length > 0) setPaymentOpen(true)
         return
       }
       if (typing) return
 
       if (e.key === 'Escape') {
-        if (cart.length > 0) clearCart()
+        if (sale) cancelSale.mutate(sale.id, { onSuccess: () => reset() })
       } else if (e.key === '+' || e.key === '=') {
-        const item = cart.find((i) => i.productId === selectedId)
-        if (item) updateQty(item.productId, item.qty + 1)
+        const item = sale?.items.find((i) => i.productId === selectedProductId)
+        if (item && sale) changeQty(sale.id, item, item.quantity + 1)
       } else if (e.key === '-') {
-        const item = cart.find((i) => i.productId === selectedId)
-        if (item) updateQty(item.productId, item.qty - 1)
+        const item = sale?.items.find((i) => i.productId === selectedProductId)
+        if (item && sale) changeQty(sale.id, item, item.quantity - 1)
       } else if (e.key === 'Delete') {
-        if (selectedId) removeItem(selectedId)
+        const item = sale?.items.find((i) => i.productId === selectedProductId)
+        if (item) removeLine(item)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [cart, selectedId, clearCart, updateQty, removeItem])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sale, selectedProductId])
 
-  const handleConfirmPayment = (method: PaymentMethod, received: number) => {
-    const sale = checkout(method, received)
-    setPaymentOpen(false)
-    if (sale) setLastSale(sale)
+  const handleConfirmPayment = async (method: PaymentMethod, received: number) => {
+    if (!sale) return
+    setPaymentSubmitting(true)
+    setPaymentError(null)
+    try {
+      await registerPayment.mutateAsync({ saleId: sale.id, method, amount: sale.totalAmount })
+      const confirmed = await confirmSale.mutateAsync(sale.id)
+      setPaymentOpen(false)
+      setReceipt({
+        sale: confirmed,
+        method,
+        received: method === 'dinheiro' ? received : confirmed.totalAmount,
+        change: method === 'dinheiro' ? Math.max(0, received - confirmed.totalAmount) : 0,
+      })
+      reset()
+      setTerm('')
+    } catch (e) {
+      setPaymentError(describeError(e, 'Erro ao confirmar pagamento.'))
+    } finally {
+      setPaymentSubmitting(false)
+    }
   }
+
+  const items = sale?.items ?? []
 
   return (
     <div className="flex h-full min-h-0">
       {/* Coluna esquerda: busca + carrinho */}
       <section className="flex min-w-0 flex-1 flex-col p-4">
+        {!cashOpen && (
+          <div className="mb-3 flex items-center gap-2 rounded-lg bg-muted px-4 py-2.5 text-sm text-muted-foreground">
+            <Lock className="size-4" />
+            Abra o caixa antes de iniciar uma venda.
+          </div>
+        )}
+
+        {error && (
+          <div className="mb-3 rounded-lg bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
         {/* Busca */}
         <div className="relative">
           <div className="flex items-center gap-2 rounded-xl border-2 border-primary/40 bg-card px-3 shadow-sm focus-within:border-primary">
@@ -127,20 +271,23 @@ export function SaleView() {
               ref={searchRef}
               autoFocus
               value={term}
+              disabled={!cashOpen || adding}
               onChange={(e) => {
                 setTerm(e.target.value)
                 setHighlight(0)
               }}
               onKeyDown={handleSearchKey}
               placeholder="Leia o código de barras ou busque por nome / SKU  —  F2"
-              className="h-12 w-full bg-transparent text-base outline-none placeholder:text-muted-foreground"
+              className="h-12 w-full bg-transparent text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
               aria-label="Buscar produto"
             />
           </div>
 
           {matches.length > 0 && (
             <ul className="absolute left-0 right-0 top-14 z-20 overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
-              {matches.map((p, i) => (
+              {matches.map((p, i) => {
+                const price = priceQueries[i]?.data
+                return (
                 <li key={p.id}>
                   <button
                     onMouseEnter={() => setHighlight(i)}
@@ -149,13 +296,15 @@ export function SaleView() {
                       i === highlight ? 'bg-primary/15' : 'hover:bg-muted'
                     }`}
                   >
-                    <span className="font-mono text-xs text-muted-foreground">{p.barcode}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{p.sku}</span>
                     <span className="flex-1 truncate font-medium">{p.name}</span>
-                    <span className="text-xs text-muted-foreground">Est: {p.stock}</span>
-                    <span className="font-mono font-semibold">{formatBRL(p.price)}</span>
+                    <span className="font-mono font-semibold">
+                      {price ? formatBRL(price.effectivePrice) : '…'}
+                    </span>
                   </button>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
         </div>
@@ -171,65 +320,65 @@ export function SaleView() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {cart.length === 0 ? (
+            {items.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
                 <ShoppingCart className="size-10 opacity-30" />
                 <p className="text-sm">Nenhum item. Leia um código ou busque (F2).</p>
               </div>
             ) : (
-              cart.map((item) => {
-                const active = item.productId === selectedId
-                const lineTotal = item.price * item.qty - item.discount
+              items.map((item) => {
+                const active = item.productId === selectedProductId
+                const pending = pendingProductId === item.productId
                 return (
                   <div
-                    key={item.productId}
-                    onClick={() => setSelectedId(item.productId)}
-                    className={`grid cursor-pointer grid-cols-[1fr_5rem_7rem_6rem_2.5rem] items-center gap-2 border-l-2 px-4 py-2.5 text-sm ${
+                    key={item.id}
+                    onClick={() => setSelectedProductId(item.productId)}
+                    className={`grid cursor-pointer grid-cols-[1fr_5rem_7rem_6rem_2.5rem] items-center gap-2 border-l-2 px-4 py-2.5 text-sm transition-opacity ${
                       active ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-muted/50'
-                    }`}
+                    } ${pending ? 'opacity-50' : ''}`}
                   >
                     <div className="min-w-0">
-                      <p className="truncate font-medium">{item.name}</p>
-                      {item.discount > 0 && (
-                        <p className="text-xs text-accent">Desc. {formatBRL(item.discount)}</p>
-                      )}
+                      <p className="truncate font-medium">{productNames[item.productId] ?? '…'}</p>
                     </div>
                     <div className="flex items-center justify-center gap-1">
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          updateQty(item.productId, item.qty - 1)
+                          if (sale) changeQty(sale.id, item, item.quantity - 1)
                         }}
-                        className="grid size-6 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border"
+                        disabled={pending}
+                        className="grid size-6 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed"
                         aria-label="Diminuir"
                       >
                         <Minus className="size-3" />
                       </button>
-                      <span className="w-6 text-center font-mono font-semibold">{item.qty}</span>
+                      <span className="w-6 text-center font-mono font-semibold">{item.quantity}</span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          updateQty(item.productId, item.qty + 1)
+                          if (sale) changeQty(sale.id, item, item.quantity + 1)
                         }}
-                        className="grid size-6 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border"
+                        disabled={pending}
+                        className="grid size-6 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed"
                         aria-label="Aumentar"
                       >
                         <Plus className="size-3" />
                       </button>
                     </div>
                     <span className="text-right font-mono text-muted-foreground">
-                      {formatBRL(item.price)}
+                      {formatBRL(item.unitPrice)}
                     </span>
                     <span className="text-right font-mono font-semibold">
-                      {formatBRL(lineTotal)}
+                      {formatBRL(item.totalAmount)}
                     </span>
                     <div className="flex justify-end">
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          removeItem(item.productId)
+                          removeLine(item)
                         }}
-                        className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                        disabled={pending}
+                        className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed"
                         aria-label="Remover"
                       >
                         <Trash2 className="size-4" />
@@ -243,63 +392,21 @@ export function SaleView() {
         </div>
       </section>
 
-      {/* Coluna direita: cliente + totais */}
+      {/* Coluna direita: totais */}
       <aside className="flex w-80 shrink-0 flex-col gap-4 border-l border-border bg-card/50 p-4">
-        <div>
-          <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <User className="size-3.5" /> Cliente
-          </label>
-          <select
-            value={selectedCustomerId}
-            onChange={(e) => setSelectedCustomerId(e.target.value)}
-            className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/40"
-          >
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {selectedId && (
-          <div>
-            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <Percent className="size-3.5" /> Desconto no item selecionado
-            </label>
-            <input
-              inputMode="decimal"
-              value={cart.find((i) => i.productId === selectedId)?.discount || ''}
-              onChange={(e) =>
-                setItemDiscount(selectedId, Number(e.target.value.replace(',', '.')) || 0)
-              }
-              placeholder="R$ 0,00"
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/40"
-            />
-          </div>
-        )}
-
         <div className="mt-auto space-y-2 rounded-xl bg-card p-4 shadow-sm ring-1 ring-border">
-          <div className="flex justify-between text-sm text-muted-foreground">
-            <span>Subtotal</span>
-            <span className="font-mono">{formatBRL(subtotal)}</span>
-          </div>
-          <div className="flex justify-between text-sm text-accent">
-            <span>Descontos</span>
-            <span className="font-mono">- {formatBRL(totalDiscount)}</span>
-          </div>
-          <div className="flex items-baseline justify-between border-t border-border pt-2">
+          <div className="flex items-baseline justify-between">
             <span className="text-sm font-semibold">Total</span>
-            <span className="font-mono text-3xl font-bold">{formatBRL(total)}</span>
+            <span className="font-mono text-3xl font-bold">{formatBRL(sale?.totalAmount ?? 0)}</span>
           </div>
           <p className="text-right text-xs text-muted-foreground">
-            {cart.reduce((s, i) => s + i.qty, 0)} itens
+            {items.reduce((s, i) => s + i.quantity, 0)} itens
           </p>
         </div>
 
         <button
-          onClick={() => cart.length > 0 && setPaymentOpen(true)}
-          disabled={cart.length === 0}
+          onClick={() => items.length > 0 && setPaymentOpen(true)}
+          disabled={items.length === 0}
           className="flex h-16 items-center justify-center gap-2 rounded-xl bg-accent text-lg font-bold text-accent-foreground shadow-lg transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Finalizar
@@ -309,11 +416,25 @@ export function SaleView() {
 
       <PaymentDialog
         open={paymentOpen}
-        total={total}
-        onClose={() => setPaymentOpen(false)}
+        total={sale?.totalAmount ?? 0}
+        submitting={paymentSubmitting}
+        error={paymentError}
+        onClose={() => {
+          if (!paymentSubmitting) {
+            setPaymentOpen(false)
+            setPaymentError(null)
+          }
+        }}
         onConfirm={handleConfirmPayment}
       />
-      <ReceiptDialog sale={lastSale} onClose={() => setLastSale(null)} />
+      <ReceiptDialog
+        sale={receipt?.sale ?? null}
+        productNames={productNames}
+        paymentMethod={receipt?.method ?? null}
+        received={receipt?.received ?? 0}
+        change={receipt?.change ?? 0}
+        onClose={() => setReceipt(null)}
+      />
     </div>
   )
 }

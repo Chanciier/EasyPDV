@@ -73,6 +73,13 @@ export class PrismaCashRepository implements CashRepositoryPort {
     });
   }
 
+  listMovements(cashSessionId: string): Promise<CashMovementRecord[]> {
+    return this.prisma.cashMovement.findMany({
+      where: { cashSessionId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
   async sumMovements(cashSessionId: string): Promise<{ sangria: number; suprimento: number; ajuste: number }> {
     const movements = await this.prisma.cashMovement.findMany({ where: { cashSessionId } });
     return movements.reduce(

@@ -142,6 +142,11 @@ export interface Sale {
   discountAmount: number;
   createdAt: string;
   confirmedAt: string | null;
+  // O backend sempre devolve a venda com itens/pagamentos embutidos
+  // (GET /sales/:id, GET /sales, POST /sales/:id/*) — refletindo o wire
+  // real aqui evita ficar espalhando "any"/cast pelo frontend (Sprint 9).
+  items: SaleItem[];
+  payments: Payment[];
 }
 
 export interface SaleItem {

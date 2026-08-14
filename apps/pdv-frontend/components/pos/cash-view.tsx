@@ -9,40 +9,54 @@ import {
   PlusCircle,
   MinusCircle,
 } from 'lucide-react'
-import { usePOS } from './pos-provider'
-import { formatBRL, type CashMovementType } from '@/lib/pos-data'
+import type { CashMovementType } from '@easypdv/shared-types'
+import { formatBRL } from '@/lib/pos-data'
+import {
+  useCashRegisters,
+  useCashMovements,
+  useCashSalesTotal,
+  useCloseCashSession,
+  useCurrentCashSession,
+  useOpenCashSession,
+  useRegisterCashMovement,
+} from '@/hooks/use-cash'
 import { Modal } from './ui/modal'
 
 const MOV_LABEL: Record<CashMovementType, string> = {
-  abertura: 'Abertura',
-  venda: 'Venda',
-  suprimento: 'Suprimento',
   sangria: 'Sangria',
-  fechamento: 'Fechamento',
+  suprimento: 'Suprimento',
+  ajuste: 'Ajuste',
 }
 
 export function CashView() {
-  const { cashSession, openCash, closeCash, addCashMovement } = usePOS()
+  const { data: cashSession, isLoading: loadingSession } = useCurrentCashSession()
+  const { data: registers } = useCashRegisters()
+  const { data: movements } = useCashMovements(cashSession?.id)
+  const { data: cashSalesTotal = 0 } = useCashSalesTotal(cashSession?.id)
+  const openMutation = useOpenCashSession()
+  const closeMutation = useCloseCashSession(cashSession?.id)
+  const movementMutation = useRegisterCashMovement(cashSession?.id)
+
   const [openAmount, setOpenAmount] = useState('')
   const [movType, setMovType] = useState<'suprimento' | 'sangria' | null>(null)
   const [movAmount, setMovAmount] = useState('')
   const [movNote, setMovNote] = useState('')
+  const [closeModalOpen, setCloseModalOpen] = useState(false)
+  const [countedAmount, setCountedAmount] = useState('')
 
-  const isOpen = cashSession?.status === 'aberto'
+  const isOpen = cashSession?.status === 'open'
 
   const totals = useMemo(() => {
-    if (!cashSession) return { vendas: 0, suprimentos: 0, sangrias: 0, saldo: 0 }
-    let vendas = 0
+    if (!cashSession) return { suprimentos: 0, sangrias: 0, saldo: 0 }
     let suprimentos = 0
     let sangrias = 0
-    for (const m of cashSession.movements) {
-      if (m.type === 'venda') vendas += m.amount
+    for (const m of movements ?? []) {
       if (m.type === 'suprimento') suprimentos += m.amount
       if (m.type === 'sangria') sangrias += m.amount
     }
-    const saldo = cashSession.openingAmount + vendas + suprimentos - sangrias
-    return { vendas, suprimentos, sangrias, saldo }
-  }, [cashSession])
+    const saldo = cashSession.openingAmount + cashSalesTotal + suprimentos - sangrias
+    return { suprimentos, sangrias, saldo }
+  }, [cashSession, movements, cashSalesTotal])
 
   useEffect(() => {
     if (!isOpen) return
@@ -66,10 +80,31 @@ export function CashView() {
   const confirmMov = () => {
     const amount = Number(movAmount.replace(',', '.')) || 0
     if (amount <= 0 || !movType) return
-    addCashMovement(movType, amount, movNote || MOV_LABEL[movType])
-    setMovType(null)
-    setMovAmount('')
-    setMovNote('')
+    movementMutation.mutate(
+      { type: movType, amount, reason: movNote || undefined },
+      {
+        onSuccess: () => {
+          setMovType(null)
+          setMovAmount('')
+          setMovNote('')
+        },
+      },
+    )
+  }
+
+  const openCash = () => {
+    const registerId = registers?.[0]?.id
+    if (!registerId) return
+    openMutation.mutate({ cashRegisterId: registerId, openingAmount: Number(openAmount.replace(',', '.')) || 0 })
+  }
+
+  const confirmClose = () => {
+    const closingAmount = Number(countedAmount.replace(',', '.')) || 0
+    closeMutation.mutate(closingAmount, { onSuccess: () => setCloseModalOpen(false) })
+  }
+
+  if (loadingSession) {
+    return <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">Carregando…</div>
   }
 
   if (!isOpen) {
@@ -88,17 +123,21 @@ export function CashView() {
             inputMode="decimal"
             value={openAmount}
             onChange={(e) => setOpenAmount(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') openCash(Number(openAmount.replace(',', '.')) || 0)
-            }}
+            onKeyDown={(e) => e.key === 'Enter' && openCash()}
             placeholder="R$ 0,00"
             className="mt-5 w-full rounded-lg border border-input bg-background px-4 py-3 text-center font-mono text-2xl font-bold outline-none focus:border-primary focus:ring-2 focus:ring-ring/40"
           />
+          {openMutation.isError && (
+            <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              Não foi possível abrir o caixa. Tente novamente.
+            </p>
+          )}
           <button
-            onClick={() => openCash(Number(openAmount.replace(',', '.')) || 0)}
-            className="mt-4 w-full rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+            onClick={openCash}
+            disabled={openMutation.isPending || !registers?.[0]}
+            className="mt-4 w-full rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
           >
-            Abrir caixa
+            {openMutation.isPending ? 'Abrindo...' : 'Abrir caixa'}
           </button>
         </div>
       </div>
@@ -106,8 +145,8 @@ export function CashView() {
   }
 
   const cards = [
-    { label: 'Abertura', value: cashSession!.openingAmount, icon: Wallet, tone: 'text-foreground' },
-    { label: 'Vendas (dinheiro)', value: totals.vendas, icon: ArrowUpCircle, tone: 'text-primary-foreground' },
+    { label: 'Abertura', value: cashSession.openingAmount, icon: Wallet, tone: 'text-foreground' },
+    { label: 'Vendas (dinheiro)', value: cashSalesTotal, icon: ArrowUpCircle, tone: 'text-primary-foreground' },
     { label: 'Suprimentos', value: totals.suprimentos, icon: PlusCircle, tone: 'text-foreground' },
     { label: 'Sangrias', value: totals.sangrias, icon: MinusCircle, tone: 'text-accent' },
   ]
@@ -154,7 +193,10 @@ export function CashView() {
             <kbd className="rounded bg-muted px-1 font-mono text-[10px]">F3</kbd>
           </button>
           <button
-            onClick={closeCash}
+            onClick={() => {
+              setCountedAmount(totals.saldo.toFixed(2).replace('.', ','))
+              setCloseModalOpen(true)
+            }}
             className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90"
           >
             <Lock className="size-4" /> Fechar caixa
@@ -168,9 +210,13 @@ export function CashView() {
           Movimentações do caixa
         </div>
         <div className="divide-y divide-border overflow-y-auto">
-          {cashSession!.movements.map((m) => {
+          {(movements ?? []).length === 0 && (
+            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+              Nenhuma sangria ou suprimento registrado ainda.
+            </p>
+          )}
+          {(movements ?? []).map((m) => {
             const negative = m.type === 'sangria'
-            const positive = m.type === 'venda' || m.type === 'suprimento'
             return (
               <div key={m.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
                 {negative ? (
@@ -179,7 +225,7 @@ export function CashView() {
                   <ArrowUpCircle className="size-4 text-primary-foreground" />
                 )}
                 <span className="w-24 font-medium">{MOV_LABEL[m.type]}</span>
-                <span className="flex-1 truncate text-muted-foreground">{m.note}</span>
+                <span className="flex-1 truncate text-muted-foreground">{m.reason}</span>
                 <span className="text-xs text-muted-foreground">
                   {new Date(m.createdAt).toLocaleTimeString('pt-BR', {
                     hour: '2-digit',
@@ -188,10 +234,10 @@ export function CashView() {
                 </span>
                 <span
                   className={`w-28 text-right font-mono font-semibold ${
-                    negative ? 'text-accent' : positive ? 'text-foreground' : 'text-muted-foreground'
+                    negative ? 'text-accent' : 'text-foreground'
                   }`}
                 >
-                  {m.type === 'fechamento' ? '—' : `${negative ? '-' : '+'} ${formatBRL(m.amount)}`}
+                  {negative ? '-' : '+'} {formatBRL(m.amount)}
                 </span>
               </div>
             )
@@ -214,9 +260,10 @@ export function CashView() {
             </button>
             <button
               onClick={confirmMov}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+              disabled={movementMutation.isPending}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
             >
-              Confirmar
+              {movementMutation.isPending ? 'Confirmando...' : 'Confirmar'}
             </button>
           </>
         }
@@ -244,6 +291,58 @@ export function CashView() {
               className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/40"
             />
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={closeModalOpen}
+        onClose={() => setCloseModalOpen(false)}
+        title="Fechar caixa"
+        size="sm"
+        footer={
+          <>
+            <button
+              onClick={() => setCloseModalOpen(false)}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={confirmClose}
+              disabled={closeMutation.isPending}
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-50"
+            >
+              {closeMutation.isPending ? 'Fechando...' : 'Confirmar fechamento'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Saldo esperado: <span className="font-mono font-semibold text-foreground">{formatBRL(totals.saldo)}</span>
+          </p>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Valor contado no caixa</label>
+            <input
+              autoFocus
+              inputMode="decimal"
+              value={countedAmount}
+              onChange={(e) => setCountedAmount(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && confirmClose()}
+              placeholder="R$ 0,00"
+              className="w-full rounded-lg border border-input bg-background px-4 py-2.5 font-mono text-lg font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-ring/40"
+            />
+          </div>
+          {(() => {
+            const counted = Number(countedAmount.replace(',', '.')) || 0
+            const diff = counted - totals.saldo
+            if (Math.abs(diff) < 0.005) return null
+            return (
+              <p className={`text-sm ${diff < 0 ? 'text-accent' : 'text-primary-foreground'}`}>
+                {diff < 0 ? 'Falta' : 'Sobra'} {formatBRL(Math.abs(diff))} em relação ao esperado.
+              </p>
+            )
+          })()}
         </div>
       </Modal>
     </div>

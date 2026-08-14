@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import type { SaleStatus } from "@easypdv/shared-types";
 import {
   addSaleItemSchema,
   registerPaymentSchema,
@@ -15,6 +16,7 @@ import { AddSaleItemUseCase } from "../../application/use-cases/add-sale-item.us
 import { RemoveSaleItemUseCase } from "../../application/use-cases/remove-sale-item.use-case.js";
 import { CancelSaleUseCase } from "../../application/use-cases/cancel-sale.use-case.js";
 import { GetSaleUseCase } from "../../application/use-cases/get-sale.use-case.js";
+import { ListSalesUseCase } from "../../application/use-cases/list-sales.use-case.js";
 import { RegisterPaymentUseCase } from "../../application/use-cases/register-payment.use-case.js";
 import { ConfirmSaleUseCase } from "../../application/use-cases/confirm-sale.use-case.js";
 
@@ -27,9 +29,15 @@ export class SalesController {
     private readonly removeSaleItemUseCase: RemoveSaleItemUseCase,
     private readonly cancelSaleUseCase: CancelSaleUseCase,
     private readonly getSaleUseCase: GetSaleUseCase,
+    private readonly listSalesUseCase: ListSalesUseCase,
     private readonly registerPaymentUseCase: RegisterPaymentUseCase,
     private readonly confirmSaleUseCase: ConfirmSaleUseCase,
   ) {}
+
+  @Get()
+  list(@Query("status") status?: SaleStatus, @Query("cashSessionId") cashSessionId?: string) {
+    return this.listSalesUseCase.execute({ status, cashSessionId });
+  }
 
   @Get(":id")
   get(@Param("id") id: string) {

@@ -39,6 +39,8 @@ export interface CashRepositoryPort {
   closeSession(id: string, closingAmount: number, expectedAmount: number): Promise<CashSession>;
 
   registerMovement(data: RegisterCashMovementData): Promise<CashMovementRecord>;
+  /** Mais recente primeiro (Sprint 9 — tela de Caixa). */
+  listMovements(cashSessionId: string): Promise<CashMovementRecord[]>;
   sumMovements(cashSessionId: string): Promise<{ sangria: number; suprimento: number; ajuste: number }>;
 }
 

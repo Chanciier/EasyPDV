@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import {
   createPriceListSchema,
   upsertPriceListItemSchema,
@@ -11,6 +11,7 @@ import { RolesGuard } from "../../../identity/infrastructure/guards/roles.guard.
 import { Roles } from "../../../identity/infrastructure/decorators/roles.decorator.js";
 import { CreatePriceListUseCase } from "../../application/use-cases/create-price-list.use-case.js";
 import { UpsertPriceListItemUseCase } from "../../application/use-cases/upsert-price-list-item.use-case.js";
+import { GetActivePriceListUseCase } from "../../application/use-cases/get-active-price-list.use-case.js";
 
 @Controller("price-lists")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -19,7 +20,13 @@ export class PriceListsController {
   constructor(
     private readonly createPriceListUseCase: CreatePriceListUseCase,
     private readonly upsertPriceListItemUseCase: UpsertPriceListItemUseCase,
+    private readonly getActivePriceListUseCase: GetActivePriceListUseCase,
   ) {}
+
+  @Get("active")
+  getActive() {
+    return this.getActivePriceListUseCase.execute();
+  }
 
   @Post()
   create(@Body(new ZodValidationPipe(createPriceListSchema)) body: CreatePriceListInput) {

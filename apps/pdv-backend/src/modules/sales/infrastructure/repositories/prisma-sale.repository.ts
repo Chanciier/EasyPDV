@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { SaleSyncPayload } from "@easypdv/shared-types";
+import type { SaleStatus, SaleSyncPayload } from "@easypdv/shared-types";
 import { Sale } from "../../domain/entities/sale.entity.js";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
 import type {
@@ -19,6 +19,19 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
   async findById(id: string): Promise<Sale | null> {
     const record = await this.prisma.sale.findUnique({ where: { id }, include: SALE_INCLUDE });
     return record ? toDomainSale(record) : null;
+  }
+
+  async findMany(params?: { status?: SaleStatus; cashSessionId?: string; limit?: number }): Promise<Sale[]> {
+    const records = await this.prisma.sale.findMany({
+      where: {
+        status: params?.status,
+        cashSessionId: params?.cashSessionId,
+      },
+      include: SALE_INCLUDE,
+      orderBy: { createdAt: "desc" },
+      take: params?.limit ?? 100,
+    });
+    return records.map(toDomainSale);
   }
 
   async start(data: StartSaleData): Promise<Sale> {
@@ -146,6 +159,18 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
 
     const confirmed = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
     return toDomainSale(confirmed);
+  }
+
+  async sumCashPayments(cashSessionId: string): Promise<number> {
+    const result = await this.prisma.payment.aggregate({
+      where: {
+        method: "dinheiro",
+        status: "aprovado",
+        sale: { cashSessionId, status: "confirmed" },
+      },
+      _sum: { amount: true },
+    });
+    return result._sum.amount ?? 0;
   }
 
   private async recalculateTotal(saleId: string): Promise<Sale> {

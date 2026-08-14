@@ -14,11 +14,13 @@ import { CloseCashSessionUseCase } from "./application/use-cases/close-cash-sess
 import { RegisterCashMovementUseCase } from "./application/use-cases/register-cash-movement.use-case.js";
 import { GetCurrentCashSessionUseCase } from "./application/use-cases/get-current-cash-session.use-case.js";
 import { GetCashSessionUseCase } from "./application/use-cases/get-cash-session.use-case.js";
+import { ListCashMovementsUseCase } from "./application/use-cases/list-cash-movements.use-case.js";
 import { StartSaleUseCase } from "./application/use-cases/start-sale.use-case.js";
 import { AddSaleItemUseCase } from "./application/use-cases/add-sale-item.use-case.js";
 import { RemoveSaleItemUseCase } from "./application/use-cases/remove-sale-item.use-case.js";
 import { CancelSaleUseCase } from "./application/use-cases/cancel-sale.use-case.js";
 import { GetSaleUseCase } from "./application/use-cases/get-sale.use-case.js";
+import { ListSalesUseCase } from "./application/use-cases/list-sales.use-case.js";
 import { RegisterPaymentUseCase } from "./application/use-cases/register-payment.use-case.js";
 import { ConfirmSaleUseCase } from "./application/use-cases/confirm-sale.use-case.js";
 
@@ -33,11 +35,13 @@ import { ConfirmSaleUseCase } from "./application/use-cases/confirm-sale.use-cas
     RegisterCashMovementUseCase,
     GetCurrentCashSessionUseCase,
     GetCashSessionUseCase,
+    ListCashMovementsUseCase,
     StartSaleUseCase,
     AddSaleItemUseCase,
     RemoveSaleItemUseCase,
     CancelSaleUseCase,
     GetSaleUseCase,
+    ListSalesUseCase,
     RegisterPaymentUseCase,
     ConfirmSaleUseCase,
     { provide: CASH_REPOSITORY, useClass: PrismaCashRepository },

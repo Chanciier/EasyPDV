@@ -2,6 +2,10 @@
 
 ## PDV local (`apps/pdv-backend`, porta 4001)
 
+CORS liberado (`app.enableCors()`, Sprint 9) — o frontend Electron/Next roda em outra origem
+(`http://localhost:3000` em dev) e autentica via Bearer token, não cookie, então CORS aberto
+não expõe sessão a terceiros.
+
 ```
 /health
 POST   /auth/login     { email, password } → { user, tokens }
@@ -11,16 +15,25 @@ GET    /auth/me        (Bearer token) → usuário atual
 POST   /users          (Bearer + role administrador) → cria usuário
 PATCH  /users/:id/role (Bearer + role administrador) → troca o papel
 
-GET    /products/search?query=          (Bearer) → busca textual por nome/SKU
+GET    /products/search?query=          (Bearer) → busca textual por nome/SKU, só produtos ativos, até 25
+                                         (sem paginação — limite conhecido do V1, ver docs/CHANGELOG.md Sprint 9)
 GET    /products/by-barcode/:code       (Bearer) → produto + preço vigente
-GET    /products/:id/price              (Bearer) → preço vigente (ResolvePriceUseCase)
+GET    /products/:id/price              (Bearer) → preço vigente (ResolvePriceUseCase); 404 se produto
+                                         sem preço na tabela ativa
+GET    /products/:id                    (Bearer) → produto por id (Sprint 9 — frontend precisava resolver
+                                         nome de produto a partir de SaleItem.productId)
 POST   /products                        (Bearer + administrador/gerente) → cria produto
-PATCH  /products/:id                    (Bearer + administrador/gerente) → atualiza produto
-POST   /products/:id/barcodes           (Bearer + administrador/gerente) → adiciona código de barras
+PATCH  /products/:id                    (Bearer + administrador/gerente) → atualiza produto; `active:false`
+                                         é o único "excluir" que existe — sem hard delete (SKU pode estar
+                                         referenciado em vendas já confirmadas)
+POST   /products/:id/barcodes           (Bearer + administrador/gerente) → adiciona código de barras;
+                                         sem endpoint pra listar os códigos já cadastrados de um produto
 
 GET    /categories                      (Bearer) → lista
 POST   /categories                      (Bearer + administrador/gerente) → cria
 
+GET    /price-lists/active              (Bearer + administrador/gerente) → tabela de preço ativa (Sprint 9 —
+                                         frontend precisava do id pra gravar preço de produto); null se nenhuma
 POST   /price-lists                     (Bearer + administrador/gerente) → cria tabela de preço
 POST   /price-lists/:id/items           (Bearer + administrador/gerente) → define/atualiza preço de um produto
 
@@ -37,12 +50,19 @@ POST   /cash/registers                  (Bearer + administrador/gerente) → cri
 GET    /cash/sessions/current           (Bearer) → sessão aberta do operador atual (null se nenhuma)
 GET    /cash/sessions/:id               (Bearer) → detalhe da sessão
 POST   /cash/sessions                   (Bearer) → abre sessão (409 se já existe uma aberta no caixa)
-PATCH  /cash/sessions/:id/close         (Bearer) → fecha sessão; calcula expectedAmount = abertura + suprimento - sangria + ajuste
+PATCH  /cash/sessions/:id/close         (Bearer) → fecha sessão; calcula expectedAmount = abertura + suprimento - sangria + ajuste + vendas em dinheiro
 POST   /cash/sessions/:id/movements     (Bearer) → registra sangria/suprimento/ajuste
+GET    /cash/sessions/:id/movements     (Bearer) → lista movimentos da sessão, mais recente primeiro (Sprint 9)
 
+GET    /sales?status=&cashSessionId=    (Bearer) → lista vendas (até 100, mais recente primeiro), com
+                                         itens e pagamentos embutidos — usado pelo Histórico e pelo cálculo
+                                         de "vendas em dinheiro" do Caixa no frontend (Sprint 9)
 GET    /sales/:id                       (Bearer) → detalhe da venda com itens e pagamentos
 POST   /sales                           (Bearer) → inicia venda (status draft), exige cashSessionId aberta
-POST   /sales/:id/items                 (Bearer) → adiciona item (preço resolvido via Catalog); só em draft
+POST   /sales/:id/items                 (Bearer) → adiciona item (preço resolvido via Catalog); só em draft;
+                                         sempre cria uma linha nova — não existe endpoint pra alterar
+                                         quantidade de um item já existente (o frontend contorna com
+                                         DELETE + POST, ver docs/FRONTEND.md)
 DELETE /sales/:id/items/:itemId         (Bearer) → remove item; só em draft
 POST   /sales/:id/payments              (Bearer) → registra pagamento (dinheiro/cartao/pix/outro); só em draft;
                                          cartão em V1 é declarado manualmente já "aprovado" (sem TEF, ver ROADMAP.md)

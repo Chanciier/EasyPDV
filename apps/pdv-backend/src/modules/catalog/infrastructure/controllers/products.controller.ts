@@ -14,6 +14,7 @@ import { Roles } from "../../../identity/infrastructure/decorators/roles.decorat
 import { AddBarcodeUseCase } from "../../application/use-cases/add-barcode.use-case.js";
 import { CreateProductUseCase } from "../../application/use-cases/create-product.use-case.js";
 import { FindProductByBarcodeUseCase } from "../../application/use-cases/find-product-by-barcode.use-case.js";
+import { GetProductUseCase } from "../../application/use-cases/get-product.use-case.js";
 import { ResolvePriceUseCase } from "../../application/use-cases/resolve-price.use-case.js";
 import { SearchProductsUseCase } from "../../application/use-cases/search-products.use-case.js";
 import { UpdateProductUseCase } from "../../application/use-cases/update-product.use-case.js";
@@ -29,6 +30,7 @@ export class ProductsController {
     private readonly findProductByBarcodeUseCase: FindProductByBarcodeUseCase,
     private readonly searchProductsUseCase: SearchProductsUseCase,
     private readonly resolvePriceUseCase: ResolvePriceUseCase,
+    private readonly getProductUseCase: GetProductUseCase,
   ) {}
 
   @Get("search")
@@ -47,6 +49,12 @@ export class ProductsController {
   @Get(":id/price")
   price(@Param("id") id: string) {
     return this.resolvePriceUseCase.execute(id);
+  }
+
+  @Get(":id")
+  async get(@Param("id") id: string) {
+    const product = await this.getProductUseCase.execute(id);
+    return toProductResponseDto(product);
   }
 
   @Post()

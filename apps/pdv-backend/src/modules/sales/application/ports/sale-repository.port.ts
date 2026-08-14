@@ -1,4 +1,4 @@
-import type { PaymentMethod } from "@easypdv/shared-types";
+import type { PaymentMethod, SaleStatus } from "@easypdv/shared-types";
 import type { Sale } from "../../domain/entities/sale.entity.js";
 
 export interface StartSaleData {
@@ -23,6 +23,8 @@ export interface RegisterPaymentData {
 
 export interface SaleRepositoryPort {
   findById(id: string): Promise<Sale | null>;
+  /** Histórico (Sprint 9) — mais recente primeiro. */
+  findMany(params?: { status?: SaleStatus; cashSessionId?: string; limit?: number }): Promise<Sale[]>;
   start(data: StartSaleData): Promise<Sale>;
   addItem(data: AddSaleItemData): Promise<Sale>;
   removeItem(saleId: string, itemId: string): Promise<Sale>;
@@ -35,6 +37,8 @@ export interface SaleRepositoryPort {
    * o que resolve a race condition de concorrência documentada desde a Sprint 3.
    */
   confirm(saleId: string, warehouseId: string): Promise<Sale>;
+  /** Soma pagamentos "dinheiro" aprovados de vendas confirmadas na sessão — usado no fechamento de caixa (Sprint 9). */
+  sumCashPayments(cashSessionId: string): Promise<number>;
 }
 
 export const SALE_REPOSITORY = Symbol("SALE_REPOSITORY");

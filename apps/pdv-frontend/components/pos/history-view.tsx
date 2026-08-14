@@ -2,27 +2,44 @@
 
 import { useMemo, useState } from 'react'
 import { Search, Receipt, TrendingUp, Hash } from 'lucide-react'
-import { usePOS } from './pos-provider'
-import { formatBRL, PAYMENT_LABELS, normalize, type Sale } from '@/lib/pos-data'
+import type { PaymentMethod, Sale } from '@easypdv/shared-types'
+import { formatBRL, normalize } from '@/lib/pos-data'
+import { useProducts, useSalesList } from '@/hooks/use-sales'
 import { Modal } from './ui/modal'
 
+const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+  dinheiro: 'Dinheiro',
+  cartao: 'Cartão',
+  pix: 'PIX',
+  outro: 'Outro',
+}
+
 export function HistoryView() {
-  const { sales } = usePOS()
+  const { data: sales = [], isLoading } = useSalesList({ status: 'confirmed' })
   const [term, setTerm] = useState('')
   const [detail, setDetail] = useState<Sale | null>(null)
 
   const filtered = useMemo(() => {
     const t = normalize(term)
     if (!t) return sales
-    return sales.filter(
-      (s) =>
-        normalize(s.id).includes(t) ||
-        (s.customerName ? normalize(s.customerName).includes(t) : false) ||
-        normalize(PAYMENT_LABELS[s.paymentMethod]).includes(t),
-    )
+    return sales.filter((s) => {
+      const paymentLabel = s.payments[0] ? PAYMENT_LABELS[s.payments[0].method] : ''
+      return normalize(s.id).includes(t) || normalize(paymentLabel).includes(t)
+    })
   }, [term, sales])
 
-  const totalSold = sales.reduce((sum, s) => sum + s.total, 0)
+  const totalSold = sales.reduce((sum, s) => sum + s.totalAmount, 0)
+
+  const detailProductIds = useMemo(() => detail?.items.map((i) => i.productId) ?? [], [detail])
+  const detailProductQueries = useProducts(detailProductIds)
+  const detailProductNames = useMemo(() => {
+    const map: Record<string, string> = {}
+    detailProductIds.forEach((id, idx) => {
+      const name = detailProductQueries[idx]?.data?.name
+      if (name) map[id] = name
+    })
+    return map
+  }, [detailProductIds, detailProductQueries])
 
   return (
     <div className="flex h-full flex-col p-4">
@@ -42,13 +59,13 @@ export function HistoryView() {
         <input
           value={term}
           onChange={(e) => setTerm(e.target.value)}
-          placeholder="Buscar por cupom, cliente ou forma de pagamento"
+          placeholder="Buscar por cupom ou forma de pagamento"
           className="h-10 w-full bg-transparent text-sm outline-none"
         />
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card">
-        <div className="grid grid-cols-[7rem_1fr_9rem_8rem_7rem] items-center gap-3 border-b border-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="grid grid-cols-[10rem_1fr_9rem_8rem_7rem] items-center gap-3 border-b border-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           <span>Cupom</span>
           <span>Cliente</span>
           <span>Pagamento</span>
@@ -56,7 +73,7 @@ export function HistoryView() {
           <span className="text-right">Total</span>
         </div>
         <div className="h-full overflow-y-auto pb-16">
-          {filtered.length === 0 ? (
+          {!isLoading && filtered.length === 0 ? (
             <div className="flex h-40 flex-col items-center justify-center gap-2 text-muted-foreground">
               <Receipt className="size-8 opacity-30" />
               <p className="text-sm">Nenhuma venda registrada ainda.</p>
@@ -66,18 +83,24 @@ export function HistoryView() {
               <button
                 key={s.id}
                 onClick={() => setDetail(s)}
-                className="grid w-full grid-cols-[7rem_1fr_9rem_8rem_7rem] items-center gap-3 border-b border-border/60 px-4 py-2.5 text-left text-sm hover:bg-muted/50"
+                className="grid w-full grid-cols-[10rem_1fr_9rem_8rem_7rem] items-center gap-3 border-b border-border/60 px-4 py-2.5 text-left text-sm hover:bg-muted/50"
               >
-                <span className="font-mono text-xs text-muted-foreground">{s.id}</span>
-                <span className="truncate font-medium">{s.customerName ?? 'Consumidor Final'}</span>
-                <span className="text-muted-foreground">{PAYMENT_LABELS[s.paymentMethod]}</span>
-                <span className="text-muted-foreground">
-                  {new Date(s.createdAt).toLocaleTimeString('pt-BR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                <span className="truncate font-mono text-xs text-muted-foreground">{s.id}</span>
+                <span className="truncate font-medium">
+                  {s.customerId ?? 'Consumidor Final'}
                 </span>
-                <span className="text-right font-mono font-semibold">{formatBRL(s.total)}</span>
+                <span className="text-muted-foreground">
+                  {s.payments[0] ? PAYMENT_LABELS[s.payments[0].method] : '—'}
+                </span>
+                <span className="text-muted-foreground">
+                  {s.confirmedAt
+                    ? new Date(s.confirmedAt).toLocaleTimeString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : '—'}
+                </span>
+                <span className="text-right font-mono font-semibold">{formatBRL(s.totalAmount)}</span>
               </button>
             ))
           )}
@@ -100,39 +123,29 @@ export function HistoryView() {
         {detail && (
           <div className="space-y-3 font-mono text-sm">
             <div className="flex justify-between text-muted-foreground">
-              <span>{new Date(detail.createdAt).toLocaleString('pt-BR')}</span>
-              <span>{detail.operator}</span>
+              <span>{detail.confirmedAt ? new Date(detail.confirmedAt).toLocaleString('pt-BR') : '—'}</span>
+              <span>{detail.customerId ?? 'Consumidor Final'}</span>
             </div>
             <div className="border-t border-dashed border-border" />
             {detail.items.map((i) => (
-              <div key={i.productId} className="flex justify-between">
+              <div key={i.id} className="flex justify-between">
                 <span className="truncate pr-2">
-                  {i.qty}x {i.name}
+                  {i.quantity}x {detailProductNames[i.productId] ?? '…'}
                 </span>
-                <span>{formatBRL(i.price * i.qty - i.discount)}</span>
+                <span>{formatBRL(i.totalAmount)}</span>
               </div>
             ))}
             <div className="border-t border-dashed border-border" />
-            <div className="flex justify-between text-muted-foreground">
-              <span>Subtotal</span>
-              <span>{formatBRL(detail.subtotal)}</span>
-            </div>
-            {detail.discount > 0 && (
-              <div className="flex justify-between text-accent">
-                <span>Desconto</span>
-                <span>- {formatBRL(detail.discount)}</span>
-              </div>
-            )}
             <div className="flex justify-between text-base font-bold">
               <span>Total</span>
-              <span>{formatBRL(detail.total)}</span>
+              <span>{formatBRL(detail.totalAmount)}</span>
             </div>
-            <div className="flex justify-between text-muted-foreground">
-              <span>{PAYMENT_LABELS[detail.paymentMethod]}</span>
-              <span>
-                Recebido {formatBRL(detail.received)} · Troco {formatBRL(detail.change)}
-              </span>
-            </div>
+            {detail.payments.map((p) => (
+              <div key={p.id} className="flex justify-between text-muted-foreground">
+                <span>{PAYMENT_LABELS[p.method]}</span>
+                <span>{formatBRL(p.amount)}</span>
+              </div>
+            ))}
           </div>
         )}
       </Modal>

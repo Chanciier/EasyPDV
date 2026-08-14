@@ -10,9 +10,12 @@ import {
   ScanBarcode,
   Lock,
   Unlock,
+  LogOut,
 } from 'lucide-react'
 import { usePOS } from './pos-provider'
 import { formatBRL } from '@/lib/pos-data'
+import { useAuthStore } from '@/lib/auth-store'
+import { useCurrentCashSession } from '@/hooks/use-cash'
 import { SaleView } from './sale-view'
 import { CashView } from './cash-view'
 import { ProductsView } from './products-view'
@@ -29,7 +32,10 @@ const NAV = [
 ] as const
 
 export function POSShell() {
-  const { view, setView, cashSession, operator } = usePOS()
+  const { view, setView } = usePOS()
+  const { data: cashSession } = useCurrentCashSession()
+  const user = useAuthStore((s) => s.user)
+  const logout = useAuthStore((s) => s.clear)
   const [today, setToday] = useState('')
 
   useEffect(() => {
@@ -61,7 +67,7 @@ export function POSShell() {
     return () => window.removeEventListener('keydown', onKey)
   }, [setView])
 
-  const cashOpen = cashSession?.status === 'aberto'
+  const cashOpen = cashSession?.status === 'open'
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
@@ -119,7 +125,16 @@ export function POSShell() {
               Caixa {cashOpen ? 'aberto' : 'fechado'}
             </span>
           </div>
-          <p className="mt-1 text-sidebar-foreground/50">{operator}</p>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <p className="truncate text-sidebar-foreground/50">{user?.name}</p>
+            <button
+              onClick={logout}
+              title="Sair"
+              className="shrink-0 rounded p-1 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <LogOut className="size-3.5" />
+            </button>
+          </div>
         </div>
       </aside>
 
