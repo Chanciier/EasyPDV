@@ -74,10 +74,17 @@ POST   /sync              recebe uma entrada de sync do SyncOutboxWorker do PDV 
                            PDV local ↔ Intermediador ainda não existem (risco aberto, ver docs/ERROR-HANDLING.md)
 GET    /sync/jobs/:id     status de um SyncJob (pending/processing/synced/failed)
 
+GET    /integrations/bling/connect?organizationId=   redireciona (302) pro fluxo de autorização OAuth2 do
+                          Bling; abrir no navegador (não automatizável) — quem autoriza é o dono da conta Bling
+GET    /integrations/bling/callback  recebido pelo Bling após autorização (code+state); troca o code por
+                          token e grava em ErpIntegration
+GET    /integrations/bling/status?organizationId=    { connected, connectedAt, expiresAt }
+
 /organizations    provisionamento de organização/loja
 /terminals        registro/ativação de terminal
-/integrations     conexão com Bling, status, retry de sync-job
 ```
+
+Todos os endpoints acima estão sem autenticação por enquanto (mesmo risco aberto desde a Sprint 6 — ver docs/ERROR-HANDLING.md).
 
 Schemas de request/response ficam em `packages/shared-validation` (Zod) e tipos em `packages/shared-types` — a mesma definição vale para o backend validar e o frontend tipar o client HTTP.
 

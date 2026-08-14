@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import type { SaleSyncPayload } from "@easypdv/shared-types";
 import { Sale } from "../../domain/entities/sale.entity.js";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
 import type {
@@ -107,12 +108,30 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
       }),
     ]);
 
-    const syncPayload = JSON.stringify({
+    // sku/name vêm do Catalog (outro módulo) só pra este payload de sync —
+    // o Intermediador nunca acessa o SQLite local, precisa desses dados já
+    // "achatados" aqui pra resolver o produto no Bling (ver BlingSyncAdapter).
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: sale.items.map((item) => item.productId) } },
+      select: { id: true, sku: true, name: true },
+    });
+    const productById = new Map(products.map((product) => [product.id, product]));
+
+    const syncPayload: SaleSyncPayload = {
       saleId,
       totalAmount: sale.totalAmount,
       confirmedAt: confirmedAt.toISOString(),
-      items: sale.items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
-    });
+      items: sale.items.map((item) => {
+        const product = productById.get(item.productId);
+        return {
+          productId: item.productId,
+          sku: product?.sku ?? "",
+          name: product?.name ?? "",
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+        };
+      }),
+    };
 
     await this.prisma.$transaction([
       this.prisma.sale.update({
@@ -121,7 +140,7 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
       }),
       ...stockOperations,
       this.prisma.syncOutbox.create({
-        data: { entityType: "sale", entityId: saleId, payload: syncPayload },
+        data: { entityType: "sale", entityId: saleId, payload: JSON.stringify(syncPayload) },
       }),
     ]);
 

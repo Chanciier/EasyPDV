@@ -1,7 +1,6 @@
 // Intermediador — hospedado no Railway, banco PostgreSQL.
 // Único lugar que fala com o Bling. Schema inicial do Sprint 0: só o suficiente
-// para uma organização/loja se registrar. ErpIntegration e ErpSyncMapping
-// entram no Sprint 7 (Adapter Bling) — ver Claude/Projetos/EasyPDV/Modelo de Domínio.md no cofre Obsidian.
+// para uma organização/loja se registrar — ver Claude/Projetos/EasyPDV/Modelo de Domínio.md no cofre Obsidian.
 
 // output custom: pdv-backend e intermediador dependem da mesma versão de
 // @prisma/client, que o pnpm deduplica para uma única pasta física no store —
@@ -24,6 +23,9 @@ model Organization {
   status    String   @default("active")
   createdAt DateTime @default(now())
   stores    Store[]
+
+  erpIntegrations  ErpIntegration[]
+  erpSyncMappings  ErpSyncMapping[]
 }
 
 model Store {
@@ -34,6 +36,53 @@ model Store {
   document       String?
   timezone       String       @default("America/Sao_Paulo")
   createdAt      DateTime     @default(now())
+}
+
+// Só "bling" tem Adapter implementado na V1 — os demais valores existem pra
+// bater com packages/shared-types (ErpProvider) e não exigir migration
+// quando um segundo ERP for suportado de verdade. Ver docs/ROADMAP.md.
+enum ErpProvider {
+  bling
+  tiny
+  omie
+  conta_azul
+  proprio
+}
+
+// Credenciais OAuth por organização (Sprint 7). refresh_token do Bling roda
+// a cada uso — accessToken/refreshToken/expiresAt são sempre sobrescritos
+// juntos no BlingOAuthClient, nunca atualizados parcialmente.
+model ErpIntegration {
+  id             String      @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  provider       ErpProvider @default(bling)
+  accessToken    String
+  refreshToken   String
+  expiresAt      DateTime
+  connectedAt    DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([organizationId, provider])
+}
+
+// Cache de resolução de IDs externos — evita resolver produto/contato/forma
+// de pagamento no Bling a cada sincronização. localEntityType: "product"
+// (SKU → id do produto no Bling) | "sale" (Sale.id local → id do pedido de
+// venda criado no Bling). Fica fora dos agregados de domínio de propósito —
+// é o que impede o Bling de contaminar a arquitetura (ver docs/ARCHITECTURE.md).
+model ErpSyncMapping {
+  id              String      @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  provider        ErpProvider @default(bling)
+  localEntityType String
+  localEntityId   String
+  externalId      String
+  createdAt       DateTime    @default(now())
+
+  @@unique([organizationId, provider, localEntityType, localEntityId])
+  @@index([organizationId, provider, localEntityType])
 }
 
 enum SyncStatus {

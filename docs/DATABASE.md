@@ -26,12 +26,12 @@ Duas bases de dados distintas, sem se misturar. Ver [ARCHITECTURE.md](./ARCHITEC
 | Entidade | Finalidade | Observações |
 |---|---|---|
 | Organization / Store | Espelho central de todas as lojas de todos os clientes | Multi-tenant real — isolar por `organizationId` em toda query |
-| ErpIntegration | Config de qual ERP está conectado por organização | provider: bling \| tiny \| omie \| conta_azul \| proprio (só bling na V1) — **Sprint 7** |
-| ErpSyncMapping | Mapeamento de ID externo (Bling) por entidade local | **Fica fora dos agregados de domínio** — é o que impede o Bling de contaminar a arquitetura — **Sprint 7** |
-| SyncJob | Job de sincronização (outbox durável) | **Implementado na Sprint 6.** status: pending → processing → synced \| failed. `@@unique([entityType, entityId])` garante idempotência — reenvio do mesmo entityId (timeout ambíguo do lado do PDV local) não duplica o job. Enfileirado no BullMQ (fila "sync", 5 tentativas com backoff exponencial); processado por um `NoopSyncTargetAdapter` até a Sprint 7 trocar pelo Adapter Bling real, sem tocar no processor nem nos use-cases (Ports & Adapters) |
+| ErpIntegration | Credenciais OAuth do Bling por organização | **Implementado na Sprint 7.** accessToken/refreshToken/expiresAt — o Bling rotaciona o refresh_token a cada uso, os dois tokens são sempre sobrescritos juntos (`BlingTokenProviderService`). `@@unique([organizationId, provider])` |
+| ErpSyncMapping | Cache de ID externo (Bling) por entidade local | **Implementado na Sprint 7.** localEntityType: "product" (SKU→id do produto), "contact" ("Consumidor Final"→id), "sale" (Sale.id local→id do pedido de venda criado). Fica fora dos agregados de domínio de propósito — é o que impede o Bling de contaminar a arquitetura |
+| SyncJob | Job de sincronização (outbox durável) | status: pending → processing → synced \| failed. `@@unique([entityType, entityId])` garante idempotência — reenvio do mesmo entityId (timeout ambíguo do lado do PDV local) não duplica o job. Enfileirado no BullMQ (fila "sync", 5 tentativas com backoff exponencial); processado pelo `BlingSyncTargetAdapter` real desde a Sprint 7 (antes, `NoopSyncTargetAdapter` só provava a fila — continua no código como dublê de teste) |
 
 ## Evento central
 
-`SaleConfirmed` é o gatilho para: débito de estoque (mesma transação local), auditoria (mesma transação local, ainda não implementada), impressão do comprovante não-fiscal (imediato, ainda não implementada), e gravação no SyncOutbox local (**implementado na Sprint 6** — assíncrono → Intermediador → Bling → emissão fiscal; o Adapter Bling real entra na Sprint 7, até lá o Intermediador só prova a fila ponta a ponta com um processor no-op).
+`SaleConfirmed` é o gatilho para: débito de estoque (mesma transação local), auditoria (mesma transação local, ainda não implementada), impressão do comprovante não-fiscal (imediato, ainda não implementada), e gravação no SyncOutbox local (Sprint 6) → Intermediador → **Bling (Adapter real desde a Sprint 7)** → emissão fiscal (ainda não implementada).
 
 Ver [EVENTS.md](./EVENTS.md) para o catálogo completo de eventos.

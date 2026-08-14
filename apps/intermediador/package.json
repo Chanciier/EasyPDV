@@ -11,7 +11,11 @@
     "typecheck": "tsc --noEmit",
     "test": "echo \"no tests yet\"",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "tsx prisma/seed.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@easypdv/shared-types": "workspace:*",
@@ -38,6 +42,7 @@
     "eslint": "^9.18.0",
     "pino-pretty": "^13.0.0",
     "prisma": "^6.2.1",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }
 }

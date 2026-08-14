@@ -1,7 +1,8 @@
 import { Module } from "@nestjs/common";
 import { BullModule } from "@nestjs/bullmq";
+import { ErpIntegrationModule } from "../erp-integration/erp-integration.module.js";
+import { BlingSyncTargetAdapter } from "../erp-integration/infrastructure/adapters/bling/bling-sync-target.adapter.js";
 import { SyncController } from "./infrastructure/controllers/sync.controller.js";
-import { NoopSyncTargetAdapter } from "./infrastructure/adapters/noop/noop-sync-target.adapter.js";
 import { BullSyncQueueAdapter } from "./infrastructure/queues/bull-sync-queue.adapter.js";
 import { SyncProcessor } from "./infrastructure/processors/sync.processor.js";
 import { PrismaSyncJobRepository } from "./infrastructure/repositories/prisma-sync-job.repository.js";
@@ -14,7 +15,7 @@ import { ProcessSyncJobUseCase } from "./application/use-cases/process-sync-job.
 import { SYNC_QUEUE_NAME } from "./sync.constants.js";
 
 @Module({
-  imports: [BullModule.registerQueue({ name: SYNC_QUEUE_NAME })],
+  imports: [BullModule.registerQueue({ name: SYNC_QUEUE_NAME }), ErpIntegrationModule],
   controllers: [SyncController],
   providers: [
     RequestSyncUseCase,
@@ -23,7 +24,10 @@ import { SYNC_QUEUE_NAME } from "./sync.constants.js";
     SyncProcessor,
     { provide: SYNC_JOB_REPOSITORY, useClass: PrismaSyncJobRepository },
     { provide: SYNC_QUEUE, useClass: BullSyncQueueAdapter },
-    { provide: SYNC_TARGET, useClass: NoopSyncTargetAdapter },
+    // Sprint 7: Adapter Bling real substitui o NoopSyncTargetAdapter (Sprint 6) —
+    // este último continua no código como dublê de teste pra ambientes sem
+    // credenciais Bling (ver infrastructure/adapters/noop/).
+    { provide: SYNC_TARGET, useExisting: BlingSyncTargetAdapter },
   ],
 })
 export class SyncModule {}

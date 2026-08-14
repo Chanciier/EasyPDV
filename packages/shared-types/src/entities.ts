@@ -208,3 +208,23 @@ export interface SyncJob {
   createdAt: string;
   updatedAt: string;
 }
+
+// Contrato interno do payload de SyncOutbox/SyncJob quando entityType="sale"
+// (Sprint 7) — gravado pelo PrismaSaleRepository.confirm() no PDV local,
+// consumido pelo BlingSyncAdapter no Intermediador. sku/name/unitPrice
+// existem aqui porque o Intermediador nunca tem acesso ao Catalog local —
+// precisa desses dados "achatados" pra resolver o produto no Bling.
+export interface SaleSyncPayloadItem {
+  productId: string;
+  sku: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface SaleSyncPayload {
+  saleId: string;
+  totalAmount: number;
+  confirmedAt: string;
+  items: SaleSyncPayloadItem[];
+}
