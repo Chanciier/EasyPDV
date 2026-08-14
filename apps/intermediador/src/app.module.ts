@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { BullModule } from "@nestjs/bullmq";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { APP_FILTER } from "@nestjs/core";
+import { ScheduleModule } from "@nestjs/schedule";
 import { LoggerModule } from "nestjs-pino";
 import { DomainExceptionFilter } from "./common/filters/domain-exception.filter.js";
 import { ErpIntegrationModule } from "./modules/erp-integration/erp-integration.module.js";
@@ -12,6 +13,7 @@ import { PrismaModule } from "./prisma/prisma.module.js";
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     LoggerModule.forRoot({
       pinoHttp: {
         transport: process.env.NODE_ENV !== "production" ? { target: "pino-pretty" } : undefined,

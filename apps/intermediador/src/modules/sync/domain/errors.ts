@@ -6,3 +6,10 @@ export class SyncJobNotFoundError extends DomainError {
     super(`SyncJob ${id} não encontrado`);
   }
 }
+
+export class SyncJobNotRetryableError extends DomainError {
+  readonly kind = "conflict";
+  constructor(id: string, status: string) {
+    super(`SyncJob ${id} está "${status}" — só jobs "failed" podem ser retentados manualmente`);
+  }
+}

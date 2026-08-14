@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { Prisma } from "../../../../generated/prisma/index.js";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
-import type { SyncJob } from "../../domain/entities/sync-job.entity.js";
+import type { SyncJob, SyncJobStatus } from "../../domain/entities/sync-job.entity.js";
 import type {
   SyncJobRepositoryPort,
   UpsertPendingSyncJobData,
@@ -45,6 +45,22 @@ export class PrismaSyncJobRepository implements SyncJobRepositoryPort {
     return record ? toDomainSyncJob(record) : null;
   }
 
+  async findMany(params?: { status?: SyncJobStatus; limit?: number }): Promise<SyncJob[]> {
+    const records = await this.prisma.syncJob.findMany({
+      where: params?.status ? { status: params.status } : undefined,
+      orderBy: { createdAt: "asc" },
+      take: params?.limit ?? 100,
+    });
+    return records.map(toDomainSyncJob);
+  }
+
+  async findOrphanedProcessing(olderThan: Date): Promise<SyncJob[]> {
+    const records = await this.prisma.syncJob.findMany({
+      where: { status: "processing", updatedAt: { lt: olderThan } },
+    });
+    return records.map(toDomainSyncJob);
+  }
+
   async markProcessing(id: string): Promise<void> {
     await this.prisma.syncJob.update({
       where: { id },
@@ -58,6 +74,14 @@ export class PrismaSyncJobRepository implements SyncJobRepositoryPort {
 
   async markFailed(id: string, error: string): Promise<void> {
     await this.prisma.syncJob.update({ where: { id }, data: { status: "failed", lastError: error } });
+  }
+
+  async resetToPending(id: string): Promise<boolean> {
+    const result = await this.prisma.syncJob.updateMany({
+      where: { id, status: "failed" },
+      data: { status: "pending", lastError: null },
+    });
+    return result.count > 0;
   }
 
   private async findByEntity(entityType: string, entityId: string): Promise<SyncJob | null> {

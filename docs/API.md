@@ -53,8 +53,9 @@ POST   /sales/:id/confirm               (Bearer) → confirma a venda: exige ite
 POST   /sales/:id/cancel                (Bearer) → cancela; só em draft
 
 GET    /sync/outbox?status=             (Bearer + administrador/gerente/tecnico) → lista entradas do
-                                         outbox local (visibilidade/depuração — base da Central de Erros
-                                         de Sincronização da Sprint 8)
+                                         outbox local (Central de Erros de Sincronização, Sprint 8)
+POST   /sync/outbox/:id/retry           (Bearer + administrador/gerente/tecnico) → retry manual; só
+                                         entradas "failed" (409 se não estiver, 404 se não existir)
 
 /customers        + /:id/sales
 /fiscal           documents/:saleId, reissue, cancel
@@ -72,7 +73,12 @@ POST   /sync              recebe uma entrada de sync do SyncOutboxWorker do PDV 
                            (idempotente por entityType+entityId) e enfileira no BullMQ (fila "sync");
                            SEM autenticação por enquanto — provisionamento de terminal e autenticação
                            PDV local ↔ Intermediador ainda não existem (risco aberto, ver docs/ERROR-HANDLING.md)
+GET    /sync/jobs?status=  lista SyncJobs (Central de Erros de Sincronização, Sprint 8)
 GET    /sync/jobs/:id     status de um SyncJob (pending/processing/synced/failed)
+POST   /sync/jobs/:id/retry  retry manual; só jobs "failed" (409 se não estiver, 404 se não existir) —
+                           reset + reenfileira via UPDATE condicional atômico, evita dois retries
+                           paralelos criarem pedidos duplicados no Bling (bug real encontrado e
+                           corrigido nesta sprint, ver docs/CHANGELOG.md)
 
 GET    /integrations/bling/connect?organizationId=   redireciona (302) pro fluxo de autorização OAuth2 do
                           Bling; abrir no navegador (não automatizável) — quem autoriza é o dono da conta Bling

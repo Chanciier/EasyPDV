@@ -7,12 +7,14 @@ import { SYNC_GATEWAY } from "./application/ports/sync-gateway.port.js";
 import { SYNC_OUTBOX_REPOSITORY } from "./application/ports/sync-outbox-repository.port.js";
 import { FlushSyncOutboxUseCase } from "./application/use-cases/flush-sync-outbox.use-case.js";
 import { ListSyncOutboxUseCase } from "./application/use-cases/list-sync-outbox.use-case.js";
+import { RetrySyncOutboxEntryUseCase } from "./application/use-cases/retry-sync-outbox-entry.use-case.js";
 
 @Module({
   controllers: [SyncController],
   providers: [
     FlushSyncOutboxUseCase,
     ListSyncOutboxUseCase,
+    RetrySyncOutboxEntryUseCase,
     SyncOutboxWorker,
     { provide: SYNC_OUTBOX_REPOSITORY, useClass: PrismaSyncOutboxRepository },
     { provide: SYNC_GATEWAY, useClass: HttpSyncGateway },

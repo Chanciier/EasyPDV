@@ -12,6 +12,11 @@ const MAX_ATTEMPTS = 5;
 export class PrismaSyncOutboxRepository implements SyncOutboxRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
 
+  async findById(id: string) {
+    const record = await this.prisma.syncOutbox.findUnique({ where: { id } });
+    return record ? toDomainSyncOutboxEntry(record) : null;
+  }
+
   async findMany(params?: { status?: SyncOutboxStatus; limit?: number }) {
     const records = await this.prisma.syncOutbox.findMany({
       where: params?.status ? { status: params.status } : undefined,
@@ -39,5 +44,13 @@ export class PrismaSyncOutboxRepository implements SyncOutboxRepositoryPort {
         status: attempts >= MAX_ATTEMPTS ? "failed" : "pending",
       },
     });
+  }
+
+  async resetToPending(id: string): Promise<boolean> {
+    const result = await this.prisma.syncOutbox.updateMany({
+      where: { id, status: "failed" },
+      data: { status: "pending", attempts: 0, lastError: null },
+    });
+    return result.count > 0;
   }
 }
