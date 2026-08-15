@@ -29,6 +29,8 @@ apps/intermediador/src/generated/
 # Electron
 apps/electron/dist/
 apps/electron/out/
+apps/electron/dist-installer/
+apps/electron/resources-build/
 
 # OS
 .DS_Store

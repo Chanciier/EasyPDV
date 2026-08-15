@@ -77,6 +77,17 @@ GET    /sync/outbox?status=             (Bearer + administrador/gerente/tecnico)
 POST   /sync/outbox/:id/retry           (Bearer + administrador/gerente/tecnico) → retry manual; só
                                          entradas "failed" (409 se não estiver, 404 se não existir)
 
+GET    /provisioning/status             SEM auth — chamado pelo Electron (main process) antes de
+                                         qualquer login existir. { activated, organizationId, storeId,
+                                         storeName }. Sprint 10.
+POST   /provisioning/activate           SEM auth (mesma razão) → { code, terminalName? }. Chama
+                                         POST /terminals/activate no Intermediador e persiste o resultado
+                                         (incluindo a apiKey em texto puro) em StoreIdentity local; 409 se
+                                         este terminal já foi ativado antes (uma linha só, ver docs/DATABASE.md)
+GET    /provisioning/busy-status        SEM auth → { hasOpenCashSession }, qualquer caixa do terminal (não
+                                         escopado por operador). Consultado pelo Electron antes de aplicar
+                                         uma atualização baixada — nunca no meio de uma venda.
+
 /customers        + /:id/sales
 /fiscal           documents/:saleId, reissue, cancel
 /reports          sales, cash-sessions, stock, dashboard
@@ -88,17 +99,20 @@ POST   /sync/outbox/:id/retry           (Bearer + administrador/gerente/tecnico)
 
 ```
 /health
-POST   /sync              recebe uma entrada de sync do SyncOutboxWorker do PDV local
-                           { entityType, entityId, payload, storeId? } → cria/reaproveita um SyncJob
-                           (idempotente por entityType+entityId) e enfileira no BullMQ (fila "sync");
-                           SEM autenticação por enquanto — provisionamento de terminal e autenticação
-                           PDV local ↔ Intermediador ainda não existem (risco aberto, ver docs/ERROR-HANDLING.md)
-GET    /sync/jobs?status=  lista SyncJobs (Central de Erros de Sincronização, Sprint 8)
+POST   /sync              chamado pelo SyncOutboxWorker do PDV local — exige apiKey de terminal
+                           (Sprint 10, TerminalApiKeyGuard, header X-Terminal-Api-Key; 401 sem ela ou
+                           inválida) { entityType, entityId, payload } → cria/reaproveita um SyncJob
+                           (idempotente por entityType+entityId) e enfileira no BullMQ (fila "sync").
+                           storeId nunca vem do body — é o do terminal autenticado (fecha o risco #6
+                           de Decisões e Riscos Abertos, ver docs/CHANGELOG.md Sprint 10)
+GET    /sync/jobs?status=  lista SyncJobs (Central de Erros de Sincronização, Sprint 8) — SEM auth,
+                           é visibilidade/retry pra um administrador, não uma chamada de terminal;
+                           precisaria de auth de admin (ainda não existe), risco aberto e rastreado
 GET    /sync/jobs/:id     status de um SyncJob (pending/processing/synced/failed)
 POST   /sync/jobs/:id/retry  retry manual; só jobs "failed" (409 se não estiver, 404 se não existir) —
                            reset + reenfileira via UPDATE condicional atômico, evita dois retries
                            paralelos criarem pedidos duplicados no Bling (bug real encontrado e
-                           corrigido nesta sprint, ver docs/CHANGELOG.md)
+                           corrigido na Sprint 8, ver docs/CHANGELOG.md)
 
 GET    /integrations/bling/connect?organizationId=   redireciona (302) pro fluxo de autorização OAuth2 do
                           Bling; abrir no navegador (não automatizável) — quem autoriza é o dono da conta Bling
@@ -106,11 +120,20 @@ GET    /integrations/bling/callback  recebido pelo Bling após autorização (co
                           token e grava em ErpIntegration
 GET    /integrations/bling/status?organizationId=    { connected, connectedAt, expiresAt }
 
-/organizations    provisionamento de organização/loja
-/terminals        registro/ativação de terminal
+POST   /organizations                     SEM auth (bootstrapping — sem UI de admin ainda, uso via
+                                           curl/Postman) { name, document? } → cria Organization. Sprint 10.
+POST   /organizations/:id/activation-codes  { storeId } (loja existente, novo terminal na mesma loja) OU
+                                           { storeName } (cria loja nova) → gera um código de 8 caracteres
+                                           (alfabeto sem 0/O/1/I/L), expira em 30min, uso único
+POST   /terminals/activate                { code, terminalName? } → valida o código (404 inválido, 409
+                                           expirado ou já usado — UPDATE condicional atômico evita corrida
+                                           em duas ativações simultâneas com o mesmo código), cria Terminal
+                                           e retorna { terminalId, organizationId, storeId, storeName,
+                                           apiKey } — apiKey em texto puro só nesta resposta, nunca
+                                           persistida aqui (só o hash SHA-256, Terminal.apiKeyHash)
 ```
 
-Todos os endpoints acima estão sem autenticação por enquanto (mesmo risco aberto desde a Sprint 6 — ver docs/ERROR-HANDLING.md).
+Endpoints de `/organizations` e `/terminals` seguem sem autenticação (bootstrapping manual, sem UI de admin ainda). Os demais endpoints sem `(Bearer)`/apiKey explícitos acima seguem sem autenticação (mesmo risco aberto desde a Sprint 6 — ver docs/ERROR-HANDLING.md); `POST /sync` é o único endpoint do Intermediador com autenticação real até agora (apiKey de terminal, Sprint 10).
 
 Schemas de request/response ficam em `packages/shared-validation` (Zod) e tipos em `packages/shared-types` — a mesma definição vale para o backend validar e o frontend tipar o client HTTP.
 

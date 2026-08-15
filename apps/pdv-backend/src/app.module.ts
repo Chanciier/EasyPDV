@@ -8,6 +8,7 @@ import { CatalogModule } from "./modules/catalog/catalog.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { IdentityModule } from "./modules/identity/identity.module.js";
 import { InventoryModule } from "./modules/inventory/inventory.module.js";
+import { ProvisioningModule } from "./modules/provisioning/provisioning.module.js";
 import { SalesModule } from "./modules/sales/sales.module.js";
 import { SyncModule } from "./modules/sync/sync.module.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
@@ -27,6 +28,7 @@ import { PrismaModule } from "./prisma/prisma.module.js";
     CatalogModule,
     InventoryModule,
     SalesModule,
+    ProvisioningModule,
     SyncModule,
     // Sprint 7+: CustomersModule + FiscalModule
     // Ver docs/MODULES.md para a lista completa de módulos.

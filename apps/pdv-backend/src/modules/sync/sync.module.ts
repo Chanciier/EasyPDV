@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { ProvisioningModule } from "../provisioning/provisioning.module.js";
 import { SyncController } from "./infrastructure/controllers/sync.controller.js";
 import { HttpSyncGateway } from "./infrastructure/gateways/http-sync.gateway.js";
 import { PrismaSyncOutboxRepository } from "./infrastructure/repositories/prisma-sync-outbox.repository.js";
@@ -10,6 +11,7 @@ import { ListSyncOutboxUseCase } from "./application/use-cases/list-sync-outbox.
 import { RetrySyncOutboxEntryUseCase } from "./application/use-cases/retry-sync-outbox-entry.use-case.js";
 
 @Module({
+  imports: [ProvisioningModule],
   controllers: [SyncController],
   providers: [
     FlushSyncOutboxUseCase,

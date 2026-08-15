@@ -214,6 +214,22 @@ export interface SyncJob {
   updatedAt: string;
 }
 
+// Provisionamento de terminal (Sprint 10, Intermediador) — ver docs/ELECTRON.md.
+// O Electron troca um código de ativação gerado por um Administrador por essa
+// identidade; o PDV local persiste o resultado no seu StoreIdentity (SQLite).
+export interface TerminalIdentity {
+  terminalId: string;
+  organizationId: string;
+  storeId: string;
+  storeName: string;
+}
+
+// apiKey só existe uma vez, na resposta de POST /terminals/activate — nunca
+// persistida em texto puro no Intermediador (só o hash), e nunca reexibida.
+export interface TerminalActivationResult extends TerminalIdentity {
+  apiKey: string;
+}
+
 // Contrato interno do payload de SyncOutbox/SyncJob quando entityType="sale"
 // (Sprint 7) — gravado pelo PrismaSaleRepository.confirm() no PDV local,
 // consumido pelo BlingSyncAdapter no Intermediador. sku/name/unitPrice

@@ -11,11 +11,20 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Uma linha só por instalação (um .exe = um terminal = uma loja). apiKey em
+// texto puro (não hash) de propósito: precisa ser lida de volta pelo
+// HttpSyncGateway pra anexar em cada POST /sync no Intermediador — o hash
+// (SHA-256) fica só do lado do Intermediador (Terminal.apiKeyHash), pra
+// validar. Mesma fronteira de confiança do arquivo SQLite inteiro: quem tem
+// acesso ao disco desta máquina já teria acesso a tudo (vendas, senha hash
+// etc.), então não ganha nada mantendo isso num cofre à parte nesta Sprint.
 model StoreIdentity {
   id             String   @id @default(cuid())
   organizationId String
   storeId        String
   storeName      String
+  terminalId     String
+  apiKey         String
   activatedAt    DateTime @default(now())
 }
 

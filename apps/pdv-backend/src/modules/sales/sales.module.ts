@@ -15,6 +15,7 @@ import { RegisterCashMovementUseCase } from "./application/use-cases/register-ca
 import { GetCurrentCashSessionUseCase } from "./application/use-cases/get-current-cash-session.use-case.js";
 import { GetCashSessionUseCase } from "./application/use-cases/get-cash-session.use-case.js";
 import { ListCashMovementsUseCase } from "./application/use-cases/list-cash-movements.use-case.js";
+import { GetTerminalBusyStatusUseCase } from "./application/use-cases/get-terminal-busy-status.use-case.js";
 import { StartSaleUseCase } from "./application/use-cases/start-sale.use-case.js";
 import { AddSaleItemUseCase } from "./application/use-cases/add-sale-item.use-case.js";
 import { RemoveSaleItemUseCase } from "./application/use-cases/remove-sale-item.use-case.js";
@@ -36,6 +37,7 @@ import { ConfirmSaleUseCase } from "./application/use-cases/confirm-sale.use-cas
     GetCurrentCashSessionUseCase,
     GetCashSessionUseCase,
     ListCashMovementsUseCase,
+    GetTerminalBusyStatusUseCase,
     StartSaleUseCase,
     AddSaleItemUseCase,
     RemoveSaleItemUseCase,
@@ -47,5 +49,8 @@ import { ConfirmSaleUseCase } from "./application/use-cases/confirm-sale.use-cas
     { provide: CASH_REPOSITORY, useClass: PrismaCashRepository },
     { provide: SALE_REPOSITORY, useClass: PrismaSaleRepository },
   ],
+  // GetTerminalBusyStatusUseCase é consumido pelo ProvisioningController —
+  // leitura entre módulos, mesmo padrão de ResolvePriceUseCase. Ver docs/MODULES.md.
+  exports: [GetTerminalBusyStatusUseCase],
 })
 export class SalesModule {}

@@ -7,9 +7,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
+    "start": "electron .",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "test": "echo \"no tests yet\"",
+    "prepackage": "node scripts/prepare-resources.js",
     "package": "electron-builder"
   },
   "dependencies": {
@@ -34,13 +36,22 @@
       "dist/**/*",
       "resources/**/*"
     ],
+    "extraResources": [
+      { "from": "resources-build/pdv-backend", "to": "pdv-backend" },
+      { "from": "resources-build/pdv-frontend", "to": "pdv-frontend" }
+    ],
     "win": {
       "target": "nsis",
-      "icon": "resources/icon.ico"
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Chanciier",
+      "repo": "EasyPDV"
     }
   }
 }

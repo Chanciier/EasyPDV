@@ -36,6 +36,41 @@ model Store {
   document       String?
   timezone       String       @default("America/Sao_Paulo")
   createdAt      DateTime     @default(now())
+
+  activationCodes ActivationCode[]
+  terminals       Terminal[]
+}
+
+// Provisionamento de terminal (Sprint 10). Um Administrador gera um código
+// (via POST /organizations/:id/activation-codes) e informa ao operador do PC
+// novo; o Electron troca esse código por uma identidade de Terminal
+// permanente em POST /terminals/activate. Curto prazo de validade — não é
+// pra ser reutilizado nem persistir além da ativação em si.
+model ActivationCode {
+  id        String    @id @default(cuid())
+  storeId   String
+  store     Store     @relation(fields: [storeId], references: [id])
+  code      String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// Representa um PC/instalação do Electron ativada contra uma Store. apiKeyHash
+// é SHA-256 (determinístico, não bcrypt) porque a apiKey já nasce
+// alta-entropia/aleatória — o problema aqui é lookup rápido por índice único,
+// não resistência a força bruta sobre senha de baixa entropia (esse é o caso
+// de uso do bcrypt, usado em User.passwordHash). O valor em texto puro só
+// existe uma vez, na resposta de POST /terminals/activate — nunca persistido
+// aqui, só localmente no StoreIdentity (SQLite) do PDV local que o recebeu.
+model Terminal {
+  id          String    @id @default(cuid())
+  storeId     String
+  store       Store     @relation(fields: [storeId], references: [id])
+  name        String    @default("Terminal")
+  apiKeyHash  String    @unique
+  activatedAt DateTime  @default(now())
+  lastSeenAt  DateTime?
 }
 
 // Só "bling" tem Adapter implementado na V1 — os demais valores existem pra

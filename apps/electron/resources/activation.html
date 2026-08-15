@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Ativar terminal — EasyPDV</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f1115;
+    --card: #1a1d24;
+    --border: #2a2e38;
+    --text: #e6e8eb;
+    --muted: #8a8f99;
+    --primary: #4f8cff;
+    --primary-hover: #3d78e6;
+    --danger: #ff5c5c;
+    --success: #3ecf8e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .logo-badge {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--primary);
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    font-size: 15px;
+    color: white;
+  }
+  h1 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0;
+  }
+  p.subtitle {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 4px 0 24px;
+  }
+  label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: var(--text);
+    font-size: 16px;
+    outline: none;
+  }
+  input#code {
+    font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 20px;
+    text-align: center;
+  }
+  input:focus {
+    border-color: var(--primary);
+  }
+  .field { margin-bottom: 16px; }
+  button {
+    width: 100%;
+    padding: 13px;
+    border: none;
+    border-radius: 10px;
+    background: var(--primary);
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  button:hover:not(:disabled) { background: var(--primary-hover); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .message {
+    margin-top: 16px;
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    display: none;
+  }
+  .message.error {
+    display: block;
+    background: rgba(255, 92, 92, 0.12);
+    color: var(--danger);
+  }
+  .message.success {
+    display: block;
+    background: rgba(62, 207, 142, 0.12);
+    color: var(--success);
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <div class="logo-badge">E</div>
+      <h1>Ativar este terminal</h1>
+    </div>
+    <p class="subtitle">
+      Peça o código de ativação a um administrador e digite abaixo. O código expira em 30 minutos.
+    </p>
+
+    <form id="activation-form">
+      <div class="field">
+        <label for="code">Código de ativação</label>
+        <input id="code" name="code" type="text" maxlength="8" autocomplete="off" autofocus placeholder="XXXXXXXX" required />
+      </div>
+      <div class="field">
+        <label for="terminalName">Nome deste terminal (opcional)</label>
+        <input id="terminalName" name="terminalName" type="text" autocomplete="off" placeholder="Caixa 1" />
+      </div>
+      <button id="submit-btn" type="submit">Ativar</button>
+    </form>
+
+    <div id="message" class="message"></div>
+  </div>
+
+  <script>
+    const form = document.getElementById('activation-form');
+    const codeInput = document.getElementById('code');
+    const nameInput = document.getElementById('terminalName');
+    const submitBtn = document.getElementById('submit-btn');
+    const messageEl = document.getElementById('message');
+
+    codeInput.addEventListener('input', () => {
+      codeInput.value = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    });
+
+    function showMessage(text, kind) {
+      messageEl.textContent = text;
+      messageEl.className = 'message ' + kind;
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      submitBtn.disabled = true;
+      showMessage('Ativando…', 'success');
+
+      const code = codeInput.value.trim();
+      const terminalName = nameInput.value.trim();
+
+      try {
+        const response = await fetch('http://127.0.0.1:4001/provisioning/activate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(terminalName ? { code, terminalName } : { code }),
+        });
+        const body = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          showMessage((body && body.message) || ('Erro ' + response.status), 'error');
+          submitBtn.disabled = false;
+          return;
+        }
+
+        showMessage('Terminal ativado! Abrindo o EasyPDV…', 'success');
+        setTimeout(() => {
+          if (window.easypdv && window.easypdv.activationCompleted) {
+            window.easypdv.activationCompleted();
+          }
+        }, 600);
+      } catch (error) {
+        showMessage('Não foi possível falar com o backend local: ' + String(error), 'error');
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

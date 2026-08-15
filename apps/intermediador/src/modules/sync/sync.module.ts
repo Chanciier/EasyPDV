@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { BullModule } from "@nestjs/bullmq";
 import { ErpIntegrationModule } from "../erp-integration/erp-integration.module.js";
+import { OrganizationsModule } from "../organizations/organizations.module.js";
+import { TerminalApiKeyGuard } from "../organizations/infrastructure/guards/terminal-api-key.guard.js";
 import { BlingSyncTargetAdapter } from "../erp-integration/infrastructure/adapters/bling/bling-sync-target.adapter.js";
 import { SyncController } from "./infrastructure/controllers/sync.controller.js";
 import { BullSyncQueueAdapter } from "./infrastructure/queues/bull-sync-queue.adapter.js";
@@ -19,9 +21,14 @@ import { ReconcileOrphanedSyncJobsUseCase } from "./application/use-cases/reconc
 import { SYNC_QUEUE_NAME } from "./sync.constants.js";
 
 @Module({
-  imports: [BullModule.registerQueue({ name: SYNC_QUEUE_NAME }), ErpIntegrationModule],
+  imports: [BullModule.registerQueue({ name: SYNC_QUEUE_NAME }), ErpIntegrationModule, OrganizationsModule],
   controllers: [SyncController],
   providers: [
+    // Registrado de novo aqui (já é provider de OrganizationsModule também):
+    // @UseGuards(TerminalApiKeyGuard) no SyncController resolve a instância
+    // dentro do módulo dono do controller, não reaproveita o singleton de
+    // OrganizationsModule — ver comentário em organizations.module.ts.
+    TerminalApiKeyGuard,
     RequestSyncUseCase,
     GetSyncJobUseCase,
     ListSyncJobsUseCase,

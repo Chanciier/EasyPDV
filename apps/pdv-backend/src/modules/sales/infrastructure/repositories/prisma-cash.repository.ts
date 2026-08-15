@@ -36,6 +36,11 @@ export class PrismaCashRepository implements CashRepositoryPort {
     return record ? toDomainCashSession(record) : null;
   }
 
+  async findAnyOpenSession(): Promise<CashSession | null> {
+    const record = await this.prisma.cashSession.findFirst({ where: { status: "open" } });
+    return record ? toDomainCashSession(record) : null;
+  }
+
   async findSessionById(id: string): Promise<CashSession | null> {
     const record = await this.prisma.cashSession.findUnique({ where: { id } });
     return record ? toDomainCashSession(record) : null;

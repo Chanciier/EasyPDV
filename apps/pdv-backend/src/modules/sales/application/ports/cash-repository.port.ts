@@ -34,6 +34,8 @@ export interface CashRepositoryPort {
 
   findOpenSessionByRegister(cashRegisterId: string): Promise<CashSession | null>;
   findOpenSessionByOperator(operatorUserId: string): Promise<CashSession | null>;
+  /** Qualquer sessão aberta, de qualquer operador/caixa — usado pelo Electron pra decidir se pode atualizar (Sprint 10). */
+  findAnyOpenSession(): Promise<CashSession | null>;
   findSessionById(id: string): Promise<CashSession | null>;
   openSession(data: OpenCashSessionData): Promise<CashSession>;
   closeSession(id: string, closingAmount: number, expectedAmount: number): Promise<CashSession>;
