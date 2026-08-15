@@ -72,6 +72,13 @@ POST   /sales/:id/confirm               (Bearer) → confirma a venda: exige ite
                                          409 se sem itens, sem pagamento suficiente, ou já não estiver em draft
 POST   /sales/:id/cancel                (Bearer) → cancela; só em draft
 
+GET    /sales/:saleId/fiscal            (Bearer) → status fiscal da NFC-e (Sprint 12): busca ao vivo no
+                                         Intermediador (GET /fiscal/sale/:saleId lá) e espelha localmente
+                                         (FiscalDocument, SQLite); se o Intermediador estiver inacessível,
+                                         cai pro que já está espelhado em vez de falhar a tela inteira.
+                                         `null` é normal — nem toda venda tem NFC-e (emissão é opt-in,
+                                         BLING_NFCE_AUTO_EMIT no Intermediador, default desligado)
+
 GET    /sync/outbox?status=             (Bearer + administrador/gerente/tecnico) → lista entradas do
                                          outbox local (Central de Erros de Sincronização, Sprint 8)
 POST   /sync/outbox/:id/retry           (Bearer + administrador/gerente/tecnico) → retry manual; só
@@ -89,7 +96,6 @@ GET    /provisioning/busy-status        SEM auth → { hasOpenCashSession }, qua
                                          uma atualização baixada — nunca no meio de uma venda.
 
 /customers        + /:id/sales
-/fiscal           documents/:saleId, reissue, cancel
 /reports          sales, cash-sessions, stock, dashboard
 /settings
 /audit-logs
@@ -119,6 +125,11 @@ GET    /integrations/bling/connect?organizationId=   redireciona (302) pro fluxo
 GET    /integrations/bling/callback  recebido pelo Bling após autorização (code+state); troca o code por
                           token e grava em ErpIntegration
 GET    /integrations/bling/status?organizationId=    { connected, connectedAt, expiresAt }
+
+GET    /fiscal/sale/:saleId  chamado pelo PDV local — exige apiKey de terminal (mesmo guard de POST /sync).
+                           Status da NFC-e emitida pra essa venda (Sprint 12): { type, status,
+                           documentNumber, accessKey, danfeUrl, errorMessage, issuedAt }; 404 se a venda
+                           não tem documento fiscal (emissão é opt-in, ver BLING_NFCE_AUTO_EMIT abaixo)
 
 POST   /organizations                     SEM auth (bootstrapping — sem UI de admin ainda, uso via
                                            curl/Postman) { name, document? } → cria Organization. Sprint 10.

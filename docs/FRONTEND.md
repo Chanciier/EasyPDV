@@ -21,7 +21,8 @@ lib/
   cart-store.ts     useCartStore (Zustand, efêmero)
   pos-data.ts       tipos/seed do mock — ainda usado por Clientes e pelo Context legado
 hooks/
-  use-sales.ts      busca de produto (autocomplete), ciclo de vida da venda, listagem p/ Histórico
+  use-sales.ts      busca de produto (autocomplete), ciclo de vida da venda, listagem p/ Histórico,
+                     status fiscal por venda (useFiscalStatus — Sprint 12)
   use-cash.ts       sessão/movimentos de caixa
   use-catalog.ts    CRUD de produto/categoria/tabela de preço (tela Produtos)
   use-hardware.ts   bridge window.easypdv (impressora/gaveta/settings) — Sprint 11, ver ELECTRON.md

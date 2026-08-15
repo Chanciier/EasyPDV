@@ -169,12 +169,21 @@ export interface Payment {
   createdAt: string;
 }
 
+// Espelho local (PDV, SQLite) do FiscalDocument do Intermediador (Sprint 12)
+// — consultado sob demanda via GET /fiscal/sale/:saleId no Intermediador
+// (nunca fala com o Bling direto), não um push automático. documentNumber/
+// danfeUrl/errorMessage vieram além do desenho original do Sprint 0 (só
+// accessKey/issuedAt) pela mesma razão de SyncOutboxEntry ter lastError:
+// visibilidade de erro é operacionalmente necessária, não cosmética.
 export interface FiscalDocument {
   id: string;
   saleId: string;
   type: FiscalDocumentType;
   status: FiscalDocumentStatus;
+  documentNumber: string | null;
   accessKey: string | null;
+  danfeUrl: string | null;
+  errorMessage: string | null;
   issuedAt: string | null;
 }
 
@@ -248,4 +257,18 @@ export interface SaleSyncPayload {
   totalAmount: number;
   confirmedAt: string;
   items: SaleSyncPayloadItem[];
+}
+
+// Resposta de GET /fiscal/sale/:saleId no Intermediador (Sprint 12) — é o que
+// o pdv-backend usa pra espelhar o FiscalDocument local. 404 quando a venda
+// ainda não tem NFC-e (emissão é opt-in via BLING_NFCE_AUTO_EMIT, e mesmo
+// ligada, a venda pode não ter sincronizado ainda — ver BlingSyncTargetAdapter).
+export interface FiscalStatusPayload {
+  type: FiscalDocumentType;
+  status: FiscalDocumentStatus;
+  documentNumber: string | null;
+  accessKey: string | null;
+  danfeUrl: string | null;
+  errorMessage: string | null;
+  issuedAt: string | null;
 }

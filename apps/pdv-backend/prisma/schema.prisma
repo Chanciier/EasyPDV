@@ -269,8 +269,9 @@ model Sale {
   createdAt      DateTime    @default(now())
   confirmedAt    DateTime?
 
-  items    SaleItem[]
-  payments Payment[]
+  items          SaleItem[]
+  payments       Payment[]
+  fiscalDocument FiscalDocument?
 
   @@index([cashSessionId])
 }
@@ -341,4 +342,36 @@ model SyncOutbox {
   sentAt     DateTime?
 
   @@index([status])
+}
+
+enum FiscalDocumentType {
+  nfce
+  comprovante_nao_fiscal
+}
+
+enum FiscalDocumentStatus {
+  pending
+  issued
+  cancelled
+  error
+}
+
+// Espelho local do FiscalDocument do Intermediador (Sprint 12) — consultado
+// sob demanda via GET no Intermediador (o PDV local nunca fala com o Bling
+// direto) e persistido aqui pra ficar visível no Histórico mesmo offline,
+// sem precisar de rede toda vez. Sync é unidirecional Intermediador→local
+// só pra este campo (diferente do SyncOutbox, que é local→Intermediador);
+// não existe push automático, é o próprio pdv-backend que pergunta.
+model FiscalDocument {
+  id             String               @id @default(cuid())
+  saleId         String               @unique
+  sale           Sale                 @relation(fields: [saleId], references: [id])
+  type           FiscalDocumentType   @default(nfce)
+  status         FiscalDocumentStatus @default(pending)
+  documentNumber String?
+  accessKey      String?
+  danfeUrl       String?
+  errorMessage   String?
+  issuedAt       DateTime?
+  updatedAt      DateTime             @updatedAt
 }

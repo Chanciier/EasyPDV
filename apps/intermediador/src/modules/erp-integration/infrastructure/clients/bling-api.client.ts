@@ -32,6 +32,18 @@ export interface CreateSalesOrderResult {
   externalId: string;
 }
 
+export interface GenerateNfceResult {
+  nfceId: number;
+}
+
+export interface NfceDetails {
+  /** Código numérico bruto do Bling — ver domain FiscalDocument.externalStatus. 1 Pendente, 2 Cancelada, 3 Aguardando recibo, 4 Rejeitada, 5 Autorizada, 6 Emitida DANFE, 7 Registrada, 8 Aguardando protocolo, 9 Denegada, 10 Consulta situação, 11 Bloqueada. */
+  situacao: number | null;
+  numero: string | null;
+  chaveAcesso: string | null;
+  linkDanfe: string | null;
+}
+
 interface BlingListEnvelope<T> {
   data?: T[];
 }
@@ -97,6 +109,49 @@ export class BlingApiClient {
       throw new Error(`Bling não retornou o id do pedido criado: ${JSON.stringify(result)}`);
     }
     return { externalId: String(result.data.id) };
+  }
+
+  /**
+   * Gera uma NFC-e a partir de um pedido de venda já criado — Bling resolve
+   * os dados fiscais (NCM/CFOP/CST etc.) do lado dele, a partir do cadastro
+   * do produto e da configuração fiscal da conta; não precisamos enviar nada
+   * disso aqui. Confirmado contra a lib de terceiro (bling-erp-api-js,
+   * `PedidosVendas.generateNfce`) na Sprint 12 — só cria a NFC-e como
+   * rascunho ("Pendente"), ainda não transmite pra SEFAZ (isso é `sendNfce`).
+   */
+  async generateNfceFromOrder(accessToken: string, pedidoVendaId: number): Promise<GenerateNfceResult> {
+    const result = await this.request<BlingItemEnvelope<{ idNotaFiscal: number }>>(
+      accessToken,
+      "POST",
+      `/pedidos/vendas/${pedidoVendaId}/gerar-nfce`,
+      {},
+    );
+    if (!result.data?.idNotaFiscal) {
+      throw new Error(`Bling não retornou o id da NFC-e gerada: ${JSON.stringify(result)}`);
+    }
+    return { nfceId: result.data.idNotaFiscal };
+  }
+
+  /**
+   * Transmite a NFC-e pra SEFAZ — ação fiscal real, diferente de
+   * `generateNfceFromOrder` (que só cria o rascunho). Ver
+   * BLING_NFCE_AUTO_EMIT em BlingSyncTargetAdapter e Decisões e Riscos
+   * Abertos no cofre Obsidian.
+   */
+  async sendNfce(accessToken: string, nfceId: number): Promise<void> {
+    await this.request<BlingItemEnvelope<{ xml?: string }>>(accessToken, "POST", `/nfce/${nfceId}/enviar`, {});
+  }
+
+  async findNfce(accessToken: string, nfceId: number): Promise<NfceDetails> {
+    const result = await this.request<
+      BlingItemEnvelope<{ situacao?: number; numero?: string; chaveAcesso?: string; linkDanfe?: string }>
+    >(accessToken, "GET", `/nfce/${nfceId}`);
+    return {
+      situacao: result.data?.situacao ?? null,
+      numero: result.data?.numero ?? null,
+      chaveAcesso: result.data?.chaveAcesso ?? null,
+      linkDanfe: result.data?.linkDanfe ?? null,
+    };
   }
 
   private async request<T>(accessToken: string, method: string, path: string, body?: unknown): Promise<T> {

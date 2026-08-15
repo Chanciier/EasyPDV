@@ -1,11 +1,56 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Search, Receipt, TrendingUp, Hash } from 'lucide-react'
-import type { PaymentMethod, Sale } from '@easypdv/shared-types'
+import { Search, Receipt, TrendingUp, Hash, CheckCircle2, Clock3, AlertCircle, Ban, ExternalLink } from 'lucide-react'
+import type { FiscalDocument, PaymentMethod, Sale } from '@easypdv/shared-types'
 import { formatBRL, normalize } from '@/lib/pos-data'
-import { useProducts, useSalesList } from '@/hooks/use-sales'
+import { useFiscalStatus, useProducts, useSalesList } from '@/hooks/use-sales'
 import { Modal } from './ui/modal'
+
+const FISCAL_STATUS_META: Record<
+  FiscalDocument['status'],
+  { label: string; icon: typeof CheckCircle2; className: string }
+> = {
+  pending: { label: 'NFC-e pendente', icon: Clock3, className: 'bg-muted text-muted-foreground' },
+  issued: { label: 'NFC-e emitida', icon: CheckCircle2, className: 'bg-primary/10 text-primary' },
+  cancelled: { label: 'NFC-e cancelada', icon: Ban, className: 'bg-muted text-muted-foreground' },
+  error: { label: 'Erro na NFC-e', icon: AlertCircle, className: 'bg-destructive/10 text-destructive' },
+}
+
+function FiscalStatusBadge({ saleId }: { saleId: string }) {
+  const { data: fiscal } = useFiscalStatus(saleId)
+  if (!fiscal) return null
+
+  const meta = FISCAL_STATUS_META[fiscal.status]
+  const Icon = meta.icon
+
+  return (
+    <div
+      className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-sans text-xs font-medium ${meta.className}`}
+    >
+      <Icon className="size-3.5" />
+      {meta.label}
+      {fiscal.documentNumber && <span className="opacity-70">#{fiscal.documentNumber}</span>}
+      {fiscal.status === 'issued' && fiscal.danfeUrl && (
+        <a
+          href={fiscal.danfeUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-0.5 underline underline-offset-2 hover:opacity-80"
+          title="Ver DANFE"
+        >
+          DANFE
+          <ExternalLink className="size-3" />
+        </a>
+      )}
+      {fiscal.status === 'error' && fiscal.errorMessage && (
+        <span className="truncate opacity-70" title={fiscal.errorMessage}>
+          {fiscal.errorMessage}
+        </span>
+      )}
+    </div>
+  )
+}
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   dinheiro: 'Dinheiro',
@@ -126,6 +171,7 @@ export function HistoryView() {
               <span>{detail.confirmedAt ? new Date(detail.confirmedAt).toLocaleString('pt-BR') : '—'}</span>
               <span>{detail.customerId ?? 'Consumidor Final'}</span>
             </div>
+            <FiscalStatusBadge saleId={detail.id} />
             <div className="border-t border-dashed border-border" />
             {detail.items.map((i) => (
               <div key={i.id} className="flex justify-between">

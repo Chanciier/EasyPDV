@@ -26,6 +26,7 @@ model Organization {
 
   erpIntegrations  ErpIntegration[]
   erpSyncMappings  ErpSyncMapping[]
+  fiscalDocuments  FiscalDocument[]
 }
 
 model Store {
@@ -118,6 +119,59 @@ model ErpSyncMapping {
 
   @@unique([organizationId, provider, localEntityType, localEntityId])
   @@index([organizationId, provider, localEntityType])
+}
+
+// Mesmos enums de packages/shared-types/src/enums.ts (FiscalDocumentType/
+// FiscalDocumentStatus) — já pré-desenhados desde o Sprint 0, reaproveitados
+// aqui em vez de inventar valores novos. `status` é simplificado a partir da
+// `situacao` numérica que o Bling devolve pra NFC-e (1 Pendente, 2 Cancelada,
+// 3 Aguardando recibo, 4 Rejeitada, 5 Autorizada, 6 Emitida DANFE,
+// 7 Registrada, 8 Aguardando protocolo, 9 Denegada, 10 Consulta situação,
+// 11 Bloqueada — ver bling-erp-api-js `ISituacaoNfce`): 1/3/7/8/10→pending,
+// 5/6→issued, 2→cancelled, 4/9/11→error (junto com falha da nossa própria
+// chamada — rede, Bling fora do ar — que nunca chega a um veredito da SEFAZ).
+// `externalStatus` guarda o código bruto do Bling, pra não perder informação.
+enum FiscalDocumentType {
+  nfce
+  comprovante_nao_fiscal
+}
+
+enum FiscalDocumentStatus {
+  pending
+  issued
+  cancelled
+  error
+}
+
+// Rastreia a NFC-e emitida no Bling a partir do pedido de venda já criado
+// (ErpSyncMapping localEntityType="sale"). Emissão é opt-in via
+// BLING_NFCE_AUTO_EMIT (default desligado) — ver BlingSyncTargetAdapter e
+// Claude/Projetos/EasyPDV/Decisões e Riscos Abertos.md no cofre Obsidian:
+// emitir NFC-e é uma ação fiscal real (SEFAZ), não reversível como um
+// "pedido de venda" de teste, então não roda automaticamente sem a
+// organização ter configurado NFC-e de verdade no Bling. O PDV local consulta
+// esta tabela sob demanda (GET, ver FiscalController) e espelha o resultado
+// simplificado num FiscalDocument próprio (SQLite) — ver docs/DATABASE.md.
+model FiscalDocument {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id])
+  provider       ErpProvider          @default(bling)
+  saleId         String
+  type           FiscalDocumentType   @default(nfce)
+  status         FiscalDocumentStatus @default(pending)
+  externalId     String
+  externalStatus Int?
+  documentNumber String?
+  accessKey      String?
+  danfeUrl       String?
+  errorMessage   String?
+  issuedAt       DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([organizationId, provider, saleId])
+  @@index([saleId])
 }
 
 enum SyncStatus {

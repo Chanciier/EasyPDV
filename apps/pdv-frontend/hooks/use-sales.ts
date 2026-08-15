@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { PaymentMethod, Product, ResolvedPrice, Sale, SaleStatus } from '@easypdv/shared-types'
+import type { FiscalDocument, PaymentMethod, Product, ResolvedPrice, Sale, SaleStatus } from '@easypdv/shared-types'
 import { apiRequest } from '@/lib/api-client'
 
 export function useSalesList(params?: { status?: SaleStatus; cashSessionId?: string }) {
@@ -116,6 +116,20 @@ export function useConfirmSale() {
       // venda confirmada em dinheiro muda o saldo esperado do caixa (ver useCashSalesTotal)
       queryClient.invalidateQueries({ queryKey: ['cash-session'] })
     },
+  })
+}
+
+/**
+ * Consulta sob demanda (não polling) — o pdv-backend já tenta buscar o status
+ * mais recente no Intermediador a cada chamada, caindo pro cache local se a
+ * rede falhar. `null` é normal: nem toda venda tem NFC-e (emissão é opt-in
+ * no Intermediador, ver Sprint 12).
+ */
+export function useFiscalStatus(saleId: string | null) {
+  return useQuery({
+    queryKey: ['fiscal-status', saleId],
+    queryFn: () => apiRequest<FiscalDocument | null>(`/sales/${saleId}/fiscal`),
+    enabled: !!saleId,
   })
 }
 
