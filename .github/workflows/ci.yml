@@ -20,6 +20,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm --filter @easypdv/pdv-backend run prisma:generate
+      - run: pnpm --filter @easypdv/intermediador run prisma:generate
+
       - run: pnpm turbo run lint
 
       - run: pnpm turbo run typecheck
