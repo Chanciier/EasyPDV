@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AuditModule } from "../audit/audit.module.js";
 import { WarehousesController } from "./infrastructure/controllers/warehouses.controller.js";
 import { StockController } from "./infrastructure/controllers/stock.controller.js";
 import { PrismaWarehouseRepository } from "./infrastructure/repositories/prisma-warehouse.repository.js";
@@ -12,6 +13,7 @@ import { GetStockUseCase } from "./application/use-cases/get-stock.use-case.js";
 import { ListStockMovementsUseCase } from "./application/use-cases/list-stock-movements.use-case.js";
 
 @Module({
+  imports: [AuditModule],
   controllers: [WarehousesController, StockController],
   providers: [
     CreateWarehouseUseCase,

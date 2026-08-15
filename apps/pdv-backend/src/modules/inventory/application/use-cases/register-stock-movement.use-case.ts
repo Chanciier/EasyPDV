@@ -4,6 +4,10 @@ import { WarehouseNotFoundError } from "../../domain/errors.js";
 import type { StockMovement } from "../../domain/entities/stock-movement.entity.js";
 import { WAREHOUSE_REPOSITORY, type WarehouseRepositoryPort } from "../ports/warehouse-repository.port.js";
 import { STOCK_REPOSITORY, type StockRepositoryPort } from "../ports/stock-repository.port.js";
+import {
+  AUDIT_LOG_REPOSITORY,
+  type AuditLogRepositoryPort,
+} from "../../../audit/application/ports/audit-log-repository.port.js";
 
 /**
  * Estoque negativo é permitido de propósito (avisa mas não bloqueia) — não é
@@ -15,6 +19,7 @@ export class RegisterStockMovementUseCase {
   constructor(
     @Inject(WAREHOUSE_REPOSITORY) private readonly warehouseRepository: WarehouseRepositoryPort,
     @Inject(STOCK_REPOSITORY) private readonly stockRepository: StockRepositoryPort,
+    @Inject(AUDIT_LOG_REPOSITORY) private readonly auditLogRepository: AuditLogRepositoryPort,
   ) {}
 
   async execute(input: RegisterStockMovementInput, createdByUserId: string | null): Promise<StockMovement> {
@@ -22,12 +27,20 @@ export class RegisterStockMovementUseCase {
     if (!warehouse) {
       throw new WarehouseNotFoundError(input.warehouseId);
     }
-    return this.stockRepository.registerMovement({
+    const movement = await this.stockRepository.registerMovement({
       warehouseId: input.warehouseId,
       productId: input.productId,
       type: input.type,
       quantity: input.quantity,
       createdByUserId,
     });
+    await this.auditLogRepository.record({
+      userId: createdByUserId,
+      action: "stock_movement.registered",
+      entityType: "product",
+      entityId: input.productId,
+      metadata: { warehouseId: input.warehouseId, type: input.type, quantity: input.quantity },
+    });
+    return movement;
   }
 }

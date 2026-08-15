@@ -12,16 +12,20 @@ import {
   Unlock,
   LogOut,
   Settings,
+  ShieldCheck,
 } from 'lucide-react'
+import type { UserRole } from '@easypdv/shared-types'
 import { usePOS } from './pos-provider'
 import { formatBRL } from '@/lib/pos-data'
 import { useAuthStore } from '@/lib/auth-store'
 import { useCurrentCashSession } from '@/hooks/use-cash'
+import { useRealtime } from '@/hooks/use-realtime'
 import { SaleView } from './sale-view'
 import { CashView } from './cash-view'
 import { ProductsView } from './products-view'
 import { HistoryView } from './history-view'
 import { CustomersView } from './customers-view'
+import { AuditView } from './audit-view'
 import { ShortcutsBar } from './shortcuts-bar'
 import { SettingsDialog } from './settings-dialog'
 
@@ -33,13 +37,19 @@ const NAV = [
   { key: 'clientes', label: 'Clientes', icon: Users, hint: 'F9' },
 ] as const
 
+const AUDIT_NAV = { key: 'auditoria', label: 'Auditoria', icon: ShieldCheck, hint: 'F2' } as const
+const AUDIT_ROLES: UserRole[] = ['administrador', 'gerente', 'auditor']
+
 export function POSShell() {
+  useRealtime()
   const { view, setView } = usePOS()
   const { data: cashSession } = useCurrentCashSession()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.clear)
   const [today, setToday] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const canSeeAudit = !!user && AUDIT_ROLES.includes(user.role)
+  const visibleNav = canSeeAudit ? [...NAV, AUDIT_NAV] : NAV
 
   useEffect(() => {
     setToday(
@@ -53,12 +63,13 @@ export function POSShell() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const map: Record<string, (typeof NAV)[number]['key']> = {
+      const map: Record<string, (typeof visibleNav)[number]['key']> = {
         F1: 'venda',
         F6: 'caixa',
         F7: 'produtos',
         F8: 'historico',
         F9: 'clientes',
+        ...(canSeeAudit ? { F2: 'auditoria' } : {}),
       }
       const target = map[e.key]
       if (target) {
@@ -68,7 +79,7 @@ export function POSShell() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setView])
+  }, [setView, canSeeAudit])
 
   const cashOpen = cashSession?.status === 'open'
 
@@ -87,7 +98,7 @@ export function POSShell() {
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 px-3">
-          {NAV.map((item) => {
+          {visibleNav.map((item) => {
             const Icon = item.icon
             const active = view === item.key
             return (
@@ -154,7 +165,7 @@ export function POSShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-5">
           <h1 className="text-lg font-semibold capitalize">
-            {NAV.find((n) => n.key === view)?.label}
+            {visibleNav.find((n) => n.key === view)?.label}
           </h1>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-muted-foreground" suppressHydrationWarning>
@@ -175,6 +186,7 @@ export function POSShell() {
           {view === 'produtos' && <ProductsView />}
           {view === 'historico' && <HistoryView />}
           {view === 'clientes' && <CustomersView />}
+          {view === 'auditoria' && canSeeAudit && <AuditView />}
         </main>
 
         <ShortcutsBar />

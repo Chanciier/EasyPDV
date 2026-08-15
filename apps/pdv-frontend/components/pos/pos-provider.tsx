@@ -21,7 +21,7 @@ import {
   normalize,
 } from '@/lib/pos-data'
 
-type View = 'venda' | 'caixa' | 'produtos' | 'historico' | 'clientes'
+type View = 'venda' | 'caixa' | 'produtos' | 'historico' | 'clientes' | 'auditoria'
 
 type POSContextValue = {
   // navegação

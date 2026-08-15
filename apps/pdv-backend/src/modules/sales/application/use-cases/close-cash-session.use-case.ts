@@ -3,6 +3,10 @@ import { CashSessionNotFoundError, CashSessionNotOpenError } from "../../domain/
 import type { CashSession } from "../../domain/entities/cash-session.entity.js";
 import { CASH_REPOSITORY, type CashRepositoryPort } from "../ports/cash-repository.port.js";
 import { SALE_REPOSITORY, type SaleRepositoryPort } from "../ports/sale-repository.port.js";
+import {
+  AUDIT_LOG_REPOSITORY,
+  type AuditLogRepositoryPort,
+} from "../../../audit/application/ports/audit-log-repository.port.js";
 
 /**
  * expectedAmount = abertura + suprimentos - sangrias + ajuste + vendas em
@@ -16,9 +20,10 @@ export class CloseCashSessionUseCase {
   constructor(
     @Inject(CASH_REPOSITORY) private readonly cashRepository: CashRepositoryPort,
     @Inject(SALE_REPOSITORY) private readonly saleRepository: SaleRepositoryPort,
+    @Inject(AUDIT_LOG_REPOSITORY) private readonly auditLogRepository: AuditLogRepositoryPort,
   ) {}
 
-  async execute(sessionId: string, closingAmount: number): Promise<CashSession> {
+  async execute(sessionId: string, closingAmount: number, actorUserId: string | null): Promise<CashSession> {
     const session = await this.cashRepository.findSessionById(sessionId);
     if (!session) {
       throw new CashSessionNotFoundError(sessionId);
@@ -34,6 +39,14 @@ export class CloseCashSessionUseCase {
     const expectedAmount =
       session.openingAmount + movements.suprimento - movements.sangria + movements.ajuste + cashSales;
 
-    return this.cashRepository.closeSession(sessionId, closingAmount, expectedAmount);
+    const closed = await this.cashRepository.closeSession(sessionId, closingAmount, expectedAmount);
+    await this.auditLogRepository.record({
+      userId: actorUserId,
+      action: "cash_session.closed",
+      entityType: "cash_session",
+      entityId: sessionId,
+      metadata: { closingAmount, expectedAmount, divergence: closingAmount - expectedAmount },
+    });
+    return closed;
   }
 }

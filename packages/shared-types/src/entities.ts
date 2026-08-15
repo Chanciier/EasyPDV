@@ -272,3 +272,38 @@ export interface FiscalStatusPayload {
   errorMessage: string | null;
   issuedAt: string | null;
 }
+
+// Trilha imutável de eventos sensíveis (Sprint 13) — ver docs/DATABASE.md pra
+// a lista de ações auditadas e onde cada uma é escrita. metadata é o payload
+// já desserializado (o backend faz JSON.parse antes de devolver na resposta).
+export interface AuditLog {
+  id: string;
+  userId: string | null;
+  action: string;
+  entityType: string;
+  entityId: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+// GET /reports/sales?from=&to= — agregado por dia, sem o cap de 100 registros
+// que GET /sales tem (Sprint 13 corrige o Histórico usando isso em vez de
+// somar client-side a lista paginada).
+export interface SalesReportEntry {
+  period: string;
+  salesCount: number;
+  totalAmount: number;
+}
+
+export interface StockReportEntry {
+  warehouseId: string;
+  productId: string;
+  quantity: number;
+}
+
+export interface DashboardReport {
+  todaySalesCount: number;
+  todaySalesTotal: number;
+  averageTicket: number;
+  openCashSessionsCount: number;
+}

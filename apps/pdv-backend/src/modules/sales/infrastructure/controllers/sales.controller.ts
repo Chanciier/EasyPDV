@@ -11,6 +11,7 @@ import {
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe.js";
 import { CurrentUser, type AuthenticatedUser } from "../../../identity/infrastructure/decorators/current-user.decorator.js";
 import { JwtAuthGuard } from "../../../identity/infrastructure/guards/jwt-auth.guard.js";
+import { RealtimeGateway } from "../../../realtime/realtime.gateway.js";
 import { StartSaleUseCase } from "../../application/use-cases/start-sale.use-case.js";
 import { AddSaleItemUseCase } from "../../application/use-cases/add-sale-item.use-case.js";
 import { RemoveSaleItemUseCase } from "../../application/use-cases/remove-sale-item.use-case.js";
@@ -32,6 +33,7 @@ export class SalesController {
     private readonly listSalesUseCase: ListSalesUseCase,
     private readonly registerPaymentUseCase: RegisterPaymentUseCase,
     private readonly confirmSaleUseCase: ConfirmSaleUseCase,
+    private readonly realtimeGateway: RealtimeGateway,
   ) {}
 
   @Get()
@@ -68,12 +70,18 @@ export class SalesController {
   }
 
   @Post(":id/confirm")
-  confirm(@Param("id") id: string) {
-    return this.confirmSaleUseCase.execute(id);
+  async confirm(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    const sale = await this.confirmSaleUseCase.execute(id, user.userId);
+    this.realtimeGateway.emitSaleConfirmed({
+      saleId: sale.id,
+      totalAmount: sale.totalAmount,
+      confirmedAt: sale.confirmedAt!.toISOString(),
+    });
+    return sale;
   }
 
   @Post(":id/cancel")
-  cancel(@Param("id") id: string) {
-    return this.cancelSaleUseCase.execute(id);
+  cancel(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.cancelSaleUseCase.execute(id, user.userId);
   }
 }

@@ -14,6 +14,7 @@ import { CurrentUser, type AuthenticatedUser } from "../../../identity/infrastru
 import { JwtAuthGuard } from "../../../identity/infrastructure/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../../identity/infrastructure/guards/roles.guard.js";
 import { Roles } from "../../../identity/infrastructure/decorators/roles.decorator.js";
+import { RealtimeGateway } from "../../../realtime/realtime.gateway.js";
 import { CreateCashRegisterUseCase } from "../../application/use-cases/create-cash-register.use-case.js";
 import { ListCashRegistersUseCase } from "../../application/use-cases/list-cash-registers.use-case.js";
 import { OpenCashSessionUseCase } from "../../application/use-cases/open-cash-session.use-case.js";
@@ -35,6 +36,7 @@ export class CashController {
     private readonly getCurrentCashSessionUseCase: GetCurrentCashSessionUseCase,
     private readonly getCashSessionUseCase: GetCashSessionUseCase,
     private readonly listCashMovementsUseCase: ListCashMovementsUseCase,
+    private readonly realtimeGateway: RealtimeGateway,
   ) {}
 
   @Get("registers")
@@ -59,19 +61,30 @@ export class CashController {
   }
 
   @Post("sessions")
-  openSession(
+  async openSession(
     @Body(new ZodValidationPipe(openCashSessionSchema)) body: OpenCashSessionInput,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.openCashSessionUseCase.execute(body, user.userId);
+    const session = await this.openCashSessionUseCase.execute(body, user.userId);
+    this.realtimeGateway.emitCashSessionOpened({
+      sessionId: session.id,
+      cashRegisterId: session.cashRegisterId,
+    });
+    return session;
   }
 
   @Patch("sessions/:id/close")
-  closeSession(
+  async closeSession(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(closeCashSessionSchema)) body: CloseCashSessionInput,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.closeCashSessionUseCase.execute(id, body.closingAmount);
+    const session = await this.closeCashSessionUseCase.execute(id, body.closingAmount, user.userId);
+    this.realtimeGateway.emitCashSessionClosed({
+      sessionId: session.id,
+      cashRegisterId: session.cashRegisterId,
+    });
+    return session;
   }
 
   @Post("sessions/:id/movements")

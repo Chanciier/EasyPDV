@@ -11,10 +11,12 @@ import type { Sale } from "../../domain/entities/sale.entity.js";
 import { SALE_REPOSITORY, type SaleRepositoryPort } from "../ports/sale-repository.port.js";
 
 /**
- * Evento central do sistema: confirma a venda e debita o estoque numa única
- * transação atômica local (ver SaleRepositoryPort.confirm e docs/DATABASE.md).
- * Auditoria e sincronização com o Intermediador entram nas Sprints 6/13 —
- * ainda não implementadas.
+ * Evento central do sistema: confirma a venda, debita o estoque e grava a
+ * auditoria numa única transação atômica local (ver SaleRepositoryPort.confirm
+ * e docs/DATABASE.md). Sincronização com o Intermediador já sai da mesma
+ * transação via SyncOutbox (Sprint 6); realtime (Sprint 13) dispara no
+ * controller, fora daqui — broadcast de WebSocket não é uma preocupação de
+ * domínio, é efeito de apresentação.
  */
 @Injectable()
 export class ConfirmSaleUseCase {
@@ -23,7 +25,7 @@ export class ConfirmSaleUseCase {
     private readonly listWarehousesUseCase: ListWarehousesUseCase,
   ) {}
 
-  async execute(saleId: string): Promise<Sale> {
+  async execute(saleId: string, actorUserId: string | null): Promise<Sale> {
     const sale = await this.saleRepository.findById(saleId);
     if (!sale) {
       throw new SaleNotFoundError(saleId);
@@ -44,6 +46,6 @@ export class ConfirmSaleUseCase {
       throw new NoWarehouseAvailableError();
     }
 
-    return this.saleRepository.confirm(saleId, warehouse.id);
+    return this.saleRepository.confirm(saleId, warehouse.id, actorUserId);
   }
 }

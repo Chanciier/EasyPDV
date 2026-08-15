@@ -84,6 +84,30 @@ GET    /sync/outbox?status=             (Bearer + administrador/gerente/tecnico)
 POST   /sync/outbox/:id/retry           (Bearer + administrador/gerente/tecnico) → retry manual; só
                                          entradas "failed" (409 se não estiver, 404 se não existir)
 
+GET    /audit-logs?entityType=&userId=&from=&to=  (Bearer + administrador/gerente/auditor) → trilha de
+                                         eventos sensíveis (Sprint 13): venda confirmada/cancelada, caixa
+                                         aberto/fechado, movimento de caixa, papel de usuário alterado,
+                                         preço alterado, movimento de estoque manual. `sale.confirmed` é o
+                                         único gravado na mesma transação da ação (evento central do
+                                         sistema); os demais gravam logo depois, sem essa garantia —
+                                         simplificação V1 deliberada, ver docs/DATABASE.md
+
+GET    /reports/dashboard               (Bearer, qualquer papel) → resumo do dia agregado no banco
+                                         (Sprint 13): { todaySalesCount, todaySalesTotal, averageTicket,
+                                         openCashSessionsCount }. Sem o cap de 100 registros que GET /sales
+                                         tem — corrige o Histórico, que somava client-side uma lista já
+                                         paginada
+GET    /reports/sales?from=&to=         (Bearer + administrador/gerente/proprietario) → agregado por dia
+                                         no intervalo (default: últimos 30 dias)
+GET    /reports/cash-sessions?from=&to= (Bearer + administrador/gerente/proprietario) → sessões
+                                         fechadas no intervalo, com divergência (closingAmount -
+                                         expectedAmount) calculável no frontend a partir dos campos já
+                                         presentes em CashSession
+GET    /reports/stock?warehouseId=      (Bearer + administrador/gerente/proprietario) → saldo atual por
+                                         depósito/produto. `/reports/sales`, `/reports/cash-sessions` e
+                                         `/reports/stock` ainda sem tela dedicada no frontend — corte de
+                                         escopo deliberado, ver docs/CHANGELOG.md
+
 GET    /provisioning/status             SEM auth — chamado pelo Electron (main process) antes de
                                          qualquer login existir. { activated, organizationId, storeId,
                                          storeName }. Sprint 10.
@@ -96,10 +120,20 @@ GET    /provisioning/busy-status        SEM auth → { hasOpenCashSession }, qua
                                          uma atualização baixada — nunca no meio de uma venda.
 
 /customers        + /:id/sales
-/reports          sales, cash-sessions, stock, dashboard
 /settings
-/audit-logs
 ```
+
+### Realtime (WebSocket, Sprint 13)
+
+`RealtimeGateway` (`@nestjs/websockets` + `socket.io`, mesma porta 4001) — **sem autenticação por design**, mesma fronteira de confiança do resto da API local (o backend só escuta em 127.0.0.1; o payload não carrega nada que o cliente não já veria via REST autenticado). Broadcast pra todo cliente conectado, sem sala/escopo por usuário:
+
+```
+sale.confirmed          { saleId, totalAmount, confirmedAt } — emitido por SalesController após POST /sales/:id/confirm
+cash_session.opened     { sessionId, cashRegisterId } — emitido por CashController após POST /cash/sessions
+cash_session.closed     { sessionId, cashRegisterId } — emitido por CashController após PATCH /cash/sessions/:id/close
+```
+
+Nenhuma tela depende disso pra funcionar corretamente — quem fez a mutação já teve seu próprio cache do TanStack Query atualizado via `onSuccess`; é só pra **outras** abas/sessões conectadas ao mesmo `pdv-backend` (ex: um painel de acompanhamento numa segunda tela) verem em tempo real, sem polling. Testado de verdade com duas abas do navegador: venda confirmada numa aba atualizou o resumo do dia e a lista de vendas da outra aba sem nenhum refresh manual.
 
 ## Intermediador (`apps/intermediador`, porta 4002)
 

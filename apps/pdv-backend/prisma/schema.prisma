@@ -375,3 +375,25 @@ model FiscalDocument {
   issuedAt       DateTime?
   updatedAt      DateTime             @updatedAt
 }
+
+// Trilha imutável (Sprint 13) — sem update/delete no domínio, só create.
+// userId opcional (nunca nulo na prática hoje, todo endpoint auditado exige
+// auth, mas mantido nullable pra não travar um evento futuro sem ator
+// humano). metadata é JSON serializado (mesmo padrão de SyncOutbox.payload).
+// sale.confirmed é escrito na MESMA transação de PrismaSaleRepository.confirm()
+// (o evento central do sistema, ver Modelo de Domínio no cofre Obsidian); os
+// demais são escritos logo após a ação principal ter sucesso, sem a mesma
+// garantia de atomicidade — simplificação V1 deliberada, auditoria não é a
+// fonte da verdade do dado em si.
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String
+  entityId   String
+  metadata   String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}

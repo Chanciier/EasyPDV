@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AuditModule } from "../audit/audit.module.js";
 import { ProductsController } from "./infrastructure/controllers/products.controller.js";
 import { CategoriesController } from "./infrastructure/controllers/categories.controller.js";
 import { PriceListsController } from "./infrastructure/controllers/price-lists.controller.js";
@@ -22,6 +23,7 @@ import { GetActivePriceListUseCase } from "./application/use-cases/get-active-pr
 import { ResolvePriceUseCase } from "./application/use-cases/resolve-price.use-case.js";
 
 @Module({
+  imports: [AuditModule],
   controllers: [ProductsController, CategoriesController, PriceListsController],
   providers: [
     CreateProductUseCase,

@@ -2,12 +2,19 @@ import { Inject, Injectable } from "@nestjs/common";
 import { SaleNotEditableError, SaleNotFoundError } from "../../domain/errors.js";
 import type { Sale } from "../../domain/entities/sale.entity.js";
 import { SALE_REPOSITORY, type SaleRepositoryPort } from "../ports/sale-repository.port.js";
+import {
+  AUDIT_LOG_REPOSITORY,
+  type AuditLogRepositoryPort,
+} from "../../../audit/application/ports/audit-log-repository.port.js";
 
 @Injectable()
 export class CancelSaleUseCase {
-  constructor(@Inject(SALE_REPOSITORY) private readonly saleRepository: SaleRepositoryPort) {}
+  constructor(
+    @Inject(SALE_REPOSITORY) private readonly saleRepository: SaleRepositoryPort,
+    @Inject(AUDIT_LOG_REPOSITORY) private readonly auditLogRepository: AuditLogRepositoryPort,
+  ) {}
 
-  async execute(saleId: string): Promise<Sale> {
+  async execute(saleId: string, actorUserId: string | null): Promise<Sale> {
     const sale = await this.saleRepository.findById(saleId);
     if (!sale) {
       throw new SaleNotFoundError(saleId);
@@ -15,6 +22,13 @@ export class CancelSaleUseCase {
     if (!sale.canBeModified) {
       throw new SaleNotEditableError(saleId);
     }
-    return this.saleRepository.cancel(saleId);
+    const cancelled = await this.saleRepository.cancel(saleId);
+    await this.auditLogRepository.record({
+      userId: actorUserId,
+      action: "sale.cancelled",
+      entityType: "sale",
+      entityId: saleId,
+    });
+    return cancelled;
   }
 }

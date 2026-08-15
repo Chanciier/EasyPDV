@@ -26,11 +26,17 @@ hooks/
   use-cash.ts       sessão/movimentos de caixa
   use-catalog.ts    CRUD de produto/categoria/tabela de preço (tela Produtos)
   use-hardware.ts   bridge window.easypdv (impressora/gaveta/settings) — Sprint 11, ver ELECTRON.md
+  use-audit.ts      GET /audit-logs — Sprint 13
+  use-reports.ts    GET /reports/dashboard — Sprint 13
+  use-realtime.ts   conecta o socket.io-client, invalida queries nos eventos — Sprint 13
 components/pos/
   sale-view.tsx, cash-view.tsx, products-view.tsx, history-view.tsx   migradas (Sprint 9)
   customers-view.tsx                                                  ainda mock (pos-provider.tsx)
   payment-dialog.tsx, receipt-dialog.tsx                               migradas junto com sale-view
   settings-dialog.tsx                                                 config de hardware (Sprint 11)
+  audit-view.tsx                                                     trilha de auditoria (Sprint 13,
+                                                                       nav só visível pra administrador/
+                                                                       gerente/auditor)
 ```
 
 Não existem `services/`, `stores/` (plural) nem rotas `app/(auth)/` — isso era o desenho inicial da Sprint 0; na prática a migração coube em `lib/` + `hooks/` sem precisar dessas camadas extras.
@@ -38,6 +44,8 @@ Não existem `services/`, `stores/` (plural) nem rotas `app/(auth)/` — isso er
 As telas e atalhos de teclado existentes (F1-F9, navegação keyboard-first) foram preservados — a mudança é a origem do dado, não a UI.
 
 **Leitor de código de barras (Sprint 11)**: captura global de keydown em `sale-view.tsx`, só ativa na tela Venda. Sem input/select/textarea focado e sem diálogo de pagamento/recibo aberto, o primeiro caractere digitado foca a busca e é encaminhado manualmente (com `e.preventDefault()` — sem isso o caractere duplica, porque o navegador aplica a inserção nativa de texto no elemento recém-focado pelo próprio handler); o resto do código + Enter segue o fluxo normal do input, caindo no fallback `GET /products/by-barcode/:code` já existente desde a Sprint 9. Toda a lógica de hardware (impressora/gaveta) só funciona dentro do Electron — `hooks/use-hardware.ts` trata `window.easypdv` ausente como recurso indisponível, nunca como erro (ver [ELECTRON.md](./ELECTRON.md)).
+
+**Realtime (Sprint 13)**: `useRealtime()` conecta uma vez em `pos-shell.tsx` (`socket.io-client`, mesma porta do `pdv-backend`) e invalida as queries do TanStack Query (`sales`, `cash-session`, `reports.dashboard`) quando chega `sale.confirmed`/`cash_session.opened`/`cash_session.closed` de qualquer origem — inclusive da própria aba, mas isso não causa problema (invalidar uma query já atualizada só refaz o fetch e recebe o mesmo dado). Testado de verdade com duas abas reais do navegador: venda confirmada numa aba atualizou o resumo do dia e a lista de vendas da outra sem refresh manual. Nav "Auditoria" (`audit-view.tsx`) só aparece pra `administrador`/`gerente`/`auditor` (`AUDIT_ROLES` em `pos-shell.tsx`) — primeiro branch por `user.role` no frontend, backend já reforça isso de qualquer forma via `@Roles` no `AuditController`.
 
 ## Padrão de mutação: saleId no `mutate()`, não no hook
 

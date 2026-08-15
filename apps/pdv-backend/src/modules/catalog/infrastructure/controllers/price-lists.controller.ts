@@ -6,6 +6,7 @@ import {
   type UpsertPriceListItemInput,
 } from "@easypdv/shared-validation";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe.js";
+import { CurrentUser, type AuthenticatedUser } from "../../../identity/infrastructure/decorators/current-user.decorator.js";
 import { JwtAuthGuard } from "../../../identity/infrastructure/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../../identity/infrastructure/guards/roles.guard.js";
 import { Roles } from "../../../identity/infrastructure/decorators/roles.decorator.js";
@@ -37,7 +38,8 @@ export class PriceListsController {
   upsertItem(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(upsertPriceListItemSchema)) body: UpsertPriceListItemInput,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.upsertPriceListItemUseCase.execute(id, body);
+    return this.upsertPriceListItemUseCase.execute(id, body, user.userId);
   }
 }

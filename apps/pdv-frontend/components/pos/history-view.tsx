@@ -5,6 +5,7 @@ import { Search, Receipt, TrendingUp, Hash, CheckCircle2, Clock3, AlertCircle, B
 import type { FiscalDocument, PaymentMethod, Sale } from '@easypdv/shared-types'
 import { formatBRL, normalize } from '@/lib/pos-data'
 import { useFiscalStatus, useProducts, useSalesList } from '@/hooks/use-sales'
+import { useDashboardReport } from '@/hooks/use-reports'
 import { Modal } from './ui/modal'
 
 const FISCAL_STATUS_META: Record<
@@ -61,6 +62,7 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
 
 export function HistoryView() {
   const { data: sales = [], isLoading } = useSalesList({ status: 'confirmed' })
+  const { data: dashboard } = useDashboardReport()
   const [term, setTerm] = useState('')
   const [detail, setDetail] = useState<Sale | null>(null)
 
@@ -72,8 +74,6 @@ export function HistoryView() {
       return normalize(s.id).includes(t) || normalize(paymentLabel).includes(t)
     })
   }, [term, sales])
-
-  const totalSold = sales.reduce((sum, s) => sum + s.totalAmount, 0)
 
   const detailProductIds = useMemo(() => detail?.items.map((i) => i.productId) ?? [], [detail])
   const detailProductQueries = useProducts(detailProductIds)
@@ -88,15 +88,12 @@ export function HistoryView() {
 
   return (
     <div className="flex h-full flex-col p-4">
-      {/* Resumo do dia */}
+      {/* Resumo do dia — agregado no banco (Sprint 13), sem o cap de 100
+          registros que GET /sales tem, diferente da lista abaixo */}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Stat icon={Hash} label="Vendas" value={String(sales.length)} />
-        <Stat icon={TrendingUp} label="Total vendido" value={formatBRL(totalSold)} />
-        <Stat
-          icon={Receipt}
-          label="Ticket médio"
-          value={formatBRL(sales.length ? totalSold / sales.length : 0)}
-        />
+        <Stat icon={Hash} label="Vendas hoje" value={String(dashboard?.todaySalesCount ?? 0)} />
+        <Stat icon={TrendingUp} label="Total vendido hoje" value={formatBRL(dashboard?.todaySalesTotal ?? 0)} />
+        <Stat icon={Receipt} label="Ticket médio hoje" value={formatBRL(dashboard?.averageTicket ?? 0)} />
       </div>
 
       <div className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-card px-3">

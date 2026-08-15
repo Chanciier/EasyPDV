@@ -99,7 +99,7 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
    * SyncOutboxRepositoryPort para não sair do escopo desta transação (mesma
    * exceção pragmática documentada em docs/DATABASE.md).
    */
-  async confirm(saleId: string, warehouseId: string): Promise<Sale> {
+  async confirm(saleId: string, warehouseId: string, actorUserId: string | null): Promise<Sale> {
     const sale = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
     const confirmedAt = new Date();
 
@@ -154,6 +154,15 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
       ...stockOperations,
       this.prisma.syncOutbox.create({
         data: { entityType: "sale", entityId: saleId, payload: JSON.stringify(syncPayload) },
+      }),
+      this.prisma.auditLog.create({
+        data: {
+          userId: actorUserId,
+          action: "sale.confirmed",
+          entityType: "sale",
+          entityId: saleId,
+          metadata: JSON.stringify({ totalAmount: sale.totalAmount, itemCount: sale.items.length }),
+        },
       }),
     ]);
 

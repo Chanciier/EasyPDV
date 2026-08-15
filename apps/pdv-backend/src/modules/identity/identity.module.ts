@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
+import { AuditModule } from "../audit/audit.module.js";
 import { AuthController } from "./infrastructure/controllers/auth.controller.js";
 import { UsersController } from "./infrastructure/controllers/users.controller.js";
 import { PrismaAuthSessionRepository } from "./infrastructure/repositories/prisma-auth-session.repository.js";
@@ -20,6 +21,7 @@ import { UpdateUserRoleUseCase } from "./application/use-cases/update-user-role.
 
 @Module({
   imports: [
+    AuditModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

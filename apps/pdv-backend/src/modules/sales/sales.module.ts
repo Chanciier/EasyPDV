@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
+import { AuditModule } from "../audit/audit.module.js";
 import { CatalogModule } from "../catalog/catalog.module.js";
 import { InventoryModule } from "../inventory/inventory.module.js";
+import { RealtimeModule } from "../realtime/realtime.module.js";
 import { CashController } from "./infrastructure/controllers/cash.controller.js";
 import { SalesController } from "./infrastructure/controllers/sales.controller.js";
 import { PrismaCashRepository } from "./infrastructure/repositories/prisma-cash.repository.js";
@@ -26,7 +28,7 @@ import { RegisterPaymentUseCase } from "./application/use-cases/register-payment
 import { ConfirmSaleUseCase } from "./application/use-cases/confirm-sale.use-case.js";
 
 @Module({
-  imports: [CatalogModule, InventoryModule],
+  imports: [CatalogModule, InventoryModule, AuditModule, RealtimeModule],
   controllers: [CashController, SalesController],
   providers: [
     CreateCashRegisterUseCase,

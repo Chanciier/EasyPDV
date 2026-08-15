@@ -35,8 +35,10 @@ export interface SaleRepositoryPort {
    * numa única transação Prisma — é o "evento central" do sistema. Ver
    * docs/DATABASE.md. O débito usa `decrement` atômico (não read-modify-write),
    * o que resolve a race condition de concorrência documentada desde a Sprint 3.
+   * `actorUserId` grava um AuditLog (action "sale.confirmed") na MESMA
+   * transação — único ponto de auditoria com essa garantia (Sprint 13).
    */
-  confirm(saleId: string, warehouseId: string): Promise<Sale>;
+  confirm(saleId: string, warehouseId: string, actorUserId: string | null): Promise<Sale>;
   /** Soma pagamentos "dinheiro" aprovados de vendas confirmadas na sessão — usado no fechamento de caixa (Sprint 9). */
   sumCashPayments(cashSessionId: string): Promise<number>;
 }
