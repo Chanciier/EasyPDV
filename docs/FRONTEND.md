@@ -24,15 +24,19 @@ hooks/
   use-sales.ts      busca de produto (autocomplete), ciclo de vida da venda, listagem p/ Histórico
   use-cash.ts       sessão/movimentos de caixa
   use-catalog.ts    CRUD de produto/categoria/tabela de preço (tela Produtos)
+  use-hardware.ts   bridge window.easypdv (impressora/gaveta/settings) — Sprint 11, ver ELECTRON.md
 components/pos/
   sale-view.tsx, cash-view.tsx, products-view.tsx, history-view.tsx   migradas (Sprint 9)
   customers-view.tsx                                                  ainda mock (pos-provider.tsx)
   payment-dialog.tsx, receipt-dialog.tsx                               migradas junto com sale-view
+  settings-dialog.tsx                                                 config de hardware (Sprint 11)
 ```
 
 Não existem `services/`, `stores/` (plural) nem rotas `app/(auth)/` — isso era o desenho inicial da Sprint 0; na prática a migração coube em `lib/` + `hooks/` sem precisar dessas camadas extras.
 
 As telas e atalhos de teclado existentes (F1-F9, navegação keyboard-first) foram preservados — a mudança é a origem do dado, não a UI.
+
+**Leitor de código de barras (Sprint 11)**: captura global de keydown em `sale-view.tsx`, só ativa na tela Venda. Sem input/select/textarea focado e sem diálogo de pagamento/recibo aberto, o primeiro caractere digitado foca a busca e é encaminhado manualmente (com `e.preventDefault()` — sem isso o caractere duplica, porque o navegador aplica a inserção nativa de texto no elemento recém-focado pelo próprio handler); o resto do código + Enter segue o fluxo normal do input, caindo no fallback `GET /products/by-barcode/:code` já existente desde a Sprint 9. Toda a lógica de hardware (impressora/gaveta) só funciona dentro do Electron — `hooks/use-hardware.ts` trata `window.easypdv` ausente como recurso indisponível, nunca como erro (ver [ELECTRON.md](./ELECTRON.md)).
 
 ## Padrão de mutação: saleId no `mutate()`, não no hook
 

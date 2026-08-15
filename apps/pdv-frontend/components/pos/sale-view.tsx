@@ -7,6 +7,7 @@ import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
 import { useCartStore } from '@/lib/cart-store'
 import { useCurrentCashSession } from '@/hooks/use-cash'
+import { useHardwareSettings, useOpenDrawer, usePrintReceipt } from '@/hooks/use-hardware'
 import {
   findProductByBarcode,
   useAddSaleItem,
@@ -25,6 +26,13 @@ import { ReceiptDialog } from './receipt-dialog'
 
 type Receipt = { sale: Sale; method: PaymentMethod; received: number; change: number }
 
+const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+  dinheiro: 'Dinheiro',
+  cartao: 'Cartão',
+  pix: 'PIX',
+  outro: 'Outro',
+}
+
 export function SaleView() {
   const { data: cashSession } = useCurrentCashSession()
   const cashOpen = cashSession?.status === 'open'
@@ -38,6 +46,9 @@ export function SaleView() {
   const registerPayment = useRegisterPayment()
   const confirmSale = useConfirmSale()
   const cancelSale = useCancelSale()
+  const { data: hardwareSettings } = useHardwareSettings()
+  const printReceipt = usePrintReceipt()
+  const openDrawer = useOpenDrawer()
 
   const [term, setTerm] = useState('')
   const [debouncedTerm, setDebouncedTerm] = useState('')
@@ -188,7 +199,10 @@ export function SaleView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement
-      const typing = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+      const typing =
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        el instanceof HTMLSelectElement
 
       if (e.key === 'F2') {
         e.preventDefault()
@@ -214,12 +228,35 @@ export function SaleView() {
       } else if (e.key === 'Delete') {
         const item = sale?.items.find((i) => i.productId === selectedProductId)
         if (item) removeLine(item)
+      } else if (
+        e.key.length === 1 &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.metaKey &&
+        !paymentOpen &&
+        !receipt
+      ) {
+        // Leitor de código de barras USB (emulação de teclado): sem nenhum
+        // input focado, o primeiro caractere digitado foca a busca e é
+        // encaminhado pra não se perder — o restante do código + Enter
+        // chega direto no input, reaproveitando o fallback de leitura
+        // exata que já existe em handleSearchKey (findProductByBarcode).
+        //
+        // preventDefault() é essencial aqui: mover o foco pro input DENTRO
+        // do handler de keydown faz o navegador aplicar a inserção nativa
+        // de texto no elemento recém-focado (não no que originou o evento)
+        // — sem isso, o primeiro caractere seria duplicado (confirmado
+        // rodando de verdade: virava "77" em vez de "7").
+        e.preventDefault()
+        const char = e.key
+        setTerm((prev) => prev + char)
+        searchRef.current?.focus()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sale, selectedProductId])
+  }, [sale, selectedProductId, paymentOpen, receipt])
 
   const handleConfirmPayment = async (method: PaymentMethod, received: number) => {
     if (!sale) return
@@ -229,12 +266,35 @@ export function SaleView() {
       await registerPayment.mutateAsync({ saleId: sale.id, method, amount: sale.totalAmount })
       const confirmed = await confirmSale.mutateAsync(sale.id)
       setPaymentOpen(false)
+      const change = method === 'dinheiro' ? Math.max(0, received - confirmed.totalAmount) : 0
       setReceipt({
         sale: confirmed,
         method,
         received: method === 'dinheiro' ? received : confirmed.totalAmount,
-        change: method === 'dinheiro' ? Math.max(0, received - confirmed.totalAmount) : 0,
+        change,
       })
+
+      // Impressão/gaveta nunca bloqueiam nem falham a venda — já foi
+      // confirmada no backend antes daqui, hardware é sempre opcional.
+      if (hardwareSettings?.autoPrintReceipt) {
+        printReceipt.mutate({
+          saleId: confirmed.id,
+          confirmedAt: confirmed.confirmedAt ?? new Date().toISOString(),
+          items: confirmed.items.map((item) => ({
+            name: productNames[item.productId] ?? item.productId,
+            quantity: item.quantity,
+            totalAmount: item.totalAmount,
+          })),
+          totalAmount: confirmed.totalAmount,
+          paymentLabel: PAYMENT_LABELS[method],
+          received: method === 'dinheiro' ? received : undefined,
+          change: change > 0 ? change : undefined,
+        })
+      }
+      if (method === 'dinheiro' && hardwareSettings?.autoOpenDrawerOnCash) {
+        openDrawer.mutate()
+      }
+
       reset()
       setTerm('')
     } catch (e) {

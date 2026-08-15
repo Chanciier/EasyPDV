@@ -38,7 +38,8 @@
     ],
     "extraResources": [
       { "from": "resources-build/pdv-backend", "to": "pdv-backend" },
-      { "from": "resources-build/pdv-frontend", "to": "pdv-frontend" }
+      { "from": "resources-build/pdv-frontend", "to": "pdv-frontend" },
+      { "from": "resources/print-raw.ps1", "to": "print-raw.ps1" }
     ],
     "win": {
       "target": "nsis",

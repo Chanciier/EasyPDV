@@ -11,6 +11,7 @@ import {
   Lock,
   Unlock,
   LogOut,
+  Settings,
 } from 'lucide-react'
 import { usePOS } from './pos-provider'
 import { formatBRL } from '@/lib/pos-data'
@@ -22,6 +23,7 @@ import { ProductsView } from './products-view'
 import { HistoryView } from './history-view'
 import { CustomersView } from './customers-view'
 import { ShortcutsBar } from './shortcuts-bar'
+import { SettingsDialog } from './settings-dialog'
 
 const NAV = [
   { key: 'venda', label: 'Venda', icon: ShoppingCart, hint: 'F1' },
@@ -37,6 +39,7 @@ export function POSShell() {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.clear)
   const [today, setToday] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     setToday(
@@ -127,13 +130,22 @@ export function POSShell() {
           </div>
           <div className="mt-2 flex items-center justify-between gap-2">
             <p className="truncate text-sidebar-foreground/50">{user?.name}</p>
-            <button
-              onClick={logout}
-              title="Sair"
-              className="shrink-0 rounded p-1 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            >
-              <LogOut className="size-3.5" />
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                onClick={() => setSettingsOpen(true)}
+                title="Configurações"
+                className="rounded p-1 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              >
+                <Settings className="size-3.5" />
+              </button>
+              <button
+                onClick={logout}
+                title="Sair"
+                className="rounded p-1 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              >
+                <LogOut className="size-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -167,6 +179,8 @@ export function POSShell() {
 
         <ShortcutsBar />
       </div>
+
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )
 }

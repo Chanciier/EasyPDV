@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { setupAutoUpdate } from "./auto-update.js";
+import { registerHardwareIpc } from "./hardware/ipc.js";
 
 /**
  * Processo Main — único com acesso a hardware (impressora, gaveta, leitor,
@@ -187,6 +188,8 @@ async function boot(): Promise<void> {
 ipcMain.on("activation:completed", () => {
   void mainWindow?.loadFile(resolveFrontendIndex());
 });
+
+registerHardwareIpc();
 
 app.whenReady().then(boot);
 
