@@ -45,6 +45,7 @@ export function toDomainFiscalDocument(record: PrismaFiscalDocument): FiscalDocu
     documentNumber: record.documentNumber,
     accessKey: record.accessKey,
     danfeUrl: record.danfeUrl,
+    qrCodeUrl: record.qrCodeUrl,
     errorMessage: record.errorMessage,
     issuedAt: record.issuedAt,
     createdAt: record.createdAt,

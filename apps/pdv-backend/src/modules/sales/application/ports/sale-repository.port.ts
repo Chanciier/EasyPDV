@@ -1,4 +1,4 @@
-import type { PaymentMethod, SaleStatus } from "@easypdv/shared-types";
+import type { PaymentCardType, PaymentMethod, SaleStatus } from "@easypdv/shared-types";
 import type { Sale } from "../../domain/entities/sale.entity.js";
 
 export interface StartSaleData {
@@ -18,6 +18,8 @@ export interface RegisterPaymentData {
   saleId: string;
   method: PaymentMethod;
   amount: number;
+  cardType: PaymentCardType | null;
+  installments: number | null;
   authorizationCode: string | null;
 }
 
@@ -29,6 +31,8 @@ export interface SaleRepositoryPort {
   addItem(data: AddSaleItemData): Promise<Sale>;
   removeItem(saleId: string, itemId: string): Promise<Sale>;
   cancel(id: string): Promise<Sale>;
+  /** Desconto fixo (R$) no total da venda — recalcula totalAmount = max(0, subtotal - discountAmount). */
+  applyDiscount(saleId: string, discountAmount: number): Promise<Sale>;
   registerPayment(data: RegisterPaymentData): Promise<Sale>;
   /**
    * Confirma a venda e debita o estoque no `warehouseId` informado, tudo
@@ -41,6 +45,16 @@ export interface SaleRepositoryPort {
   confirm(saleId: string, warehouseId: string, actorUserId: string | null): Promise<Sale>;
   /** Soma pagamentos "dinheiro" aprovados de vendas confirmadas na sessão — usado no fechamento de caixa (Sprint 9). */
   sumCashPayments(cashSessionId: string): Promise<number>;
+  /**
+   * Estorna uma venda confirmada (Sprint 14): reverte o débito de estoque
+   * original via StockMovement compensatório (type "devolucao", quantidade
+   * positiva) no MESMO depósito debitado por confirm() — derivado das
+   * StockMovement originais da venda, não de "o primeiro depósito". Reaproveita
+   * SaleStatus "cancelled" (distinção com cancelamento de rascunho via
+   * confirmedAt !== null). AuditLog "sale.voided" na MESMA transação, mesma
+   * régua de rigor de confirm()/"sale.confirmed".
+   */
+  voidConfirmed(saleId: string, actorUserId: string | null, reason: string): Promise<Sale>;
 }
 
 export const SALE_REPOSITORY = Symbol("SALE_REPOSITORY");

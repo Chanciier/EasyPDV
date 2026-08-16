@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, Plus, Minus, Trash2, ShoppingCart, Lock } from 'lucide-react'
-import type { PaymentMethod, Product, Sale, SaleItem } from '@easypdv/shared-types'
+import type { PaymentCardType, PaymentMethod, Product, Sale, SaleItem } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
 import { useCartStore } from '@/lib/cart-store'
@@ -11,6 +11,7 @@ import { useHardwareSettings, useOpenDrawer, usePrintReceipt } from '@/hooks/use
 import {
   findProductByBarcode,
   useAddSaleItem,
+  useApplySaleDiscount,
   useCancelSale,
   useConfirmSale,
   useProductPrices,
@@ -46,6 +47,7 @@ export function SaleView() {
   const registerPayment = useRegisterPayment()
   const confirmSale = useConfirmSale()
   const cancelSale = useCancelSale()
+  const applyDiscount = useApplySaleDiscount()
   const { data: hardwareSettings } = useHardwareSettings()
   const printReceipt = usePrintReceipt()
   const openDrawer = useOpenDrawer()
@@ -60,6 +62,9 @@ export function SaleView() {
   const [paymentSubmitting, setPaymentSubmitting] = useState(false)
   const [paymentError, setPaymentError] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
+  const [discountOpen, setDiscountOpen] = useState(false)
+  const [discountValue, setDiscountValue] = useState('')
+  const [discountError, setDiscountError] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -97,6 +102,22 @@ export function SaleView() {
     if (e instanceof ApiError) return e.code
     if (e instanceof Error) return e.message
     return fallback
+  }
+
+  async function handleApplyDiscount() {
+    if (!sale) return
+    const amount = Number(discountValue.replace(',', '.'))
+    if (Number.isNaN(amount) || amount < 0) {
+      setDiscountError('Valor inválido.')
+      return
+    }
+    setDiscountError(null)
+    try {
+      await applyDiscount.mutateAsync({ saleId: sale.id, discountAmount: amount })
+      setDiscountOpen(false)
+    } catch (e) {
+      setDiscountError(describeError(e, 'Erro ao aplicar desconto.'))
+    }
   }
 
   async function ensureSale(): Promise<Sale> {
@@ -258,12 +279,23 @@ export function SaleView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sale, selectedProductId, paymentOpen, receipt])
 
-  const handleConfirmPayment = async (method: PaymentMethod, received: number) => {
+  const handleConfirmPayment = async (
+    method: PaymentMethod,
+    received: number,
+    cardType: PaymentCardType | null,
+    installments: number | null,
+  ) => {
     if (!sale) return
     setPaymentSubmitting(true)
     setPaymentError(null)
     try {
-      await registerPayment.mutateAsync({ saleId: sale.id, method, amount: sale.totalAmount })
+      await registerPayment.mutateAsync({
+        saleId: sale.id,
+        method,
+        amount: sale.totalAmount,
+        cardType,
+        installments,
+      })
       const confirmed = await confirmSale.mutateAsync(sale.id)
       setPaymentOpen(false)
       const change = method === 'dinheiro' ? Math.max(0, received - confirmed.totalAmount) : 0
@@ -454,14 +486,75 @@ export function SaleView() {
 
       {/* Coluna direita: totais */}
       <aside className="flex w-80 shrink-0 flex-col gap-4 border-l border-border bg-card/50 p-4">
-        <div className="mt-auto space-y-2 rounded-xl bg-card p-4 shadow-sm ring-1 ring-border">
-          <div className="flex items-baseline justify-between">
-            <span className="text-sm font-semibold">Total</span>
-            <span className="font-mono text-3xl font-bold">{formatBRL(sale?.totalAmount ?? 0)}</span>
+        {sale && items.length > 0 && (
+          <div className="mt-auto rounded-xl bg-card p-3 shadow-sm ring-1 ring-border">
+            {discountOpen ? (
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-muted-foreground">Desconto (R$)</label>
+                <div className="flex gap-2">
+                  <input
+                    autoFocus
+                    inputMode="decimal"
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleApplyDiscount()
+                      } else if (e.key === 'Escape') {
+                        e.stopPropagation()
+                        setDiscountOpen(false)
+                        setDiscountError(null)
+                      }
+                    }}
+                    placeholder="0,00"
+                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-primary"
+                    aria-label="Valor do desconto"
+                  />
+                  <button
+                    onClick={handleApplyDiscount}
+                    disabled={applyDiscount.isPending}
+                    className="shrink-0 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Aplicar
+                  </button>
+                </div>
+                {discountError && <p className="text-xs text-destructive">{discountError}</p>}
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setDiscountValue(sale.discountAmount > 0 ? String(sale.discountAmount) : '')
+                  setDiscountError(null)
+                  setDiscountOpen(true)
+                }}
+                className="flex w-full items-center justify-between text-sm"
+              >
+                <span className="text-muted-foreground">Desconto</span>
+                <span className="font-mono font-medium">
+                  {sale.discountAmount > 0 ? `- ${formatBRL(sale.discountAmount)}` : 'Adicionar'}
+                </span>
+              </button>
+            )}
           </div>
-          <p className="text-right text-xs text-muted-foreground">
-            {items.reduce((s, i) => s + i.quantity, 0)} itens
-          </p>
+        )}
+
+        <div className={items.length === 0 || !sale ? 'mt-auto' : ''}>
+          <div className="space-y-2 rounded-xl bg-card p-4 shadow-sm ring-1 ring-border">
+            {sale && sale.discountAmount > 0 && (
+              <div className="flex items-baseline justify-between text-xs text-muted-foreground">
+                <span>Subtotal</span>
+                <span className="font-mono">{formatBRL(sale.totalAmount + sale.discountAmount)}</span>
+              </div>
+            )}
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm font-semibold">Total</span>
+              <span className="font-mono text-3xl font-bold">{formatBRL(sale?.totalAmount ?? 0)}</span>
+            </div>
+            <p className="text-right text-xs text-muted-foreground">
+              {items.reduce((s, i) => s + i.quantity, 0)} itens
+            </p>
+          </div>
         </div>
 
         <button

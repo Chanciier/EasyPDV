@@ -65,19 +65,35 @@ POST   /sales/:id/items                 (Bearer) → adiciona item (preço resol
                                          DELETE + POST, ver docs/FRONTEND.md)
 DELETE /sales/:id/items/:itemId         (Bearer) → remove item; só em draft
 POST   /sales/:id/payments              (Bearer) → registra pagamento (dinheiro/cartao/pix/outro); só em draft;
-                                         cartão em V1 é declarado manualmente já "aprovado" (sem TEF, ver ROADMAP.md)
+                                         cartão em V1 é declarado manualmente já "aprovado" (sem TEF, ver ROADMAP.md).
+                                         cardType (credito/debito) e installments são opcionais, só fazem
+                                         sentido com method="cartao" (Sprint 14)
+PATCH  /sales/:id/discount              (Bearer) → aplica desconto fixo (R$) no total da venda; só em draft;
+                                         409 se discountAmount > subtotal (Sprint 14). Sem alçada — qualquer
+                                         operador autenticado pode aplicar, mesmo padrão de sangria/suprimento
 POST   /sales/:id/confirm               (Bearer) → confirma a venda: exige itens + pagamento total >= totalAmount;
                                          debita o estoque do depósito padrão numa transação atômica única
                                          (Sale.status→confirmed + StockMovement tipo "venda" + StockItem.decrement);
                                          409 se sem itens, sem pagamento suficiente, ou já não estiver em draft
 POST   /sales/:id/cancel                (Bearer) → cancela; só em draft
+POST   /sales/:id/void                  (Bearer + administrador/gerente) → estorna uma venda já CONFIRMADA
+                                         (Sprint 14): { reason } obrigatório. Reverte o débito de estoque
+                                         (StockMovement tipo "devolucao", positivo, no mesmo depósito
+                                         debitado por confirm) numa transação atômica, reaproveita
+                                         SaleStatus "cancelled" (distinção com cancelamento de rascunho via
+                                         confirmedAt !== null). 409 se a venda não estiver confirmada OU se
+                                         já existe um documento fiscal emitido pra ela (guarda-corrimão
+                                         deliberado — não propaga o estorno pro Bling nem cancela a NFC-e
+                                         na SEFAZ, lacuna aceita e documentada, ver Decisões e Riscos Abertos)
 
 GET    /sales/:saleId/fiscal            (Bearer) → status fiscal da NFC-e (Sprint 12): busca ao vivo no
                                          Intermediador (GET /fiscal/sale/:saleId lá) e espelha localmente
                                          (FiscalDocument, SQLite); se o Intermediador estiver inacessível,
                                          cai pro que já está espelhado em vez de falhar a tela inteira.
                                          `null` é normal — nem toda venda tem NFC-e (emissão é opt-in,
-                                         BLING_NFCE_AUTO_EMIT no Intermediador, default desligado)
+                                         BLING_NFCE_AUTO_EMIT no Intermediador, default desligado).
+                                         qrCodeUrl (Sprint 14) vem do XML autorizado do Bling
+                                         (<infNFeSupl><qrCode>), usado pra imprimir o cupom fiscal real
 
 GET    /sync/outbox?status=             (Bearer + administrador/gerente/tecnico) → lista entradas do
                                          outbox local (Central de Erros de Sincronização, Sprint 8)
@@ -129,6 +145,7 @@ GET    /provisioning/busy-status        SEM auth → { hasOpenCashSession }, qua
 
 ```
 sale.confirmed          { saleId, totalAmount, confirmedAt } — emitido por SalesController após POST /sales/:id/confirm
+sale.voided             { saleId, reason } — emitido por SalesController após POST /sales/:id/void (Sprint 14)
 cash_session.opened     { sessionId, cashRegisterId } — emitido por CashController após POST /cash/sessions
 cash_session.closed     { sessionId, cashRegisterId } — emitido por CashController após PATCH /cash/sessions/:id/close
 ```
@@ -162,8 +179,11 @@ GET    /integrations/bling/status?organizationId=    { connected, connectedAt, e
 
 GET    /fiscal/sale/:saleId  chamado pelo PDV local — exige apiKey de terminal (mesmo guard de POST /sync).
                            Status da NFC-e emitida pra essa venda (Sprint 12): { type, status,
-                           documentNumber, accessKey, danfeUrl, errorMessage, issuedAt }; 404 se a venda
-                           não tem documento fiscal (emissão é opt-in, ver BLING_NFCE_AUTO_EMIT abaixo)
+                           documentNumber, accessKey, danfeUrl, qrCodeUrl, errorMessage, issuedAt }; 404 se
+                           a venda não tem documento fiscal (emissão é opt-in, ver BLING_NFCE_AUTO_EMIT
+                           abaixo). qrCodeUrl (Sprint 14) é extraído do XML autorizado devolvido pelo Bling
+                           (tag <infNFeSupl><qrCode>, padrão nacional NFC-e) — nunca reconstruído a partir
+                           de UF+chave
 
 POST   /organizations                     SEM auth (bootstrapping — sem UI de admin ainda, uso via
                                            curl/Postman) { name, document? } → cria Organization. Sprint 10.

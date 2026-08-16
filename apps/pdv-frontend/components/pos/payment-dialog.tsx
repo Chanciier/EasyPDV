@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Banknote, CreditCard, QrCode, HelpCircle } from 'lucide-react'
-import type { PaymentMethod } from '@easypdv/shared-types'
+import type { PaymentCardType, PaymentMethod } from '@easypdv/shared-types'
 import { Modal } from './ui/modal'
 import { formatBRL } from '@/lib/pos-data'
 
@@ -11,6 +11,11 @@ const METHODS: { key: PaymentMethod; label: string; icon: typeof Banknote; num: 
   { key: 'cartao', label: 'Cartão', icon: CreditCard, num: '2' },
   { key: 'pix', label: 'PIX', icon: QrCode, num: '3' },
   { key: 'outro', label: 'Outro', icon: HelpCircle, num: '4' },
+]
+
+const CARD_TYPES: { key: PaymentCardType; label: string }[] = [
+  { key: 'credito', label: 'Crédito' },
+  { key: 'debito', label: 'Débito' },
 ]
 
 export function PaymentDialog({
@@ -26,16 +31,25 @@ export function PaymentDialog({
   submitting?: boolean
   error?: string | null
   onClose: () => void
-  onConfirm: (method: PaymentMethod, received: number) => void
+  onConfirm: (
+    method: PaymentMethod,
+    received: number,
+    cardType: PaymentCardType | null,
+    installments: number | null,
+  ) => void
 }) {
   const [method, setMethod] = useState<PaymentMethod>('dinheiro')
   const [received, setReceived] = useState<string>('')
+  const [cardType, setCardType] = useState<PaymentCardType>('credito')
+  const [installments, setInstallments] = useState(1)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (open) {
       setMethod('dinheiro')
       setReceived('')
+      setCardType('credito')
+      setInstallments(1)
       setTimeout(() => inputRef.current?.focus(), 50)
     }
   }, [open])
@@ -43,11 +57,17 @@ export function PaymentDialog({
   const receivedNum = Number(received.replace(',', '.')) || 0
   const change = useMemo(() => Math.max(0, receivedNum - total), [receivedNum, total])
   const isCash = method === 'dinheiro'
+  const isCard = method === 'cartao'
   const canConfirm = !submitting && (!isCash || receivedNum >= total)
 
   const confirm = () => {
     if (!canConfirm) return
-    onConfirm(method, isCash ? receivedNum : total)
+    onConfirm(
+      method,
+      isCash ? receivedNum : total,
+      isCard ? cardType : null,
+      isCard ? installments : null,
+    )
   }
 
   useEffect(() => {
@@ -65,7 +85,7 @@ export function PaymentDialog({
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, method, received, canConfirm])
+  }, [open, method, received, canConfirm, cardType, installments])
 
   const quickValues = [total, 20, 50, 100, 200].filter((v, i, a) => a.indexOf(v) === i)
 
@@ -126,6 +146,66 @@ export function PaymentDialog({
             })}
           </div>
         </div>
+
+        {isCard && (
+          <div className="space-y-3">
+            <div>
+              <p className="mb-1.5 text-sm font-medium">Tipo</p>
+              <div className="grid grid-cols-2 gap-2">
+                {CARD_TYPES.map((c) => (
+                  <button
+                    key={c.key}
+                    onClick={() => setCardType(c.key)}
+                    disabled={submitting}
+                    className={`rounded-lg border-2 px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      cardType === c.key
+                        ? 'border-primary bg-primary/15 text-foreground'
+                        : 'border-border bg-card text-muted-foreground hover:border-primary/50'
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label htmlFor="installments" className="mb-1.5 block text-sm font-medium">
+                Parcelas
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setInstallments((n) => Math.max(1, n - 1))}
+                  disabled={submitting || installments <= 1}
+                  className="grid size-9 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Diminuir parcelas"
+                >
+                  −
+                </button>
+                <input
+                  id="installments"
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={installments}
+                  onChange={(e) => setInstallments(Math.min(12, Math.max(1, Number(e.target.value) || 1)))}
+                  disabled={submitting}
+                  className="h-9 w-16 rounded-md border border-input bg-background text-center font-mono text-sm outline-none focus:border-primary disabled:opacity-50"
+                />
+                <button
+                  onClick={() => setInstallments((n) => Math.min(12, n + 1))}
+                  disabled={submitting || installments >= 12}
+                  className="grid size-9 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Aumentar parcelas"
+                >
+                  +
+                </button>
+                <span className="text-sm text-muted-foreground">
+                  {installments}x de {formatBRL(total / installments)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {isCash && (
           <div className="space-y-3">

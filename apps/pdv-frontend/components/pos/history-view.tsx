@@ -2,11 +2,16 @@
 
 import { useMemo, useState } from 'react'
 import { Search, Receipt, TrendingUp, Hash, CheckCircle2, Clock3, AlertCircle, Ban, ExternalLink } from 'lucide-react'
-import type { FiscalDocument, PaymentMethod, Sale } from '@easypdv/shared-types'
+import type { FiscalDocument, PaymentMethod, Sale, UserRole } from '@easypdv/shared-types'
 import { formatBRL, normalize } from '@/lib/pos-data'
-import { useFiscalStatus, useProducts, useSalesList } from '@/hooks/use-sales'
+import { ApiError } from '@/lib/api-client'
+import { useAuthStore } from '@/lib/auth-store'
+import { useFiscalStatus, useProducts, useSalesList, useVoidSale } from '@/hooks/use-sales'
 import { useDashboardReport } from '@/hooks/use-reports'
+import { usePrintReceipt } from '@/hooks/use-hardware'
 import { Modal } from './ui/modal'
+
+const VOID_ROLES: UserRole[] = ['administrador', 'gerente']
 
 const FISCAL_STATUS_META: Record<
   FiscalDocument['status'],
@@ -63,8 +68,58 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
 export function HistoryView() {
   const { data: sales = [], isLoading } = useSalesList({ status: 'confirmed' })
   const { data: dashboard } = useDashboardReport()
+  const user = useAuthStore((s) => s.user)
+  const canVoid = !!user && VOID_ROLES.includes(user.role)
+  const voidSale = useVoidSale()
+  const printReceipt = usePrintReceipt()
   const [term, setTerm] = useState('')
   const [detail, setDetail] = useState<Sale | null>(null)
+  const [voidOpen, setVoidOpen] = useState(false)
+  const [voidReason, setVoidReason] = useState('')
+  const [voidError, setVoidError] = useState<string | null>(null)
+  const { data: detailFiscal } = useFiscalStatus(detail?.id ?? null)
+
+  function openDetail(sale: Sale) {
+    setDetail(sale)
+    setVoidOpen(false)
+    setVoidReason('')
+    setVoidError(null)
+  }
+
+  async function handleVoidSale() {
+    if (!detail) return
+    if (!voidReason.trim()) {
+      setVoidError('Informe o motivo do estorno.')
+      return
+    }
+    setVoidError(null)
+    try {
+      await voidSale.mutateAsync({ saleId: detail.id, reason: voidReason.trim() })
+      setDetail(null)
+      setVoidOpen(false)
+      setVoidReason('')
+    } catch (e) {
+      setVoidError(e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Erro ao estornar venda.')
+    }
+  }
+
+  function handlePrintFiscal() {
+    if (!detail || detailFiscal?.status !== 'issued') return
+    const { documentNumber, accessKey, qrCodeUrl } = detailFiscal
+    if (!documentNumber || !accessKey || !qrCodeUrl) return
+    printReceipt.mutate({
+      saleId: detail.id,
+      confirmedAt: detail.confirmedAt ?? new Date().toISOString(),
+      items: detail.items.map((item) => ({
+        name: detailProductNames[item.productId] ?? item.productId,
+        quantity: item.quantity,
+        totalAmount: item.totalAmount,
+      })),
+      totalAmount: detail.totalAmount,
+      paymentLabel: detail.payments[0] ? PAYMENT_LABELS[detail.payments[0].method] : '',
+      fiscal: { documentNumber, accessKey, qrCodeUrl },
+    })
+  }
 
   const filtered = useMemo(() => {
     const t = normalize(term)
@@ -124,7 +179,7 @@ export function HistoryView() {
             filtered.map((s) => (
               <button
                 key={s.id}
-                onClick={() => setDetail(s)}
+                onClick={() => openDetail(s)}
                 className="grid w-full grid-cols-[10rem_1fr_9rem_8rem_7rem] items-center gap-3 border-b border-border/60 px-4 py-2.5 text-left text-sm hover:bg-muted/50"
               >
                 <span className="truncate font-mono text-xs text-muted-foreground">{s.id}</span>
@@ -154,12 +209,66 @@ export function HistoryView() {
         onClose={() => setDetail(null)}
         title={`Cupom ${detail?.id ?? ''}`}
         footer={
-          <button
-            onClick={() => window.print()}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
-          >
-            Reimprimir
-          </button>
+          voidOpen ? (
+            <div className="flex w-full items-center gap-2">
+              <input
+                autoFocus
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleVoidSale()
+                  }
+                }}
+                placeholder="Motivo do estorno"
+                className="h-9 flex-1 rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-primary"
+              />
+              <button
+                onClick={() => {
+                  setVoidOpen(false)
+                  setVoidError(null)
+                }}
+                disabled={voidSale.isPending}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Voltar
+              </button>
+              <button
+                onClick={handleVoidSale}
+                disabled={voidSale.isPending}
+                className="rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {voidSale.isPending ? 'Estornando…' : 'Confirmar estorno'}
+              </button>
+            </div>
+          ) : (
+            <>
+              {canVoid && (
+                <button
+                  onClick={() => setVoidOpen(true)}
+                  className="rounded-lg px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
+                >
+                  Cancelar venda
+                </button>
+              )}
+              {detailFiscal?.status === 'issued' && (
+                <button
+                  onClick={handlePrintFiscal}
+                  disabled={printReceipt.isPending}
+                  className="rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Imprimir cupom fiscal
+                </button>
+              )}
+              <button
+                onClick={() => window.print()}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+              >
+                Reimprimir
+              </button>
+            </>
+          )
         }
       >
         {detail && (
@@ -169,6 +278,11 @@ export function HistoryView() {
               <span>{detail.customerId ?? 'Consumidor Final'}</span>
             </div>
             <FiscalStatusBadge saleId={detail.id} />
+            {voidError && (
+              <div className="rounded-lg bg-destructive/10 px-3 py-2 font-sans text-xs text-destructive">
+                {voidError}
+              </div>
+            )}
             <div className="border-t border-dashed border-border" />
             {detail.items.map((i) => (
               <div key={i.id} className="flex justify-between">

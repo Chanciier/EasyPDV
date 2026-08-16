@@ -165,6 +165,10 @@ model FiscalDocument {
   documentNumber String?
   accessKey      String?
   danfeUrl       String?
+  // Sprint 14 — extraído de <infNFeSupl><qrCode> no XML autorizado devolvido
+  // pelo Bling (BlingApiClient.findNfce), nunca reconstruído a partir de
+  // UF+chave. Ver docs/DATABASE.md.
+  qrCodeUrl      String?
   errorMessage   String?
   issuedAt       DateTime?
   createdAt      DateTime             @default(now())

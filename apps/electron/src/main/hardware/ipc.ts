@@ -3,7 +3,7 @@ import path from "node:path";
 import type { HardwareSettings, ReceiptPrintPayload } from "@easypdv/shared-types";
 import { MockPrinterDriver } from "./mock-printer.driver.js";
 import type { PrinterDriver } from "./printer-driver.js";
-import { buildDrawerKick, buildReceipt } from "./receipt-formatter.js";
+import { buildDrawerKick, buildFiscalReceipt, buildReceipt } from "./receipt-formatter.js";
 import { listWindowsPrinters, readSettings, writeSettings } from "./settings.js";
 import { WindowsRawPrinterDriver } from "./windows-raw-printer.driver.js";
 
@@ -33,7 +33,8 @@ function resolveDriver(settings: HardwareSettings): PrinterDriver {
 export function registerHardwareIpc(): void {
   ipcMain.handle("printer:print", async (_event, payload: ReceiptPrintPayload) => {
     const driver = resolveDriver(readSettings());
-    await driver.print(buildReceipt(payload));
+    const receipt = payload.fiscal ? buildFiscalReceipt(payload) : buildReceipt(payload);
+    await driver.print(receipt);
   });
 
   ipcMain.handle("drawer:open", async () => {

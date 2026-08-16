@@ -69,3 +69,34 @@ export class NoWarehouseAvailableError extends DomainError {
     super("Nenhum depósito cadastrado para debitar o estoque da venda");
   }
 }
+
+export class DiscountExceedsSaleTotalError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(id: string, discountAmount: number, subtotal: number) {
+    super(`Desconto ${discountAmount} excede o subtotal ${subtotal} da venda ${id}`);
+  }
+}
+
+export class SaleNotVoidableError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(id: string) {
+    super(`Venda ${id} não pode ser estornada (não está confirmada)`);
+  }
+}
+
+// Guarda-corrimão deliberado, não opcional (Sprint 14): uma NFC-e já emitida
+// é uma ação fiscal real perante a SEFAZ — o sistema não permite estornar
+// localmente uma venda cujo documento fiscal já saiu. Ver docs/DATABASE.md.
+export class SaleHasIssuedFiscalDocumentError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(id: string) {
+    super(`Venda ${id} já tem um documento fiscal emitido — não pode ser estornada localmente`);
+  }
+}
+
+export class SaleWarehouseNotResolvableError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(id: string) {
+    super(`Não foi possível determinar o depósito original da venda ${id} para o estorno de estoque`);
+  }
+}

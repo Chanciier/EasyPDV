@@ -26,6 +26,7 @@ export class PrismaFiscalDocumentRepository implements FiscalDocumentRepositoryP
         documentNumber: data.documentNumber,
         accessKey: data.accessKey,
         danfeUrl: data.danfeUrl,
+        qrCodeUrl: data.qrCodeUrl,
         errorMessage: data.errorMessage,
         issuedAt: data.issuedAt,
       },

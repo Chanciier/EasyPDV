@@ -24,6 +24,12 @@ export function useRealtime() {
       queryClient.invalidateQueries({ queryKey: ['reports', 'dashboard'] })
     })
 
+    socket.on('sale.voided', () => {
+      queryClient.invalidateQueries({ queryKey: ['sales'] })
+      queryClient.invalidateQueries({ queryKey: ['cash-session'] })
+      queryClient.invalidateQueries({ queryKey: ['reports', 'dashboard'] })
+    })
+
     socket.on('cash_session.opened', () => {
       queryClient.invalidateQueries({ queryKey: ['cash-session'] })
     })

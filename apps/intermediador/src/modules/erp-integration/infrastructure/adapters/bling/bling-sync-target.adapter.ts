@@ -48,10 +48,15 @@ function mapSituacaoToStatus(situacao: number | null): FiscalDocumentStatusCode 
  * com o Bling ainda). V1 simplificação single-tenant: resolve "a" integração
  * ativa em vez de rotear por loja (Sprint 10 resolve isso de verdade).
  * Contato usa um valor padrão fixo ("Consumidor Final", resolvido/criado e
- * cacheado via ErpSyncMapping). Forma de pagamento vem de config
- * (BLING_DEFAULT_PAYMENT_METHOD_ID) — Bling não expõe endpoint de listagem,
- * o id só existe no painel do Bling (Configurações > Formas de Pagamento),
- * confirmado contra a API real na Sprint 7.
+ * cacheado via ErpSyncMapping). Forma de pagamento vem de config — Bling não
+ * expõe endpoint de listagem, os ids só existem no painel do Bling
+ * (Configurações > Formas de Pagamento), confirmado contra a API real na
+ * Sprint 7. Até a Sprint 14 era um único id fixo (BLING_DEFAULT_PAYMENT_METHOD_ID)
+ * pra TODO pedido, ignorando a forma de pagamento real da venda — corrigido
+ * com um mapa opcional por método (BLING_PAYMENT_METHOD_ID_MAP), caindo pro
+ * id fixo quando a venda usa um método sem entrada no mapa. V1 não faz split
+ * de pagamento (a tela de Venda sempre registra um Payment só, cobrindo o
+ * total) — resolvePaymentMethodId usa o primeiro payments[] do payload.
  *
  * Pedido de venda é resolvido de forma idempotente via ErpSyncMapping
  * (checa ANTES de criar, Sprint 12) — necessário porque `createSalesOrder`
@@ -105,7 +110,10 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     }
 
     const contatoId = await this.resolveDefaultContact(accessToken, organizationId);
-    const formaPagamentoId = this.resolveDefaultPaymentMethodId();
+    const primaryPayment = payload.payments?.[0];
+    const formaPagamentoId = primaryPayment
+      ? this.resolvePaymentMethodId(primaryPayment.method, primaryPayment.cardType)
+      : this.resolveDefaultPaymentMethodId();
 
     const items = [];
     for (const item of payload.items) {
@@ -182,7 +190,13 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
 
   private async updateFiscalDocumentFromBling(
     doc: FiscalDocument,
-    details: { situacao: number | null; numero: string | null; chaveAcesso: string | null; linkDanfe: string | null },
+    details: {
+      situacao: number | null;
+      numero: string | null;
+      chaveAcesso: string | null;
+      linkDanfe: string | null;
+      qrCodeUrl: string | null;
+    },
   ): Promise<void> {
     const status = mapSituacaoToStatus(details.situacao);
     await this.fiscalDocumentRepository.update(doc.id, {
@@ -191,6 +205,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       documentNumber: details.numero,
       accessKey: details.chaveAcesso,
       danfeUrl: details.linkDanfe,
+      qrCodeUrl: details.qrCodeUrl,
       errorMessage: null,
       // Só grava issuedAt na transição pra "issued" — não sobrescreve um
       // valor já setado numa consulta anterior com null caso a situação
@@ -243,6 +258,39 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       externalId: String(contact.id),
     });
     return contact.id;
+  }
+
+  /**
+   * Chave do mapa: "cartao_credito"/"cartao_debito" quando cardType existe,
+   * senão só o method ("dinheiro"/"pix"/"outro"/"cartao" sem detalhe). Sem
+   * entrada específica no mapa (ou sem BLING_PAYMENT_METHOD_ID_MAP definida),
+   * cai pro id fixo único de sempre — onboarding continua exigindo só uma
+   * env var nova opcional, não um cadastro à parte.
+   */
+  private resolvePaymentMethodId(method: string, cardType?: string | null): number {
+    const map = this.parsePaymentMethodIdMap();
+    const specificKey = cardType ? `${method}_${cardType}` : method;
+    const resolved = map[specificKey] ?? map[method];
+    if (resolved !== undefined) {
+      return resolved;
+    }
+    return this.resolveDefaultPaymentMethodId();
+  }
+
+  private parsePaymentMethodIdMap(): Record<string, number> {
+    const raw = this.configService.get<string>("BLING_PAYMENT_METHOD_ID_MAP");
+    if (!raw) {
+      return {};
+    }
+    try {
+      const parsed = JSON.parse(raw) as Record<string, number>;
+      return parsed;
+    } catch {
+      this.logger.warn(
+        "BLING_PAYMENT_METHOD_ID_MAP não é um JSON válido — ignorando, caindo pro BLING_DEFAULT_PAYMENT_METHOD_ID fixo.",
+      );
+      return {};
+    }
   }
 
   private resolveDefaultPaymentMethodId(): number {

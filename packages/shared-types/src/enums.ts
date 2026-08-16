@@ -25,6 +25,14 @@ export const PaymentMethod = {
 } as const;
 export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod];
 
+// Só se aplica quando method="cartao" — sem TEF real (ver PaymentMethod),
+// é o operador quem declara se a maquininha rodou como crédito ou débito.
+export const PaymentCardType = {
+  CREDITO: "credito",
+  DEBITO: "debito",
+} as const;
+export type PaymentCardType = (typeof PaymentCardType)[keyof typeof PaymentCardType];
+
 export const PaymentStatus = {
   APROVADO: "aprovado",
   PENDENTE: "pendente",

@@ -8,6 +8,11 @@ export interface SaleConfirmedEvent {
   confirmedAt: string;
 }
 
+export interface SaleVoidedEvent {
+  saleId: string;
+  reason: string;
+}
+
 export interface CashSessionEvent {
   sessionId: string;
   cashRegisterId: string;
@@ -39,6 +44,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   emitSaleConfirmed(event: SaleConfirmedEvent): void {
     this.server.emit("sale.confirmed", event);
+  }
+
+  emitSaleVoided(event: SaleVoidedEvent): void {
+    this.server.emit("sale.voided", event);
   }
 
   emitCashSessionOpened(event: CashSessionEvent): void {

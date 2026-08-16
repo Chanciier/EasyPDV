@@ -60,3 +60,34 @@ export function twoColumns(left: string, right: string, width = 42): Buffer {
   const space = Math.max(1, width - left.length - right.length);
   return text(left + " ".repeat(space) + right);
 }
+
+const QR_EC_LEVEL = { L: 0x30, M: 0x31, Q: 0x32, H: 0x33 } as const;
+
+/**
+ * `GS ( k` — família de comandos ESC/POS pra símbolos 2D (spec Epson),
+ * cada sub-função usa o mesmo envelope pL/pH (tamanho de [cn, fn, ...params]
+ * em little-endian de 2 bytes) antes do payload.
+ */
+function gsK(cn: number, fn: number, params: number[]): Buffer {
+  const payload = Buffer.from([cn, fn, ...params]);
+  const pL = payload.length & 0xff;
+  const pH = (payload.length >> 8) & 0xff;
+  return Buffer.concat([Buffer.from([GS, 0x28, 0x6b, pL, pH]), payload]);
+}
+
+/**
+ * Imprime um QR code (modelo 2) com o conteúdo dado — usado pro cupom fiscal
+ * (Sprint 14), conteúdo é a URL de consulta da NFC-e já extraída do XML
+ * autorizado (ver receipt-formatter.ts). Sequência: seleciona modelo → define
+ * tamanho do módulo → nível de correção de erro → grava os dados → imprime.
+ */
+export function qrCode(data: string, moduleSize = 6, ec: keyof typeof QR_EC_LEVEL = "M"): Buffer {
+  const dataBuffer = Buffer.from(data, "utf8");
+  return Buffer.concat([
+    gsK(0x31, 0x41, [0x32, 0x00]),
+    gsK(0x31, 0x43, [moduleSize]),
+    gsK(0x31, 0x45, [QR_EC_LEVEL[ec]]),
+    gsK(0x31, 0x50, [0x30, ...dataBuffer]),
+    gsK(0x31, 0x51, [0x30]),
+  ]);
+}

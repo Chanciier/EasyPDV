@@ -42,6 +42,7 @@ export interface NfceDetails {
   numero: string | null;
   chaveAcesso: string | null;
   linkDanfe: string | null;
+  qrCodeUrl: string | null;
 }
 
 interface BlingListEnvelope<T> {
@@ -142,15 +143,27 @@ export class BlingApiClient {
     await this.request<BlingItemEnvelope<{ xml?: string }>>(accessToken, "POST", `/nfce/${nfceId}/enviar`, {});
   }
 
+  /**
+   * O QR code pronto NÃO vem num campo próprio da resposta do Bling (spec
+   * `IFindResponse` da lib de terceiro bling-erp-api-js, confirmada na
+   * Sprint 14: só `chaveAcesso`/`xml`/`linkDanfe`/`linkPDF`) — mas o XML
+   * autorizado que o Bling devolve já traz a tag `<infNFeSupl><qrCode>`
+   * (padrão nacional NFC-e, o próprio conteúdo pronto pra virar QR code,
+   * gerado pela SEFAZ na autorização). Extraído daqui em vez de reconstruído
+   * na mão a partir de UF+chave — cada estado tem seu próprio host de
+   * consulta, montar errado geraria um QR code que não abre a nota certa
+   * num cupom fiscal de verdade.
+   */
   async findNfce(accessToken: string, nfceId: number): Promise<NfceDetails> {
     const result = await this.request<
-      BlingItemEnvelope<{ situacao?: number; numero?: string; chaveAcesso?: string; linkDanfe?: string }>
+      BlingItemEnvelope<{ situacao?: number; numero?: string; chaveAcesso?: string; linkDanfe?: string; xml?: string }>
     >(accessToken, "GET", `/nfce/${nfceId}`);
     return {
       situacao: result.data?.situacao ?? null,
       numero: result.data?.numero ?? null,
       chaveAcesso: result.data?.chaveAcesso ?? null,
       linkDanfe: result.data?.linkDanfe ?? null,
+      qrCodeUrl: extractQrCodeUrl(result.data?.xml),
     };
   }
 
@@ -173,4 +186,20 @@ export class BlingApiClient {
     }
     return (parsed ?? ({} as T)) as T;
   }
+}
+
+/** `<infNFeSupl><qrCode>` no XML autorizado — ver comentário de `findNfce` acima. */
+function extractQrCodeUrl(xml: string | undefined | null): string | null {
+  if (!xml) {
+    return null;
+  }
+  const tagMatch = xml.match(/<qrCode>([\s\S]*?)<\/qrCode>/);
+  const tagContent = tagMatch?.[1];
+  if (!tagContent) {
+    return null;
+  }
+  const raw = tagContent.trim();
+  const cdataMatch = raw.match(/^<!\[CDATA\[([\s\S]*?)\]\]>$/);
+  const value = (cdataMatch?.[1] ?? raw).trim();
+  return value || null;
 }

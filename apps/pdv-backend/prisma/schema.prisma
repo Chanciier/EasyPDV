@@ -296,6 +296,11 @@ enum PaymentMethod {
   outro
 }
 
+enum PaymentCardType {
+  credito
+  debito
+}
+
 enum PaymentStatus {
   aprovado
   pendente
@@ -304,16 +309,20 @@ enum PaymentStatus {
 
 // V1 sem TEF/gateway real — pagamento em cartão é declarado manualmente pelo
 // operador (a maquininha física já aprovou) e entra direto como "aprovado".
-// Ver docs/ROADMAP.md "por que fica fora da V1".
+// Ver docs/ROADMAP.md "por que fica fora da V1". cardType/installments só
+// fazem sentido quando method="cartao" — não reforçado no schema (SQLite não
+// tem CHECK condicional prático via Prisma), validado no Zod (shared-validation).
 model Payment {
-  id                String        @id @default(cuid())
+  id                String           @id @default(cuid())
   saleId            String
-  sale              Sale          @relation(fields: [saleId], references: [id])
+  sale              Sale             @relation(fields: [saleId], references: [id])
   method            PaymentMethod
   amount            Float
-  status            PaymentStatus @default(aprovado)
+  cardType          PaymentCardType?
+  installments      Int?
+  status            PaymentStatus    @default(aprovado)
   authorizationCode String?
-  createdAt         DateTime      @default(now())
+  createdAt         DateTime         @default(now())
 
   @@index([saleId])
 }
@@ -371,6 +380,9 @@ model FiscalDocument {
   documentNumber String?
   accessKey      String?
   danfeUrl       String?
+  // Sprint 14 — espelhado do FiscalDocument do Intermediador, extraído lá do
+  // XML autorizado (<infNFeSupl><qrCode>), nunca reconstruído aqui.
+  qrCodeUrl      String?
   errorMessage   String?
   issuedAt       DateTime?
   updatedAt      DateTime             @updatedAt

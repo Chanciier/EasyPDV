@@ -3,6 +3,7 @@ import type {
   CashSessionStatus,
   FiscalDocumentStatus,
   FiscalDocumentType,
+  PaymentCardType,
   PaymentMethod,
   PaymentStatus,
   SaleStatus,
@@ -164,6 +165,10 @@ export interface Payment {
   saleId: string;
   method: PaymentMethod;
   amount: number;
+  // Só preenchido quando method="cartao" (V1 sem TEF real — o operador
+  // declara se a maquininha rodou como crédito/débito e em quantas parcelas).
+  cardType: PaymentCardType | null;
+  installments: number | null;
   status: PaymentStatus;
   authorizationCode: string | null;
   createdAt: string;
@@ -183,6 +188,13 @@ export interface FiscalDocument {
   documentNumber: string | null;
   accessKey: string | null;
   danfeUrl: string | null;
+  // Sprint 14 — a NFC-e autorizada já vem com o QR code pronto embutido no
+  // próprio XML (tag <infNFeSupl><qrCode>, padrão nacional gerado pela
+  // SEFAZ na autorização). Extraído do XML devolvido pelo Bling, nunca
+  // reconstruído na mão a partir de UF+chave (cada estado tem seu próprio
+  // host de consulta — montar errado geraria um QR code que não abre a nota
+  // certa). Ver BlingApiClient.findNfce.
+  qrCodeUrl: string | null;
   errorMessage: string | null;
   issuedAt: string | null;
 }
@@ -252,11 +264,24 @@ export interface SaleSyncPayloadItem {
   unitPrice: number;
 }
 
+// payments[] existe desde a Sprint 14 — antes disso o Adapter Bling nunca
+// sabia a forma de pagamento real da venda, usava um único id fixo pra tudo
+// (BLING_DEFAULT_PAYMENT_METHOD_ID). V1 sem split de pagamento na prática
+// (a tela de Venda só registra um Payment cobrindo o total), mas o payload
+// já é um array pra não quebrar se isso mudar.
+export interface SaleSyncPayloadPayment {
+  method: PaymentMethod;
+  amount: number;
+  cardType: PaymentCardType | null;
+  installments: number | null;
+}
+
 export interface SaleSyncPayload {
   saleId: string;
   totalAmount: number;
   confirmedAt: string;
   items: SaleSyncPayloadItem[];
+  payments: SaleSyncPayloadPayment[];
 }
 
 // Resposta de GET /fiscal/sale/:saleId no Intermediador (Sprint 12) — é o que
@@ -269,6 +294,7 @@ export interface FiscalStatusPayload {
   documentNumber: string | null;
   accessKey: string | null;
   danfeUrl: string | null;
+  qrCodeUrl: string | null;
   errorMessage: string | null;
   issuedAt: string | null;
 }

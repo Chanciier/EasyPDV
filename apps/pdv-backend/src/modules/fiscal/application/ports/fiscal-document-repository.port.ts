@@ -11,6 +11,7 @@ export interface UpsertFiscalDocumentData {
   documentNumber: string | null;
   accessKey: string | null;
   danfeUrl: string | null;
+  qrCodeUrl: string | null;
   errorMessage: string | null;
   issuedAt: Date | null;
 }

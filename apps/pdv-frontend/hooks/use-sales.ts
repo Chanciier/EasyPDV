@@ -1,5 +1,13 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { FiscalDocument, PaymentMethod, Product, ResolvedPrice, Sale, SaleStatus } from '@easypdv/shared-types'
+import type {
+  FiscalDocument,
+  PaymentCardType,
+  PaymentMethod,
+  Product,
+  ResolvedPrice,
+  Sale,
+  SaleStatus,
+} from '@easypdv/shared-types'
 import { apiRequest } from '@/lib/api-client'
 
 export function useSalesList(params?: { status?: SaleStatus; cashSessionId?: string }) {
@@ -98,10 +106,33 @@ export function useRemoveSaleItem() {
 export function useRegisterPayment() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { saleId: string; method: PaymentMethod; amount: number }) =>
+    mutationFn: (input: {
+      saleId: string
+      method: PaymentMethod
+      amount: number
+      cardType?: PaymentCardType | null
+      installments?: number | null
+    }) =>
       apiRequest<Sale>(`/sales/${input.saleId}/payments`, {
         method: 'POST',
-        body: { method: input.method, amount: input.amount },
+        body: {
+          method: input.method,
+          amount: input.amount,
+          cardType: input.cardType ?? undefined,
+          installments: input.installments ?? undefined,
+        },
+      }),
+    onSuccess: (sale) => queryClient.setQueryData(['sale', sale.id], sale),
+  })
+}
+
+export function useApplySaleDiscount() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { saleId: string; discountAmount: number }) =>
+      apiRequest<Sale>(`/sales/${input.saleId}/discount`, {
+        method: 'PATCH',
+        body: { discountAmount: input.discountAmount },
       }),
     onSuccess: (sale) => queryClient.setQueryData(['sale', sale.id], sale),
   })
@@ -138,5 +169,22 @@ export function useCancelSale() {
   return useMutation({
     mutationFn: (saleId: string) => apiRequest<Sale>(`/sales/${saleId}/cancel`, { method: 'POST' }),
     onSuccess: (sale) => queryClient.setQueryData(['sale', sale.id], sale),
+  })
+}
+
+/** Estorno de venda confirmada (Sprint 14) — devolve estoque, sem reembolso automático. Restrito a administrador/gerente no backend. */
+export function useVoidSale() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { saleId: string; reason: string }) =>
+      apiRequest<Sale>(`/sales/${input.saleId}/void`, {
+        method: 'POST',
+        body: { reason: input.reason },
+      }),
+    onSuccess: (sale) => {
+      queryClient.setQueryData(['sale', sale.id], sale)
+      queryClient.invalidateQueries({ queryKey: ['sales'] })
+      queryClient.invalidateQueries({ queryKey: ['cash-session'] })
+    },
   })
 }

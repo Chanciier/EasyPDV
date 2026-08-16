@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import type { SaleStatus, SaleSyncPayload } from "@easypdv/shared-types";
 import { Sale } from "../../domain/entities/sale.entity.js";
+import { SaleWarehouseNotResolvableError } from "../../domain/errors.js";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
 import type {
   AddSaleItemData,
@@ -65,6 +66,11 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     return this.recalculateTotal(saleId);
   }
 
+  async applyDiscount(saleId: string, discountAmount: number): Promise<Sale> {
+    await this.prisma.sale.update({ where: { id: saleId }, data: { discountAmount } });
+    return this.recalculateTotal(saleId);
+  }
+
   async cancel(id: string): Promise<Sale> {
     const record = await this.prisma.sale.update({
       where: { id },
@@ -80,6 +86,8 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
         saleId: data.saleId,
         method: data.method,
         amount: data.amount,
+        cardType: data.cardType,
+        installments: data.installments,
         authorizationCode: data.authorizationCode,
       },
     });
@@ -144,6 +152,15 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
           unitPrice: item.unitPrice,
         };
       }),
+      // Sprint 14 — antes disso o Adapter Bling nunca sabia a forma de
+      // pagamento real da venda (usava um id fixo pra tudo via
+      // BLING_DEFAULT_PAYMENT_METHOD_ID). Ver BlingSyncTargetAdapter.
+      payments: sale.payments.map((payment) => ({
+        method: payment.method,
+        amount: payment.amount,
+        cardType: payment.cardType,
+        installments: payment.installments,
+      })),
     };
 
     await this.prisma.$transaction([
@@ -170,6 +187,67 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     return toDomainSale(confirmed);
   }
 
+  /**
+   * Estorna uma venda confirmada — espelha a transação de confirm() (mesma
+   * régua de rigor: dinheiro + estoque em jogo dos dois lados). O depósito
+   * de cada item é derivado das StockMovement "venda" originais (não "o
+   * primeiro depósito" como confirm() faz ao debitar pela primeira vez) —
+   * mais correto e já preparado pra um cenário multi-depósito futuro.
+   */
+  async voidConfirmed(saleId: string, actorUserId: string | null, reason: string): Promise<Sale> {
+    const sale = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
+
+    const originalMovements = await this.prisma.stockMovement.findMany({
+      where: { referenceType: "sale", referenceId: saleId, type: "venda" },
+      select: { warehouseId: true, productId: true },
+    });
+    if (originalMovements.length === 0) {
+      throw new SaleWarehouseNotResolvableError(saleId);
+    }
+    const warehouseByProduct = new Map(originalMovements.map((m) => [m.productId, m.warehouseId]));
+
+    const stockOperations = sale.items.flatMap((item) => {
+      const warehouseId = warehouseByProduct.get(item.productId);
+      if (!warehouseId) {
+        throw new SaleWarehouseNotResolvableError(saleId);
+      }
+      return [
+        this.prisma.stockMovement.create({
+          data: {
+            warehouseId,
+            productId: item.productId,
+            type: "devolucao",
+            quantity: item.quantity,
+            referenceType: "sale",
+            referenceId: saleId,
+          },
+        }),
+        this.prisma.stockItem.upsert({
+          where: { warehouseId_productId: { warehouseId, productId: item.productId } },
+          create: { warehouseId, productId: item.productId, quantity: item.quantity },
+          update: { quantity: { increment: item.quantity } },
+        }),
+      ];
+    });
+
+    await this.prisma.$transaction([
+      this.prisma.sale.update({ where: { id: saleId }, data: { status: "cancelled" } }),
+      ...stockOperations,
+      this.prisma.auditLog.create({
+        data: {
+          userId: actorUserId,
+          action: "sale.voided",
+          entityType: "sale",
+          entityId: saleId,
+          metadata: JSON.stringify({ reason, totalAmount: sale.totalAmount, itemCount: sale.items.length }),
+        },
+      }),
+    ]);
+
+    const voided = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
+    return toDomainSale(voided);
+  }
+
   async sumCashPayments(cashSessionId: string): Promise<number> {
     const result = await this.prisma.payment.aggregate({
       where: {
@@ -182,9 +260,20 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     return result._sum.amount ?? 0;
   }
 
+  /**
+   * totalAmount = max(0, subtotal dos itens - discountAmount). Roda a cada
+   * addItem/removeItem/applyDiscount — precisa reler o discountAmount atual
+   * da venda a cada chamada, senão adicionar/remover um item depois de um
+   * desconto aplicado apagaria o desconto silenciosamente (bug real corrigido
+   * nesta sprint: a versão anterior ignorava discountAmount por completo).
+   */
   private async recalculateTotal(saleId: string): Promise<Sale> {
-    const items = await this.prisma.saleItem.findMany({ where: { saleId } });
-    const totalAmount = items.reduce((sum, item) => sum + item.totalAmount, 0);
+    const [items, sale] = await Promise.all([
+      this.prisma.saleItem.findMany({ where: { saleId } }),
+      this.prisma.sale.findUniqueOrThrow({ where: { id: saleId } }),
+    ]);
+    const subtotal = items.reduce((sum, item) => sum + item.totalAmount, 0);
+    const totalAmount = Math.max(0, subtotal - sale.discountAmount);
     const record = await this.prisma.sale.update({
       where: { id: saleId },
       data: { totalAmount },

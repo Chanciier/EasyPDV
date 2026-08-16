@@ -74,6 +74,11 @@ export class Sale {
     return this.status === "draft";
   }
 
+  /** Estorno (Sprint 14) só se aplica a uma venda já confirmada — draft usa cancel() normal. */
+  get canBeVoided(): boolean {
+    return this.status === "confirmed";
+  }
+
   get approvedPaymentsTotal(): number {
     return this.payments.filter((p) => p.status === "aprovado").reduce((sum, p) => sum + p.amount, 0);
   }

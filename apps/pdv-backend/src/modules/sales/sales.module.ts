@@ -7,8 +7,10 @@ import { CashController } from "./infrastructure/controllers/cash.controller.js"
 import { SalesController } from "./infrastructure/controllers/sales.controller.js";
 import { PrismaCashRepository } from "./infrastructure/repositories/prisma-cash.repository.js";
 import { PrismaSaleRepository } from "./infrastructure/repositories/prisma-sale.repository.js";
+import { PrismaFiscalStatusReader } from "./infrastructure/repositories/prisma-fiscal-status-reader.js";
 import { CASH_REPOSITORY } from "./application/ports/cash-repository.port.js";
 import { SALE_REPOSITORY } from "./application/ports/sale-repository.port.js";
+import { FISCAL_STATUS_READER } from "./application/ports/fiscal-status-reader.port.js";
 import { CreateCashRegisterUseCase } from "./application/use-cases/create-cash-register.use-case.js";
 import { ListCashRegistersUseCase } from "./application/use-cases/list-cash-registers.use-case.js";
 import { OpenCashSessionUseCase } from "./application/use-cases/open-cash-session.use-case.js";
@@ -26,6 +28,8 @@ import { GetSaleUseCase } from "./application/use-cases/get-sale.use-case.js";
 import { ListSalesUseCase } from "./application/use-cases/list-sales.use-case.js";
 import { RegisterPaymentUseCase } from "./application/use-cases/register-payment.use-case.js";
 import { ConfirmSaleUseCase } from "./application/use-cases/confirm-sale.use-case.js";
+import { ApplySaleDiscountUseCase } from "./application/use-cases/apply-sale-discount.use-case.js";
+import { VoidConfirmedSaleUseCase } from "./application/use-cases/void-confirmed-sale.use-case.js";
 
 @Module({
   imports: [CatalogModule, InventoryModule, AuditModule, RealtimeModule],
@@ -48,8 +52,11 @@ import { ConfirmSaleUseCase } from "./application/use-cases/confirm-sale.use-cas
     ListSalesUseCase,
     RegisterPaymentUseCase,
     ConfirmSaleUseCase,
+    ApplySaleDiscountUseCase,
+    VoidConfirmedSaleUseCase,
     { provide: CASH_REPOSITORY, useClass: PrismaCashRepository },
     { provide: SALE_REPOSITORY, useClass: PrismaSaleRepository },
+    { provide: FISCAL_STATUS_READER, useClass: PrismaFiscalStatusReader },
   ],
   // GetTerminalBusyStatusUseCase é consumido pelo ProvisioningController —
   // leitura entre módulos, mesmo padrão de ResolvePriceUseCase. Ver docs/MODULES.md.

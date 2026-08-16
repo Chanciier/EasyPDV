@@ -24,6 +24,7 @@ export class GetFiscalStatusUseCase {
       documentNumber: doc.documentNumber,
       accessKey: doc.accessKey,
       danfeUrl: doc.danfeUrl,
+      qrCodeUrl: doc.qrCodeUrl,
       errorMessage: doc.errorMessage,
       issuedAt: doc.issuedAt ? doc.issuedAt.toISOString() : null,
     };
