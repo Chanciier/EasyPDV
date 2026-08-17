@@ -54,13 +54,13 @@ function resolveDatabaseUrl(): string {
 }
 
 /**
- * URL pública do Intermediador (Railway) — TODO: preencher assim que o
- * deploy existir (ver docs/DEPLOY.md). Uma só URL vale pra todas as
- * instalações do EasyPDV (o Intermediador é multi-tenant, uma organização
- * por loja), então é uma constante de build, não algo configurável por
- * instalação como o JWT_SECRET.
+ * URL pública do Intermediador, hospedado no Railway (projeto
+ * "celebrated-acceptance", serviço @easypdv/intermediador). Uma só URL vale
+ * pra todas as instalações do EasyPDV (o Intermediador é multi-tenant, uma
+ * organização por loja), então é uma constante de build, não algo
+ * configurável por instalação como o JWT_SECRET.
  */
-const PRODUCTION_INTERMEDIADOR_URL = "";
+const PRODUCTION_INTERMEDIADOR_URL = "https://easypdvintermediador-production.up.railway.app";
 
 /**
  * Sem isso, `HttpSyncGateway`/`HttpFiscalGateway`/`ActivateTerminalUseCase`
