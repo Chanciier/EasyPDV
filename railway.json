@@ -3,5 +3,8 @@
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "docker/Dockerfile.intermediador"
+  },
+  "deploy": {
+    "startCommand": "node dist/main.js"
   }
 }
