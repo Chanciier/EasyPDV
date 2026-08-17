@@ -9,6 +9,7 @@ import { SYNC_OUTBOX_REPOSITORY } from "./application/ports/sync-outbox-reposito
 import { FlushSyncOutboxUseCase } from "./application/use-cases/flush-sync-outbox.use-case.js";
 import { ListSyncOutboxUseCase } from "./application/use-cases/list-sync-outbox.use-case.js";
 import { RetrySyncOutboxEntryUseCase } from "./application/use-cases/retry-sync-outbox-entry.use-case.js";
+import { GetSyncStatusUseCase } from "./application/use-cases/get-sync-status.use-case.js";
 
 @Module({
   imports: [ProvisioningModule],
@@ -17,6 +18,7 @@ import { RetrySyncOutboxEntryUseCase } from "./application/use-cases/retry-sync-
     FlushSyncOutboxUseCase,
     ListSyncOutboxUseCase,
     RetrySyncOutboxEntryUseCase,
+    GetSyncStatusUseCase,
     SyncOutboxWorker,
     { provide: SYNC_OUTBOX_REPOSITORY, useClass: PrismaSyncOutboxRepository },
     { provide: SYNC_GATEWAY, useClass: HttpSyncGateway },

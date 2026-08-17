@@ -95,6 +95,11 @@ GET    /sales/:saleId/fiscal            (Bearer) → status fiscal da NFC-e (Spr
                                          qrCodeUrl (Sprint 14) vem do XML autorizado do Bling
                                          (<infNFeSupl><qrCode>), usado pra imprimir o cupom fiscal real
 
+GET    /sync/status                     (Bearer, qualquer papel) → { pendingCount, failedCount } do
+                                         outbox local (Sprint 15, Modo contingência). Deliberadamente SEM
+                                         @Roles — ao contrário de GET /sync/outbox (detalhado), qualquer
+                                         operador precisa ver que a sincronização está pendente/falhando,
+                                         não só a gestão. Só contagem, sem os payloads
 GET    /sync/outbox?status=             (Bearer + administrador/gerente/tecnico) → lista entradas do
                                          outbox local (Central de Erros de Sincronização, Sprint 8)
 POST   /sync/outbox/:id/retry           (Bearer + administrador/gerente/tecnico) → retry manual; só
@@ -120,9 +125,8 @@ GET    /reports/cash-sessions?from=&to= (Bearer + administrador/gerente/propriet
                                          expectedAmount) calculável no frontend a partir dos campos já
                                          presentes em CashSession
 GET    /reports/stock?warehouseId=      (Bearer + administrador/gerente/proprietario) → saldo atual por
-                                         depósito/produto. `/reports/sales`, `/reports/cash-sessions` e
-                                         `/reports/stock` ainda sem tela dedicada no frontend — corte de
-                                         escopo deliberado, ver docs/CHANGELOG.md
+                                         depósito/produto. Tela "Relatórios" no frontend (Sprint 15)
+                                         consome os três (`reports-view.tsx`)
 
 GET    /provisioning/status             SEM auth — chamado pelo Electron (main process) antes de
                                          qualquer login existir. { activated, organizationId, storeId,
@@ -135,8 +139,14 @@ GET    /provisioning/busy-status        SEM auth → { hasOpenCashSession }, qua
                                          escopado por operador). Consultado pelo Electron antes de aplicar
                                          uma atualização baixada — nunca no meio de uma venda.
 
-/customers        + /:id/sales
-/settings
+GET    /customers?query=                (Bearer) → busca por nome ou documento (Sprint 15), até 25,
+                                         ordenado por nome. Sem query, lista os primeiros 25
+GET    /customers/:id                   (Bearer) → detalhe
+POST   /customers                       (Bearer) → cria; só `name` obrigatório
+PATCH  /customers/:id                   (Bearer) → atualiza campos parciais
+DELETE /customers/:id                   (Bearer + administrador/gerente) → exclui; vendas já vinculadas
+                                         não são apagadas nem bloqueadas — Sale.customerId vira null
+                                         (onDelete: SetNull), a venda passa a exibir "Consumidor Final"
 ```
 
 ### Realtime (WebSocket, Sprint 13)

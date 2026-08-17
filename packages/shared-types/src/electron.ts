@@ -34,3 +34,11 @@ export interface HardwareSettings {
   autoPrintReceipt: boolean;
   autoOpenDrawerOnCash: boolean;
 }
+
+// Backup local automático (Sprint 15) — cópia periódica do easypdv.db,
+// nenhum envio pra nuvem/Intermediador nesta rodada. Ver apps/electron/src/main/backup.ts.
+export interface BackupInfo {
+  fileName: string;
+  createdAt: string;
+  sizeBytes: number;
+}

@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, Plus, Minus, Trash2, ShoppingCart, Lock } from 'lucide-react'
-import type { PaymentCardType, PaymentMethod, Product, Sale, SaleItem } from '@easypdv/shared-types'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Lock, User } from 'lucide-react'
+import type { Customer, PaymentCardType, PaymentMethod, Product, Sale, SaleItem } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
 import { useCartStore } from '@/lib/cart-store'
 import { useCurrentCashSession } from '@/hooks/use-cash'
+import { useCustomerSearch } from '@/hooks/use-customers'
 import { useHardwareSettings, useOpenDrawer, usePrintReceipt } from '@/hooks/use-hardware'
 import {
   findProductByBarcode,
@@ -65,6 +66,9 @@ export function SaleView() {
   const [discountOpen, setDiscountOpen] = useState(false)
   const [discountValue, setDiscountValue] = useState('')
   const [discountError, setDiscountError] = useState<string | null>(null)
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const [customerOpen, setCustomerOpen] = useState(false)
+  const [customerQuery, setCustomerQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -73,6 +77,7 @@ export function SaleView() {
   }, [term])
 
   const { data: searchResults = [] } = useProductSearch(debouncedTerm)
+  const { data: customerResults = [] } = useCustomerSearch(customerQuery)
   const matches = useMemo(() => searchResults.slice(0, 6), [searchResults])
   const priceQueries = useProductPrices(matches.map((p) => p.id))
 
@@ -125,7 +130,10 @@ export function SaleView() {
     if (!cashSession || cashSession.status !== 'open') {
       throw new Error('Abra o caixa antes de iniciar uma venda.')
     }
-    const newSale = await startSale.mutateAsync({ cashSessionId: cashSession.id })
+    const newSale = await startSale.mutateAsync({
+      cashSessionId: cashSession.id,
+      customerId: selectedCustomer?.id,
+    })
     setSaleId(newSale.id)
     return newSale
   }
@@ -239,7 +247,7 @@ export function SaleView() {
       if (typing) return
 
       if (e.key === 'Escape') {
-        if (sale) cancelSale.mutate(sale.id, { onSuccess: () => reset() })
+        if (sale) cancelSale.mutate(sale.id, { onSuccess: () => { reset(); setSelectedCustomer(null) } })
       } else if (e.key === '+' || e.key === '=') {
         const item = sale?.items.find((i) => i.productId === selectedProductId)
         if (item && sale) changeQty(sale.id, item, item.quantity + 1)
@@ -329,6 +337,7 @@ export function SaleView() {
 
       reset()
       setTerm('')
+      setSelectedCustomer(null)
     } catch (e) {
       setPaymentError(describeError(e, 'Erro ao confirmar pagamento.'))
     } finally {
@@ -354,6 +363,66 @@ export function SaleView() {
             {error}
           </div>
         )}
+
+        {/* Cliente da venda */}
+        <div className="relative mb-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setCustomerQuery('')
+                setCustomerOpen((o) => !o)
+              }}
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+            >
+              <User className="size-3.5" />
+              {selectedCustomer ? selectedCustomer.name : 'Consumidor Final'}
+            </button>
+            {selectedCustomer && (
+              <button
+                onClick={() => setSelectedCustomer(null)}
+                className="text-xs text-muted-foreground hover:text-destructive"
+              >
+                Remover
+              </button>
+            )}
+          </div>
+          {customerOpen && (
+            <div className="absolute left-0 top-9 z-20 w-72 rounded-xl border border-border bg-popover p-2 shadow-xl">
+              <input
+                autoFocus
+                value={customerQuery}
+                onChange={(e) => setCustomerQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.stopPropagation()
+                    setCustomerOpen(false)
+                  }
+                }}
+                placeholder="Buscar cliente por nome ou documento"
+                className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-primary"
+              />
+              <ul className="mt-2 max-h-48 overflow-y-auto">
+                {customerResults.length === 0 ? (
+                  <li className="px-2 py-1.5 text-xs text-muted-foreground">Nenhum cliente encontrado.</li>
+                ) : (
+                  customerResults.map((c) => (
+                    <li key={c.id}>
+                      <button
+                        onClick={() => {
+                          setSelectedCustomer(c)
+                          setCustomerOpen(false)
+                        }}
+                        className="w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      >
+                        {c.name}
+                      </button>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
 
         {/* Busca */}
         <div className="relative">

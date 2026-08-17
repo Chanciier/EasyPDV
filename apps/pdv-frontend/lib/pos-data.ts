@@ -12,13 +12,6 @@ export type Product = {
   category: string
 }
 
-export type Customer = {
-  id: string
-  name: string
-  doc: string // CPF/CNPJ
-  phone: string
-}
-
 export type CartItem = {
   productId: string
   name: string
@@ -100,10 +93,4 @@ export const seedProducts: Product[] = [
   { id: 'p10', sku: '7890010', barcode: '7891000100103', name: 'Chocolate ao Leite 90g', price: 6.49, stock: 75, category: 'Doces' },
   { id: 'p11', sku: '7890011', barcode: '7891000100110', name: 'Biscoito Recheado', price: 4.19, stock: 110, category: 'Doces' },
   { id: 'p12', sku: '7890012', barcode: '7891000100127', name: 'Óleo de Soja 900ml', price: 7.89, stock: 48, category: 'Mercearia' },
-]
-
-export const seedCustomers: Customer[] = [
-  { id: 'c1', name: 'Consumidor Final', doc: '', phone: '' },
-  { id: 'c2', name: 'Maria Oliveira', doc: '123.456.789-00', phone: '(11) 98888-1234' },
-  { id: 'c3', name: 'João Souza', doc: '987.654.321-00', phone: '(11) 97777-4321' },
 ]

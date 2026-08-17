@@ -13,6 +13,9 @@ import {
   LogOut,
   Settings,
   ShieldCheck,
+  BarChart3,
+  WifiOff,
+  AlertTriangle,
 } from 'lucide-react'
 import type { UserRole } from '@easypdv/shared-types'
 import { usePOS } from './pos-provider'
@@ -20,12 +23,14 @@ import { formatBRL } from '@/lib/pos-data'
 import { useAuthStore } from '@/lib/auth-store'
 import { useCurrentCashSession } from '@/hooks/use-cash'
 import { useRealtime } from '@/hooks/use-realtime'
+import { useSyncStatus } from '@/hooks/use-sync'
 import { SaleView } from './sale-view'
 import { CashView } from './cash-view'
 import { ProductsView } from './products-view'
 import { HistoryView } from './history-view'
 import { CustomersView } from './customers-view'
 import { AuditView } from './audit-view'
+import { ReportsView } from './reports-view'
 import { ShortcutsBar } from './shortcuts-bar'
 import { SettingsDialog } from './settings-dialog'
 
@@ -40,16 +45,21 @@ const NAV = [
 const AUDIT_NAV = { key: 'auditoria', label: 'Auditoria', icon: ShieldCheck, hint: 'F2' } as const
 const AUDIT_ROLES: UserRole[] = ['administrador', 'gerente', 'auditor']
 
+const REPORTS_NAV = { key: 'relatorios', label: 'Relatórios', icon: BarChart3, hint: 'F5' } as const
+const REPORTS_ROLES: UserRole[] = ['administrador', 'gerente', 'proprietario']
+
 export function POSShell() {
   useRealtime()
   const { view, setView } = usePOS()
   const { data: cashSession } = useCurrentCashSession()
+  const { data: syncStatus } = useSyncStatus()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.clear)
   const [today, setToday] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const canSeeAudit = !!user && AUDIT_ROLES.includes(user.role)
-  const visibleNav = canSeeAudit ? [...NAV, AUDIT_NAV] : NAV
+  const canSeeReports = !!user && REPORTS_ROLES.includes(user.role)
+  const visibleNav = [...NAV, ...(canSeeReports ? [REPORTS_NAV] : []), ...(canSeeAudit ? [AUDIT_NAV] : [])]
 
   useEffect(() => {
     setToday(
@@ -69,6 +79,7 @@ export function POSShell() {
         F7: 'produtos',
         F8: 'historico',
         F9: 'clientes',
+        ...(canSeeReports ? { F5: 'relatorios' } : {}),
         ...(canSeeAudit ? { F2: 'auditoria' } : {}),
       }
       const target = map[e.key]
@@ -79,7 +90,7 @@ export function POSShell() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setView, canSeeAudit])
+  }, [setView, canSeeAudit, canSeeReports])
 
   const cashOpen = cashSession?.status === 'open'
 
@@ -168,6 +179,17 @@ export function POSShell() {
             {visibleNav.find((n) => n.key === view)?.label}
           </h1>
           <div className="flex items-center gap-4 text-sm">
+            {syncStatus && syncStatus.failedCount > 0 ? (
+              <span className="flex items-center gap-1.5 rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive">
+                <AlertTriangle className="size-3.5" />
+                Falha de sincronização ({syncStatus.failedCount})
+              </span>
+            ) : syncStatus && syncStatus.pendingCount > 0 ? (
+              <span className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+                <WifiOff className="size-3.5" />
+                Sincronização pendente ({syncStatus.pendingCount})
+              </span>
+            ) : null}
             <span className="text-muted-foreground" suppressHydrationWarning>
               {today}
             </span>
@@ -186,6 +208,7 @@ export function POSShell() {
           {view === 'produtos' && <ProductsView />}
           {view === 'historico' && <HistoryView />}
           {view === 'clientes' && <CustomersView />}
+          {view === 'relatorios' && canSeeReports && <ReportsView />}
           {view === 'auditoria' && canSeeAudit && <AuditView />}
         </main>
 

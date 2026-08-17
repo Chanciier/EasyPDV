@@ -333,3 +333,13 @@ export interface DashboardReport {
   averageTicket: number;
   openCashSessionsCount: number;
 }
+
+// GET /sync/status (Sprint 15) — deliberadamente SEM @Roles (diferente de
+// GET /sync/outbox, restrito a administrador/gerente/tecnico): é o "modo
+// contingência" básico, qualquer operador precisa ver que a sincronização
+// está pendente/falhando, não só quem tem acesso à Central de Erros
+// detalhada. Só contagem, nunca o payload das entradas.
+export interface SyncStatusSummary {
+  pendingCount: number;
+  failedCount: number;
+}

@@ -11,17 +11,15 @@ import {
   type CashMovement,
   type CashSession,
   type CartItem,
-  type Customer,
   type PaymentMethod,
   type Product,
   type Sale,
-  seedCustomers,
   seedProducts,
   uid,
   normalize,
 } from '@/lib/pos-data'
 
-type View = 'venda' | 'caixa' | 'produtos' | 'historico' | 'clientes' | 'auditoria'
+type View = 'venda' | 'caixa' | 'produtos' | 'historico' | 'clientes' | 'auditoria' | 'relatorios'
 
 type POSContextValue = {
   // navegação
@@ -31,7 +29,6 @@ type POSContextValue = {
 
   // dados
   products: Product[]
-  customers: Customer[]
   sales: Sale[]
   cashSession: CashSession | null
 
@@ -58,10 +55,6 @@ type POSContextValue = {
   saveProduct: (p: Product) => void
   deleteProduct: (id: string) => void
 
-  // clientes
-  saveCustomer: (c: Customer) => void
-  deleteCustomer: (id: string) => void
-
   // caixa
   openCash: (amount: number) => void
   closeCash: () => void
@@ -74,7 +67,6 @@ export function POSProvider({ children }: { children: ReactNode }) {
   const operator = 'Operador 01'
   const [view, setView] = useState<View>('venda')
   const [products, setProducts] = useState<Product[]>(seedProducts)
-  const [customers, setCustomers] = useState<Customer[]>(seedCustomers)
   const [sales, setSales] = useState<Sale[]>([])
   const [cart, setCart] = useState<CartItem[]>([])
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('c1')
@@ -146,7 +138,9 @@ export function POSProvider({ children }: { children: ReactNode }) {
 
   const checkout = (method: PaymentMethod, received: number): Sale | null => {
     if (cart.length === 0) return null
-    const customer = customers.find((c) => c.id === selectedCustomerId) ?? null
+    // Mock legado (não usado pela tela real de Venda, ver sale-view.tsx) —
+    // cliente aqui era só resolvido a partir do mock local, removido na
+    // Sprint 15 junto com a migração de Clientes pra API real.
     const sale: Sale = {
       id: uid('V'),
       createdAt: new Date().toISOString(),
@@ -157,8 +151,8 @@ export function POSProvider({ children }: { children: ReactNode }) {
       paymentMethod: method,
       received: method === 'dinheiro' ? received : total,
       change: method === 'dinheiro' ? Math.max(0, received - total) : 0,
-      customerId: customer?.id ?? null,
-      customerName: customer?.name ?? null,
+      customerId: selectedCustomerId !== 'c1' ? selectedCustomerId : null,
+      customerName: null,
       operator,
     }
     setSales((prev) => [sale, ...prev])
@@ -199,18 +193,6 @@ export function POSProvider({ children }: { children: ReactNode }) {
 
   const deleteProduct = (id: string) => {
     setProducts((prev) => prev.filter((p) => p.id !== id))
-  }
-
-  const saveCustomer = (c: Customer) => {
-    setCustomers((prev) => {
-      const exists = prev.some((x) => x.id === c.id)
-      return exists ? prev.map((x) => (x.id === c.id ? c : x)) : [...prev, c]
-    })
-  }
-
-  const deleteCustomer = (id: string) => {
-    if (id === 'c1') return // não remove Consumidor Final
-    setCustomers((prev) => prev.filter((c) => c.id !== id))
   }
 
   const openCash = (amount: number) => {
@@ -269,7 +251,6 @@ export function POSProvider({ children }: { children: ReactNode }) {
     setView,
     operator,
     products,
-    customers,
     sales,
     cashSession,
     cart,
@@ -287,8 +268,6 @@ export function POSProvider({ children }: { children: ReactNode }) {
     checkout,
     saveProduct,
     deleteProduct,
-    saveCustomer,
-    deleteCustomer,
     openCash,
     closeCash,
     addCashMovement,

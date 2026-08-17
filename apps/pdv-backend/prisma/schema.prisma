@@ -254,6 +254,25 @@ enum SaleStatus {
   cancelled
 }
 
+// Cliente da venda — antes da Sprint 15 era só um mock no frontend, sem
+// nenhuma linha de verdade. onDelete: SetNull em Sale.customer: excluir um
+// cliente não pode apagar/travar o histórico de vendas dele — a venda só
+// volta a mostrar "Consumidor Final" (customerId null), mesma convenção já
+// usada pra venda sem cliente vinculado.
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  document  String?
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sales Sale[]
+
+  @@index([name])
+}
+
 // Sprint 4: só draft/cancelled (sem pagamento ainda). confirmed + débito de
 // estoque + auditoria entram juntos na Sprint 5, numa única transação
 // atômica — ver docs/DATABASE.md "evento central".
@@ -263,6 +282,7 @@ model Sale {
   cashSession    CashSession @relation(fields: [cashSessionId], references: [id])
   operatorUserId String
   customerId     String?
+  customer       Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
   status         SaleStatus  @default(draft)
   totalAmount    Float       @default(0)
   discountAmount Float       @default(0)

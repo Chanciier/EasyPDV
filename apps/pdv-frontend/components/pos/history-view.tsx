@@ -10,6 +10,7 @@ import { useFiscalStatus, useProducts, useSalesList, useVoidSale } from '@/hooks
 import { useDashboardReport } from '@/hooks/use-reports'
 import { usePrintReceipt } from '@/hooks/use-hardware'
 import { Modal } from './ui/modal'
+import { StatCard } from './ui/stat-card'
 
 const VOID_ROLES: UserRole[] = ['administrador', 'gerente']
 
@@ -146,9 +147,9 @@ export function HistoryView() {
       {/* Resumo do dia — agregado no banco (Sprint 13), sem o cap de 100
           registros que GET /sales tem, diferente da lista abaixo */}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Stat icon={Hash} label="Vendas hoje" value={String(dashboard?.todaySalesCount ?? 0)} />
-        <Stat icon={TrendingUp} label="Total vendido hoje" value={formatBRL(dashboard?.todaySalesTotal ?? 0)} />
-        <Stat icon={Receipt} label="Ticket médio hoje" value={formatBRL(dashboard?.averageTicket ?? 0)} />
+        <StatCard icon={Hash} label="Vendas hoje" value={String(dashboard?.todaySalesCount ?? 0)} />
+        <StatCard icon={TrendingUp} label="Total vendido hoje" value={formatBRL(dashboard?.todaySalesTotal ?? 0)} />
+        <StatCard icon={Receipt} label="Ticket médio hoje" value={formatBRL(dashboard?.averageTicket ?? 0)} />
       </div>
 
       <div className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-card px-3">
@@ -306,26 +307,6 @@ export function HistoryView() {
           </div>
         )}
       </Modal>
-    </div>
-  )
-}
-
-function Stat({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Hash
-  label: string
-  value: string
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        <Icon className="size-4" />
-        {label}
-      </div>
-      <p className="mt-2 font-mono text-2xl font-bold">{value}</p>
     </div>
   )
 }

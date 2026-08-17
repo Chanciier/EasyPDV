@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { DashboardReport } from '@easypdv/shared-types'
+import type { CashSession, DashboardReport, SalesReportEntry, StockReportEntry } from '@easypdv/shared-types'
 import { apiRequest } from '@/lib/api-client'
 
 /**
@@ -15,5 +15,30 @@ export function useDashboardReport() {
   return useQuery({
     queryKey: ['reports', 'dashboard'],
     queryFn: () => apiRequest<DashboardReport>('/reports/dashboard'),
+  })
+}
+
+/** Restrito a administrador/gerente/proprietario no backend — ver ReportsController. */
+export function useSalesReport(params: { from?: string; to?: string }) {
+  return useQuery({
+    queryKey: ['reports', 'sales', params],
+    queryFn: () =>
+      apiRequest<SalesReportEntry[]>('/reports/sales', { query: { from: params.from, to: params.to } }),
+  })
+}
+
+export function useCashSessionsReport(params: { from?: string; to?: string }) {
+  return useQuery({
+    queryKey: ['reports', 'cash-sessions', params],
+    queryFn: () =>
+      apiRequest<CashSession[]>('/reports/cash-sessions', { query: { from: params.from, to: params.to } }),
+  })
+}
+
+/** V1 tem 1 depósito por loja — sem seletor de depósito na tela, warehouseId fica sempre indefinido (retorna tudo). */
+export function useStockReport() {
+  return useQuery({
+    queryKey: ['reports', 'stock'],
+    queryFn: () => apiRequest<StockReportEntry[]>('/reports/stock'),
   })
 }

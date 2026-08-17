@@ -19,4 +19,9 @@ contextBridge.exposeInMainWorld("easypdv", {
   listPrinters: () => ipcRenderer.invoke("printers:list"),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   setSettings: (partial: unknown) => ipcRenderer.invoke("settings:set", partial),
+
+  // Backup local (Sprint 15) — ver docs/ELECTRON.md.
+  createBackup: () => ipcRenderer.invoke("backup:create"),
+  listBackups: () => ipcRenderer.invoke("backup:list"),
+  restoreBackup: (fileName: string) => ipcRenderer.invoke("backup:restore", fileName),
 });

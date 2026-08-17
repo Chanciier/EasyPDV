@@ -5,6 +5,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { setupAutoUpdate } from "./auto-update.js";
 import { registerHardwareIpc } from "./hardware/ipc.js";
+import { registerBackupIpc } from "./backup-ipc.js";
+import { resolveDatabasePath, scheduleAutoBackup } from "./backup.js";
 
 /**
  * Processo Main — único com acesso a hardware (impressora, gaveta, leitor,
@@ -48,8 +50,7 @@ function resolveActivationPage(): string {
 
 /** SQLite por instalação, fora da pasta somente-leitura do instalador. Ver docs/DATABASE.md. */
 function resolveDatabaseUrl(): string {
-  const dbPath = path.join(app.getPath("userData"), "easypdv.db");
-  return `file:${dbPath}`;
+  return `file:${resolveDatabasePath()}`;
 }
 
 /**
@@ -167,6 +168,10 @@ async function boot(): Promise<void> {
     return;
   }
 
+  // Backup local automático (Sprint 15) — só depois do backend confirmar
+  // health (migrations já aplicadas, banco em estado consistente).
+  scheduleAutoBackup();
+
   mainWindow = createWindow();
   const activated = await isTerminalActivated();
   if (activated) {
@@ -190,6 +195,11 @@ ipcMain.on("activation:completed", () => {
 });
 
 registerHardwareIpc();
+registerBackupIpc({
+  stopBackend,
+  startBackend,
+  reloadWindow: () => mainWindow?.reload(),
+});
 
 app.whenReady().then(boot);
 

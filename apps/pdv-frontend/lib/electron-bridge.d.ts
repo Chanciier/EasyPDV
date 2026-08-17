@@ -1,4 +1,4 @@
-import type { HardwareSettings, ReceiptPrintPayload } from "@easypdv/shared-types";
+import type { BackupInfo, HardwareSettings, ReceiptPrintPayload } from "@easypdv/shared-types";
 
 /**
  * window.easypdv só existe dentro do Electron (preload/index.ts) — em
@@ -13,6 +13,9 @@ export interface EasyPdvBridge {
   listPrinters: () => Promise<string[]>;
   getSettings: () => Promise<HardwareSettings>;
   setSettings: (partial: Partial<HardwareSettings>) => Promise<HardwareSettings>;
+  createBackup: () => Promise<BackupInfo>;
+  listBackups: () => Promise<BackupInfo[]>;
+  restoreBackup: (fileName: string) => Promise<void>;
 }
 
 declare global {
