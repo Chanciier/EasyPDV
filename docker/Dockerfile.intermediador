@@ -1,22 +1,43 @@
 # Imagem de produção do apps/intermediador, para deploy no Railway.
-FROM node:20-alpine AS base
+# node:22 — pnpm@11.16.0 (packageManager) exige Node >=22.13, mesmo bug já
+# achado e corrigido no CI (ver docs/CHANGELOG.md, "CI real corrigido").
+FROM node:22-alpine AS base
 WORKDIR /repo
 
 FROM base AS deps
 RUN corepack enable
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* turbo.json ./
 COPY packages ./packages
 COPY apps/intermediador ./apps/intermediador
 RUN pnpm install --frozen-lockfile --filter @easypdv/intermediador...
 
 FROM deps AS build
 RUN pnpm --filter @easypdv/intermediador run prisma:generate
-RUN pnpm --filter @easypdv/intermediador run build
+# turbo, não "pnpm --filter run build" direto — build depende de
+# packages/shared-types e shared-validation compilados (tsc -> dist/)
+# primeiro (dependsOn: ["^build"] em turbo.json); sem isso o tsc do
+# intermediador falha com "Cannot find module '@easypdv/shared-types'"
+# (achado só agora, testando o build de verdade contra o Railway — nunca
+# tinha sido buildado antes).
+RUN pnpm exec turbo run build --filter=@easypdv/intermediador
+# apps/intermediador/node_modules é cheio de symlinks pro pnpm store da
+# raiz do workspace (../../node_modules/.pnpm/...) — copiar essa pasta
+# crua pro estágio runtime quebra a resolução de módulo (symlinks
+# apontando pra fora do que foi copiado). Mesmo bug já resolvido no
+# Electron (Sprint 10, docs/ELECTRON.md) com `pnpm deploy --prod`, que
+# monta um node_modules autocontido e "achatado". Diferente do pdv-backend
+# (que usa o output padrão do Prisma Client dentro de node_modules, perdido
+# no reinstall do deploy), o intermediador tem output customizado em
+# src/generated/prisma (Sprint 6) — nest-cli.json copia isso pra
+# dist/generated/prisma a cada build (deleteOutDir), então o Client (com o
+# engine nativo já certo pra essa plataforma) sobrevive ao deploy junto com
+# o resto de dist/ — não precisa gerar de novo.
+RUN pnpm --filter @easypdv/intermediador deploy --prod --legacy /repo/deploy
 
 FROM base AS runtime
 ENV NODE_ENV=production
-COPY --from=build /repo/apps/intermediador/dist ./dist
-COPY --from=build /repo/apps/intermediador/node_modules ./node_modules
-COPY --from=build /repo/apps/intermediador/prisma ./prisma
+COPY --from=build /repo/deploy/dist ./dist
+COPY --from=build /repo/deploy/node_modules ./node_modules
+COPY --from=build /repo/deploy/prisma ./prisma
 EXPOSE 4002
 CMD ["node", "dist/main.js"]

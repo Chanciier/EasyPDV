@@ -54,6 +54,34 @@ function resolveDatabaseUrl(): string {
 }
 
 /**
+ * URL pública do Intermediador (Railway) — TODO: preencher assim que o
+ * deploy existir (ver docs/DEPLOY.md). Uma só URL vale pra todas as
+ * instalações do EasyPDV (o Intermediador é multi-tenant, uma organização
+ * por loja), então é uma constante de build, não algo configurável por
+ * instalação como o JWT_SECRET.
+ */
+const PRODUCTION_INTERMEDIADOR_URL = "";
+
+/**
+ * Sem isso, `HttpSyncGateway`/`HttpFiscalGateway`/`ActivateTerminalUseCase`
+ * caem no default de dev (`http://127.0.0.1:4002`) — num instalador
+ * empacotado de verdade, isso significa a loja tentando falar com
+ * "localhost" nela mesma, nunca com o Intermediador real. Falha alto e
+ * cedo em vez de deixar isso quebrar silenciosamente na loja piloto.
+ */
+function resolveIntermediadorUrl(): string | undefined {
+  if (!app.isPackaged) {
+    return undefined;
+  }
+  if (!PRODUCTION_INTERMEDIADOR_URL) {
+    throw new Error(
+      "PRODUCTION_INTERMEDIADOR_URL não configurado em apps/electron/src/main/index.ts — preencha com a URL pública do Railway antes de gerar um instalador de produção.",
+    );
+  }
+  return PRODUCTION_INTERMEDIADOR_URL;
+}
+
+/**
  * JWT_SECRET é `getOrThrow` no IdentityModule — sem valor, o backend crasha
  * no boot (bug real, achado testando o instalador de verdade: o `.env` de
  * dev que fornecia isso é removido do bundle empacotado de propósito, ver
@@ -101,6 +129,7 @@ async function waitForHealth(url: string, timeoutMs = 30_000): Promise<void> {
  */
 async function startBackend(): Promise<void> {
   const { entry, cwd } = resolveBackendEntry();
+  const intermediadorUrl = resolveIntermediadorUrl();
 
   backendProcess = spawn(process.execPath, [entry], {
     cwd,
@@ -116,6 +145,7 @@ async function startBackend(): Promise<void> {
       // (bug real, achado testando o instalador de verdade, não em dev).
       // Em dev mantém "development" — pino-pretty existe no monorepo local.
       NODE_ENV: app.isPackaged ? "production" : "development",
+      ...(intermediadorUrl ? { INTERMEDIADOR_URL: intermediadorUrl } : {}),
     },
     stdio: "inherit",
   });
