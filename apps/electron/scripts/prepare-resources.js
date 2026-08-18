@@ -164,11 +164,22 @@ function copyExternalPackages(target) {
 }
 
 async function main() {
-console.log("== 1/6: build do pdv-backend (tsc via nest build) ==");
+console.log("== 1/7: build do pdv-backend (tsc via nest build) ==");
 run("pnpm", ["--filter", "@easypdv/pdv-backend", "build"], ROOT);
 
-console.log("\n== 2/6: gera o Prisma Client (engine nativo da plataforma atual) ==");
+console.log("\n== 2/7: gera o Prisma Client (engine nativo da plataforma atual) ==");
 run("pnpm", ["--filter", "@easypdv/pdv-backend", "run", "prisma:generate"], ROOT);
+
+/**
+ * Bug real, achado testando o instalador de verdade (2026-08-18): este script
+ * só copiava `apps/pdv-frontend/out`, nunca o gerava — dois instaladores
+ * seguidos empacotaram um export estático de VÁRIAS horas antes, de antes de
+ * um fix de UI já estar no código-fonte, porque ninguém tinha rodado
+ * `next build` de novo nesse meio tempo. Rebuild sempre aqui, igual já
+ * acontece pro pdv-backend acima — sem "se já existe, pula".
+ */
+console.log("\n== 3/7: build do pdv-frontend (export estático via next build) ==");
+run("pnpm", ["--filter", "@easypdv/pdv-frontend", "build"], ROOT);
 
 /**
  * @nestjs/core faz `require()` internamente de vários transports opcionais
@@ -199,7 +210,7 @@ const optionalPeerDepsExternalPlugin = {
   },
 };
 
-console.log("\n== 3/6: empacota o backend num único arquivo (esbuild) ==");
+console.log("\n== 4/7: empacota o backend num único arquivo (esbuild) ==");
 rmrf(BACKEND_TARGET);
 fs.mkdirSync(path.join(BACKEND_TARGET, "dist"), { recursive: true });
 await esbuild.build({
@@ -220,10 +231,10 @@ await esbuild.build({
   logLevel: "warning",
 });
 
-console.log("\n== 4/6: copia os pacotes que não bundlam (Prisma, bcrypt) ==");
+console.log("\n== 5/7: copia os pacotes que não bundlam (Prisma, bcrypt) ==");
 copyExternalPackages(BACKEND_TARGET);
 
-console.log("\n== 5/6: copia prisma/ (schema + migrations, sem dev.db/.env) ==");
+console.log("\n== 6/7: copia prisma/ (schema + migrations, sem dev.db/.env) ==");
 fs.mkdirSync(path.join(BACKEND_TARGET, "prisma"), { recursive: true });
 fs.cpSync(path.join(BACKEND_SRC, "prisma", "schema.prisma"), path.join(BACKEND_TARGET, "prisma", "schema.prisma"));
 fs.cpSync(path.join(BACKEND_SRC, "prisma", "migrations"), path.join(BACKEND_TARGET, "prisma", "migrations"), {
@@ -233,10 +244,10 @@ fs.cpSync(path.join(BACKEND_SRC, "prisma", "migrations"), path.join(BACKEND_TARG
 const totalFiles = countFiles(BACKEND_TARGET);
 console.log(`   backend empacotado: ${totalFiles} arquivos (era ~11.600 antes do bundling)`);
 
-console.log("\n== 6/6: copia o export estático do pdv-frontend ==");
+console.log("\n== 7/7: copia o export estático do pdv-frontend ==");
 if (!fs.existsSync(FRONTEND_SOURCE)) {
   console.error(
-    `Export estático do pdv-frontend não encontrado em ${FRONTEND_SOURCE} — rode "pnpm --filter @easypdv/pdv-frontend build" primeiro.`,
+    `Export estático do pdv-frontend não encontrado em ${FRONTEND_SOURCE} — o build do passo 3/7 deveria ter gerado.`,
   );
   process.exit(1);
 }
