@@ -12,7 +12,7 @@ export class GenerateActivationCodeUseCase {
     @Inject(ACTIVATION_CODE_GATEWAY) private readonly activationCodeGateway: ActivationCodeGatewayPort,
   ) {}
 
-  execute(storeName: string): Promise<ActivationCodeResult> {
-    return this.activationCodeGateway.generate(storeName);
+  execute(): Promise<ActivationCodeResult> {
+    return this.activationCodeGateway.generate();
   }
 }

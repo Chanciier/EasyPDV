@@ -4,10 +4,6 @@ import { apiRequest } from '@/lib/api-client'
 
 export function useGenerateActivationCode() {
   return useMutation({
-    mutationFn: (storeName: string) =>
-      apiRequest<ActivationCodeResult>('/provisioning/activation-codes', {
-        method: 'POST',
-        body: { storeName },
-      }),
+    mutationFn: () => apiRequest<ActivationCodeResult>('/provisioning/activation-codes', { method: 'POST' }),
   })
 }

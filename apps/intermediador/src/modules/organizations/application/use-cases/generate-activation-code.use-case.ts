@@ -56,7 +56,7 @@ export class GenerateActivationCodeUseCase {
     // generateActivationCodeSchema.refine garante exatamente um dos dois —
     // já validado pelo ZodValidationPipe antes deste use-case rodar.
     const store = input.storeId
-      ? await this.requireExistingStore(input.storeId)
+      ? await this.requireExistingStore(input.storeId, organizationId)
       : await this.storeRepository.create({ organizationId, name: input.storeName! });
 
     const expiresAt = new Date(Date.now() + EXPIRATION_MINUTES * 60_000);
@@ -69,9 +69,14 @@ export class GenerateActivationCodeUseCase {
     return { code: activationCode.code, expiresAt, storeId: store.id, storeName: store.name };
   }
 
-  private async requireExistingStore(storeId: string) {
+  /**
+   * `store.organizationId !== organizationId` também vira "não encontrada" (não
+   * "acesso negado") — evita confirmar pra quem está chamando que aquele storeId
+   * existe de fato, só que pertence a outra organização.
+   */
+  private async requireExistingStore(storeId: string, organizationId: string) {
     const store = await this.storeRepository.findById(storeId);
-    if (!store) {
+    if (!store || store.organizationId !== organizationId) {
       throw new StoreNotFoundError(storeId);
     }
     return store;

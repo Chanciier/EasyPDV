@@ -444,7 +444,7 @@ export function SaleView() {
             />
           </div>
 
-          {matches.length > 0 && (
+          {term.trim().length > 0 && matches.length > 0 && (
             <ul className="absolute left-0 right-0 top-14 z-20 overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
               {matches.map((p, i) => {
                 const price = priceQueries[i]?.data

@@ -141,12 +141,16 @@ POST   /provisioning/activate           SEM auth (mesma razão) → { code, term
 GET    /provisioning/busy-status        SEM auth → { hasOpenCashSession }, qualquer caixa do terminal (não
                                          escopado por operador). Consultado pelo Electron antes de aplicar
                                          uma atualização baixada — nunca no meio de uma venda.
-POST   /provisioning/activation-codes   (Bearer + role administrador) → { storeName } → gera código de
-                                         ativação pra um terminal NOVO (loja nova só, V1). Delega pro
-                                         Intermediador (POST /organizations/:id/activation-codes, apiKey do
-                                         terminal local); { code, expiresAt, storeId, storeName }. Tela
-                                         "Administração" (aba "Ativar novo terminal"), Sprint 16 — antes só
-                                         existia via curl direto no Intermediador, sem nenhuma autenticação
+POST   /provisioning/activation-codes   (Bearer + role administrador) → sem body → gera código de ativação
+                                         pra um terminal NOVO na MESMA loja do terminal que está pedindo
+                                         (V1 não cria loja nova por aqui — decisão do usuário: hoje só existe
+                                         uma conta Bling conectada, e lojas diferentes exigiriam contas Bling
+                                         diferentes, então "loja nova" não é um caso real ainda). Delega pro
+                                         Intermediador (POST /organizations/:id/activation-codes com
+                                         { storeId: <loja do terminal> }, apiKey do terminal local);
+                                         { code, expiresAt, storeId, storeName }. Tela "Administração" (aba
+                                         "Ativar novo terminal"), Sprint 16 — antes só existia via curl
+                                         direto no Intermediador, sem nenhuma autenticação
 
 GET    /customers?query=                (Bearer) → busca por nome ou documento (Sprint 15), até 25,
                                          ordenado por nome. Sem query, lista os primeiros 25
@@ -214,8 +218,15 @@ POST   /organizations/:id/activation-codes  TerminalApiKeyGuard (Sprint 16 — a
                                            `:id` da URL (403 OrganizationMismatchError, senão qualquer
                                            terminal ativado poderia gerar código pra organização de outro
                                            cliente). { storeId } (loja existente, novo terminal na mesma
-                                           loja) OU { storeName } (cria loja nova) → gera um código de 8
-                                           caracteres (alfabeto sem 0/O/1/I/L), expira em 30min, uso único
+                                           loja — é o único caminho que a rota do pdv-backend usa hoje) OU
+                                           { storeName } (cria loja nova, sem UI ainda) → gera um código de
+                                           8 caracteres (alfabeto sem 0/O/1/I/L), expira em 30min, uso único.
+                                           **Correção de segurança (Sprint 16)**: `storeId` agora confere
+                                           que a loja pertence à MESMA organização do `:id` da URL (senão
+                                           404, tratado como "não encontrada" — não confirma pra quem
+                                           chamou que aquele storeId existe de fato só que é de outro
+                                           cliente); antes disso, um storeId de outra organização era aceito
+                                           sem checagem
 POST   /terminals/activate                { code, terminalName? } → valida o código (404 inválido, 409
                                            expirado ou já usado — UPDATE condicional atômico evita corrida
                                            em duas ativações simultâneas com o mesmo código), cria Terminal

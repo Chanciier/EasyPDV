@@ -13,23 +13,16 @@ function describeError(e: unknown, fallback: string) {
 }
 
 export function AdminActivationTab() {
-  const [storeName, setStoreName] = useState('')
   const [result, setResult] = useState<ActivationCodeResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const generate = useGenerateActivationCode()
 
   const submit = async () => {
-    const name = storeName.trim()
-    if (!name) {
-      setError('Informe o nome da nova loja.')
-      return
-    }
     setError(null)
     setResult(null)
     try {
-      const code = await generate.mutateAsync(name)
+      const code = await generate.mutateAsync()
       setResult(code)
-      setStoreName('')
     } catch (e) {
       setError(describeError(e, 'Falha ao gerar código de ativação.'))
     }
@@ -40,28 +33,17 @@ export function AdminActivationTab() {
       <div className="flex items-center gap-2 text-muted-foreground">
         <KeyRound className="size-5" />
         <p className="text-sm">
-          Gere um código de ativação para instalar o PDV em um terminal novo. O catálogo do Bling é importado
-          automaticamente assim que o terminal for ativado.
+          Gere um código de ativação pra instalar o PDV num terminal novo desta MESMA loja. O catálogo do Bling é
+          importado automaticamente assim que o terminal for ativado.
         </p>
       </div>
-
-      <label className="block">
-        <span className="mb-1.5 block text-sm font-medium">Nome da nova loja</span>
-        <input
-          value={storeName}
-          onChange={(e) => setStoreName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && submit()}
-          placeholder="Ex.: Loja Centro"
-          className="pos-input"
-        />
-      </label>
 
       <button
         onClick={submit}
         disabled={generate.isPending}
         className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {generate.isPending ? 'Gerando…' : 'Gerar código'}
+        {generate.isPending ? 'Gerando…' : 'Gerar código pra novo terminal'}
       </button>
 
       {error && <p className="text-xs text-destructive">{error}</p>}

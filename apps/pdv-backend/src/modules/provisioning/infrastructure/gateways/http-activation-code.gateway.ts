@@ -25,7 +25,7 @@ export class HttpActivationCodeGateway implements ActivationCodeGatewayPort {
     this.baseUrl = configService.get<string>("INTERMEDIADOR_URL") ?? "http://127.0.0.1:4002";
   }
 
-  async generate(storeName: string): Promise<ActivationCodeResult> {
+  async generate(): Promise<ActivationCodeResult> {
     const identity = await this.storeIdentityRepository.find();
     if (!identity) {
       throw new Error("Terminal ainda não foi ativado — sem apiKey pra gerar código de ativação");
@@ -34,7 +34,7 @@ export class HttpActivationCodeGateway implements ActivationCodeGatewayPort {
     const response = await fetch(`${this.baseUrl}/organizations/${identity.organizationId}/activation-codes`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
-      body: JSON.stringify({ storeName }),
+      body: JSON.stringify({ storeId: identity.storeId }),
     });
     if (!response.ok) {
       const body = (await response.json().catch(() => null)) as { message?: string } | null;

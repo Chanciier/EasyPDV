@@ -1,10 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
-import {
-  activateTerminalSchema,
-  generateActivationCodeForNewStoreSchema,
-  type ActivateTerminalInput,
-  type GenerateActivationCodeForNewStoreInput,
-} from "@easypdv/shared-validation";
+import { activateTerminalSchema, type ActivateTerminalInput } from "@easypdv/shared-validation";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe.js";
 import { JwtAuthGuard } from "../../../identity/infrastructure/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../../identity/infrastructure/guards/roles.guard.js";
@@ -43,13 +38,19 @@ export class ProvisioningController {
     return this.activateTerminalUseCase.execute(body);
   }
 
+  /**
+   * Sempre gera código pra um terminal NOVO na MESMA loja do terminal que
+   * está pedindo — V1 não cria loja nova por aqui (isso continua sendo
+   * bootstrap manual meu via curl, ver OrganizationsController no
+   * Intermediador). Decisão do usuário: por ora só existe uma conta Bling
+   * conectada, e lojas diferentes exigiriam contas Bling diferentes —
+   * então "loja nova" não é um caso real ainda.
+   */
   @Post("activation-codes")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("administrador")
-  generateActivationCode(
-    @Body(new ZodValidationPipe(generateActivationCodeForNewStoreSchema)) body: GenerateActivationCodeForNewStoreInput,
-  ) {
-    return this.generateActivationCodeUseCase.execute(body.storeName);
+  generateActivationCode() {
+    return this.generateActivationCodeUseCase.execute();
   }
 
   /** Consultado pelo Electron antes de aplicar uma atualização baixada — nunca no meio de uma venda. */
