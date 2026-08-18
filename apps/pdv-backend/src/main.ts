@@ -57,6 +57,24 @@ async function ensureAdminUser(prisma: PrismaService): Promise<void> {
 }
 
 /**
+ * Bug real, achado numa loja recém-ativada de verdade (2026-08-18):
+ * `ConfirmSaleUseCase` sempre precisa de pelo menos um `Warehouse` pra debitar
+ * o estoque (`warehouses[0]`, ver confirm-sale.use-case.ts) — sem nenhum,
+ * NoWarehouseAvailableError bloqueia TODA venda, mesmo com produto e
+ * pagamento certos. O seed de dev sempre cria "Depósito Principal", mas o
+ * fluxo real de ativação de terminal (ActivateTerminalUseCase) nunca cria
+ * warehouse nenhum — só StoreIdentity + sync do catálogo Bling (que também
+ * não mexe em estoque). Mesmo padrão de `ensureAdminUser`: idempotente
+ * (count()>0 sai sem fazer nada), roda em todo boot.
+ */
+async function ensureDefaultWarehouse(prisma: PrismaService): Promise<void> {
+  const existing = await prisma.warehouse.count();
+  if (existing > 0) return;
+
+  await prisma.warehouse.create({ data: { name: "Depósito Principal" } });
+}
+
+/**
  * Backend local do PDV. Sobe em localhost, chamado pelo renderer do Electron.
  * Nunca deve depender de rede externa para responder — ver
  * Claude/Projetos/EasyPDV/Arquitetura e Stack.md no cofre Obsidian.
@@ -66,7 +84,9 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
-  await ensureAdminUser(app.get(PrismaService));
+  const prisma = app.get(PrismaService);
+  await ensureAdminUser(prisma);
+  await ensureDefaultWarehouse(prisma);
   // O server só escuta em 127.0.0.1 — a fronteira de segurança real é essa,
   // não CORS. Liberado geral porque o frontend roda em origem própria
   // (dev server / protocolo do Electron) e a API usa Bearer token, não
