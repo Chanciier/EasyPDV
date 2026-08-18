@@ -20,8 +20,7 @@ export class TerminalApiKeyGuard implements CanActivate {
     if (!apiKey || typeof apiKey !== "string") {
       throw new InvalidTerminalApiKeyError();
     }
-    const terminal = await this.verifyTerminalApiKeyUseCase.execute(apiKey);
-    request.terminal = { terminalId: terminal.id, storeId: terminal.storeId };
+    request.terminal = await this.verifyTerminalApiKeyUseCase.execute(apiKey);
     return true;
   }
 }

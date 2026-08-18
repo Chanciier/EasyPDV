@@ -18,6 +18,7 @@ import { GetProductUseCase } from "../../application/use-cases/get-product.use-c
 import { ResolvePriceUseCase } from "../../application/use-cases/resolve-price.use-case.js";
 import { SearchProductsUseCase } from "../../application/use-cases/search-products.use-case.js";
 import { UpdateProductUseCase } from "../../application/use-cases/update-product.use-case.js";
+import { SyncProductsFromBlingUseCase } from "../../application/use-cases/sync-products-from-bling.use-case.js";
 import { toProductResponseDto } from "../../application/dtos/product-response.dto.js";
 
 @Controller("products")
@@ -31,6 +32,7 @@ export class ProductsController {
     private readonly searchProductsUseCase: SearchProductsUseCase,
     private readonly resolvePriceUseCase: ResolvePriceUseCase,
     private readonly getProductUseCase: GetProductUseCase,
+    private readonly syncProductsFromBlingUseCase: SyncProductsFromBlingUseCase,
   ) {}
 
   @Get("search")
@@ -55,6 +57,12 @@ export class ProductsController {
   async get(@Param("id") id: string) {
     const product = await this.getProductUseCase.execute(id);
     return toProductResponseDto(product);
+  }
+
+  @Post("sync-bling")
+  @Roles("administrador", "gerente")
+  syncBling() {
+    return this.syncProductsFromBlingUseCase.execute();
   }
 
   @Post()

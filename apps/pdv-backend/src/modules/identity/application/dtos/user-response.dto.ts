@@ -9,5 +9,6 @@ export function toUserResponseDto(user: UserEntity): User {
     email: user.email,
     role: user.role,
     active: user.active,
+    employeeCode: user.employeeCode,
   };
 }

@@ -51,6 +51,12 @@ model User {
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  // Matrícula sequencial (1, 2, 3...) — só identificador exibido em telas/
+  // relatórios, não é mecanismo de login. Calculada em código (CreateUserUseCase,
+  // max+1) porque SQLite/Prisma não suporta @default(autoincrement()) fora do
+  // @id. @unique é rede de segurança contra corrida (dois admins criando
+  // usuário ao mesmo tempo), não um lock — mesmo padrão já usado em `email`.
+  employeeCode Int      @unique
 
   authSessions AuthSession[]
   cashSessions CashSession[]

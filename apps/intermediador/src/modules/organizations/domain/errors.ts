@@ -41,3 +41,10 @@ export class InvalidTerminalApiKeyError extends DomainError {
     super("Chave de API de terminal inválida");
   }
 }
+
+export class OrganizationMismatchError extends DomainError {
+  readonly kind = "forbidden";
+  constructor() {
+    super("Terminal não pertence a esta organização");
+  }
+}

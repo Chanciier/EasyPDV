@@ -18,11 +18,13 @@ export class CreateUserUseCase {
       throw new EmailAlreadyInUseError(input.email);
     }
     const passwordHash = await this.passwordHasher.hash(input.password);
+    const maxEmployeeCode = await this.userRepository.getMaxEmployeeCode();
     return this.userRepository.create({
       name: input.name,
       email: input.email,
       passwordHash,
       role: input.role,
+      employeeCode: maxEmployeeCode + 1,
     });
   }
 }

@@ -14,6 +14,7 @@ import { PASSWORD_HASHER } from "./application/ports/password-hasher.port.js";
 import { USER_REPOSITORY } from "./application/ports/user-repository.port.js";
 import { CreateUserUseCase } from "./application/use-cases/create-user.use-case.js";
 import { GetCurrentUserUseCase } from "./application/use-cases/get-current-user.use-case.js";
+import { ListUsersUseCase } from "./application/use-cases/list-users.use-case.js";
 import { LoginUseCase } from "./application/use-cases/login.use-case.js";
 import { LogoutUseCase } from "./application/use-cases/logout.use-case.js";
 import { RefreshTokenUseCase } from "./application/use-cases/refresh-token.use-case.js";
@@ -41,6 +42,7 @@ import { UpdateUserRoleUseCase } from "./application/use-cases/update-user-role.
     RefreshTokenUseCase,
     LogoutUseCase,
     CreateUserUseCase,
+    ListUsersUseCase,
     UpdateUserRoleUseCase,
     GetCurrentUserUseCase,
     { provide: USER_REPOSITORY, useClass: PrismaUserRepository },

@@ -14,6 +14,7 @@ import {
   Settings,
   ShieldCheck,
   BarChart3,
+  UserCog,
   WifiOff,
   AlertTriangle,
 } from 'lucide-react'
@@ -31,6 +32,7 @@ import { HistoryView } from './history-view'
 import { CustomersView } from './customers-view'
 import { AuditView } from './audit-view'
 import { ReportsView } from './reports-view'
+import { AdminView } from './admin-view'
 import { ShortcutsBar } from './shortcuts-bar'
 import { SettingsDialog } from './settings-dialog'
 
@@ -48,6 +50,9 @@ const AUDIT_ROLES: UserRole[] = ['administrador', 'gerente', 'auditor']
 const REPORTS_NAV = { key: 'relatorios', label: 'Relatórios', icon: BarChart3, hint: 'F5' } as const
 const REPORTS_ROLES: UserRole[] = ['administrador', 'gerente', 'proprietario']
 
+const ADMIN_NAV = { key: 'administracao', label: 'Administração', icon: UserCog, hint: 'F3' } as const
+const ADMIN_ROLES: UserRole[] = ['administrador']
+
 export function POSShell() {
   useRealtime()
   const { view, setView } = usePOS()
@@ -59,7 +64,13 @@ export function POSShell() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const canSeeAudit = !!user && AUDIT_ROLES.includes(user.role)
   const canSeeReports = !!user && REPORTS_ROLES.includes(user.role)
-  const visibleNav = [...NAV, ...(canSeeReports ? [REPORTS_NAV] : []), ...(canSeeAudit ? [AUDIT_NAV] : [])]
+  const canSeeAdmin = !!user && ADMIN_ROLES.includes(user.role)
+  const visibleNav = [
+    ...NAV,
+    ...(canSeeReports ? [REPORTS_NAV] : []),
+    ...(canSeeAudit ? [AUDIT_NAV] : []),
+    ...(canSeeAdmin ? [ADMIN_NAV] : []),
+  ]
 
   useEffect(() => {
     setToday(
@@ -81,6 +92,7 @@ export function POSShell() {
         F9: 'clientes',
         ...(canSeeReports ? { F5: 'relatorios' } : {}),
         ...(canSeeAudit ? { F2: 'auditoria' } : {}),
+        ...(canSeeAdmin ? { F3: 'administracao' } : {}),
       }
       const target = map[e.key]
       if (target) {
@@ -90,7 +102,7 @@ export function POSShell() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setView, canSeeAudit, canSeeReports])
+  }, [setView, canSeeAudit, canSeeReports, canSeeAdmin])
 
   const cashOpen = cashSession?.status === 'open'
 
@@ -210,6 +222,7 @@ export function POSShell() {
           {view === 'clientes' && <CustomersView />}
           {view === 'relatorios' && canSeeReports && <ReportsView />}
           {view === 'auditoria' && canSeeAudit && <AuditView />}
+          {view === 'administracao' && canSeeAdmin && <AdminView />}
         </main>
 
         <ShortcutsBar />

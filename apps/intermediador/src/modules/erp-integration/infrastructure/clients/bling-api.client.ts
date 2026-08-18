@@ -8,6 +8,11 @@ export interface BlingProduct {
   nome: string;
 }
 
+export interface BlingProductListItem extends BlingProduct {
+  preco?: number;
+  situacao?: string;
+}
+
 export interface BlingContact {
   id: number;
   nome: string;
@@ -71,6 +76,16 @@ export class BlingApiClient {
   async findProductByCode(accessToken: string, codigo: string): Promise<BlingProduct | null> {
     const result = await this.request<BlingListEnvelope<BlingProduct>>(accessToken, "GET", `/produtos?codigo=${encodeURIComponent(codigo)}`);
     return result.data?.[0] ?? null;
+  }
+
+  /** Uma página de `GET /produtos` (`pagina`/`limite` — paginação padrão da API v3 do Bling). Retorna [] quando a página não tem mais itens — chamador decide quando parar. */
+  async listProductsPage(accessToken: string, pagina: number, limite = 100): Promise<BlingProductListItem[]> {
+    const result = await this.request<BlingListEnvelope<BlingProductListItem>>(
+      accessToken,
+      "GET",
+      `/produtos?pagina=${pagina}&limite=${limite}`,
+    );
+    return result.data ?? [];
   }
 
   async findContactByName(accessToken: string, nome: string): Promise<BlingContact | null> {
@@ -167,7 +182,7 @@ export class BlingApiClient {
     };
   }
 
-  private async request<T>(accessToken: string, method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(accessToken: string, method: string, path: string, body?: unknown, attempt = 1): Promise<T> {
     const response = await fetch(`${BASE_URL}${path}`, {
       method,
       headers: {
@@ -178,6 +193,19 @@ export class BlingApiClient {
       body: body ? JSON.stringify(body) : undefined,
     });
 
+    // Bling limita requisições por segundo (achado na prática: paginação de
+    // /produtos disparando página após página bate no limite por volta da
+    // 6ª página). Retenta com backoff em vez de derrubar a sincronização —
+    // usa Retry-After se o Bling mandar, senão backoff exponencial curto.
+    if (response.status === 429 && attempt <= MAX_RATE_LIMIT_RETRIES) {
+      await response.body?.cancel();
+      const retryAfterHeader = Number(response.headers.get("retry-after"));
+      const delayMs = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0 ? retryAfterHeader * 1000 : attempt * 1000;
+      this.logger.warn(`Bling API ${method} ${path} — rate limit (HTTP 429), tentativa ${attempt}/${MAX_RATE_LIMIT_RETRIES}, aguardando ${delayMs}ms`);
+      await sleep(delayMs);
+      return this.request<T>(accessToken, method, path, body, attempt + 1);
+    }
+
     const parsed = (await response.json().catch(() => null)) as (T & BlingErrorEnvelope) | null;
     if (!response.ok) {
       const message = parsed?.error?.message ?? JSON.stringify(parsed);
@@ -186,6 +214,12 @@ export class BlingApiClient {
     }
     return (parsed ?? ({} as T)) as T;
   }
+}
+
+const MAX_RATE_LIMIT_RETRIES = 5;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** `<infNFeSupl><qrCode>` no XML autorizado — ver comentário de `findNfce` acima. */

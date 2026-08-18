@@ -6,6 +6,7 @@ import {
   ForbiddenException,
   HttpException,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -26,6 +27,8 @@ const KIND_TO_EXCEPTION: Record<DomainErrorKind, new (message: string) => HttpEx
  */
 @Catch(Error)
 export class DomainExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(DomainExceptionFilter.name);
+
   catch(exception: Error, host: ArgumentsHost) {
     const response = host.switchToHttp().getResponse<Response>();
     const httpException = this.toHttpException(exception);
@@ -40,6 +43,10 @@ export class DomainExceptionFilter implements ExceptionFilter {
       const ExceptionClass = KIND_TO_EXCEPTION[exception.kind];
       return new ExceptionClass(exception.message);
     }
+    // Erro não mapeado (bug real ou falha inesperada) — sem isso, o 500
+    // chega ao cliente sem NENHUM rastro no log (mesmo bug já achado e
+    // corrigido no pdv-backend — ver docs/CHANGELOG.md).
+    this.logger.error(exception.message, exception.stack);
     return new InternalServerErrorException();
   }
 }

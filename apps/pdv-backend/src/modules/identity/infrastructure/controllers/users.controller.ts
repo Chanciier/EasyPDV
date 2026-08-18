@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import {
   createUserSchema,
   updateUserRoleSchema,
@@ -7,6 +7,7 @@ import {
 } from "@easypdv/shared-validation";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe.js";
 import { CreateUserUseCase } from "../../application/use-cases/create-user.use-case.js";
+import { ListUsersUseCase } from "../../application/use-cases/list-users.use-case.js";
 import { UpdateUserRoleUseCase } from "../../application/use-cases/update-user-role.use-case.js";
 import { toUserResponseDto } from "../../application/dtos/user-response.dto.js";
 import { CurrentUser, type AuthenticatedUser } from "../decorators/current-user.decorator.js";
@@ -19,8 +20,16 @@ import { Roles } from "../decorators/roles.decorator.js";
 export class UsersController {
   constructor(
     private readonly createUserUseCase: CreateUserUseCase,
+    private readonly listUsersUseCase: ListUsersUseCase,
     private readonly updateUserRoleUseCase: UpdateUserRoleUseCase,
   ) {}
+
+  @Get()
+  @Roles("administrador")
+  async list() {
+    const users = await this.listUsersUseCase.execute();
+    return users.map(toUserResponseDto);
+  }
 
   @Post()
   @Roles("administrador")

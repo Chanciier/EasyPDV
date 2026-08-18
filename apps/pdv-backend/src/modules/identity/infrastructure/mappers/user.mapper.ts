@@ -9,5 +9,6 @@ export function toDomainUser(record: PrismaUser): User {
     passwordHash: record.passwordHash,
     role: record.role,
     active: record.active,
+    employeeCode: record.employeeCode,
   });
 }

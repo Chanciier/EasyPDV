@@ -49,7 +49,11 @@ async function ensureAdminUser(prisma: PrismaService): Promise<void> {
   const email = process.env.SEED_ADMIN_EMAIL ?? "admin@easypdv.local";
   const password = process.env.SEED_ADMIN_PASSWORD ?? "troque-esta-senha";
   const passwordHash = await bcrypt.hash(password, 12);
-  await prisma.user.create({ data: { name: "Administrador", email, passwordHash, role: "administrador" } });
+  // employeeCode 1 — count()>0 já garantiu acima que não existe nenhum usuário
+  // ainda, então este é sempre o primeiro.
+  await prisma.user.create({
+    data: { name: "Administrador", email, passwordHash, role: "administrador", employeeCode: 1 },
+  });
 }
 
 /**

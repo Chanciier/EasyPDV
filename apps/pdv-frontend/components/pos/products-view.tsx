@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Search, Plus, Pencil, Trash2, Package } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, Package, RefreshCw } from 'lucide-react'
 import type { Product } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
@@ -15,6 +15,7 @@ import {
   useProductList,
   useProductPrice,
   useSetPrice,
+  useSyncProductsFromBling,
   useUpdateProduct,
 } from '@/hooks/use-catalog'
 import { Modal } from './ui/modal'
@@ -74,6 +75,21 @@ export function ProductsView() {
   const updateProduct = useUpdateProduct()
   const addBarcode = useAddBarcode()
   const setPrice = useSetPrice()
+  const syncBling = useSyncProductsFromBling()
+  const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const handleSyncBling = async () => {
+    setSyncMessage(null)
+    try {
+      const result = await syncBling.mutateAsync()
+      setSyncMessage({
+        ok: true,
+        text: `Sincronizado: ${result.created} novo(s), ${result.updated} atualizado(s) de ${result.total} produto(s) no Bling.`,
+      })
+    } catch (e) {
+      setSyncMessage({ ok: false, text: describeError(e, 'Falha ao sincronizar com o Bling') })
+    }
+  }
 
   useEffect(() => {
     if (!editingProduct) return
@@ -219,6 +235,14 @@ export function ProductsView() {
           />
         </div>
         <button
+          onClick={handleSyncBling}
+          disabled={syncBling.isPending}
+          className="flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-semibold transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+        >
+          <RefreshCw className={`size-4 ${syncBling.isPending ? 'animate-spin' : ''}`} />
+          {syncBling.isPending ? 'Sincronizando...' : 'Sincronizar com Bling'}
+        </button>
+        <button
           onClick={openNew}
           className="flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
         >
@@ -226,6 +250,15 @@ export function ProductsView() {
           <kbd className="rounded bg-primary-foreground/20 px-1 font-mono text-[10px]">F2</kbd>
         </button>
       </div>
+      {syncMessage && (
+        <div
+          className={`mb-4 rounded-lg px-3 py-2 text-sm ${
+            syncMessage.ok ? 'bg-emerald-500/10 text-emerald-600' : 'bg-destructive/10 text-destructive'
+          }`}
+        >
+          {syncMessage.text}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card">
         <div className="grid grid-cols-[8rem_1fr_9rem_6rem_6rem_5rem] items-center gap-3 border-b border-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

@@ -12,7 +12,10 @@ POST   /auth/login     { email, password } → { user, tokens }
 POST   /auth/refresh   { refreshToken } → tokens (rotaciona — o antigo é revogado)
 POST   /auth/logout    { refreshToken } → revoga a sessão
 GET    /auth/me        (Bearer token) → usuário atual
-POST   /users          (Bearer + role administrador) → cria usuário
+GET    /users          (Bearer + role administrador) → lista todos, ordenado por `employeeCode` asc.
+                        Sprint 16, tela "Administração" (aba Usuários)
+POST   /users          (Bearer + role administrador) → cria usuário; `employeeCode` calculado no
+                        backend (max atual + 1, ver docs/DATABASE.md), nunca enviado pelo cliente
 PATCH  /users/:id/role (Bearer + role administrador) → troca o papel
 
 GET    /products/search?query=          (Bearer) → busca textual por nome/SKU, só produtos ativos, até 25
@@ -138,6 +141,12 @@ POST   /provisioning/activate           SEM auth (mesma razão) → { code, term
 GET    /provisioning/busy-status        SEM auth → { hasOpenCashSession }, qualquer caixa do terminal (não
                                          escopado por operador). Consultado pelo Electron antes de aplicar
                                          uma atualização baixada — nunca no meio de uma venda.
+POST   /provisioning/activation-codes   (Bearer + role administrador) → { storeName } → gera código de
+                                         ativação pra um terminal NOVO (loja nova só, V1). Delega pro
+                                         Intermediador (POST /organizations/:id/activation-codes, apiKey do
+                                         terminal local); { code, expiresAt, storeId, storeName }. Tela
+                                         "Administração" (aba "Ativar novo terminal"), Sprint 16 — antes só
+                                         existia via curl direto no Intermediador, sem nenhuma autenticação
 
 GET    /customers?query=                (Bearer) → busca por nome ou documento (Sprint 15), até 25,
                                          ordenado por nome. Sem query, lista os primeiros 25
@@ -197,15 +206,35 @@ GET    /fiscal/sale/:saleId  chamado pelo PDV local — exige apiKey de terminal
 
 POST   /organizations                     SEM auth (bootstrapping — sem UI de admin ainda, uso via
                                            curl/Postman) { name, document? } → cria Organization. Sprint 10.
-POST   /organizations/:id/activation-codes  { storeId } (loja existente, novo terminal na mesma loja) OU
-                                           { storeName } (cria loja nova) → gera um código de 8 caracteres
-                                           (alfabeto sem 0/O/1/I/L), expira em 30min, uso único
+                                           Chicken-and-egg deliberado: é o único jeito de nascer o PRIMEIRO
+                                           terminal de uma organização nova, continua fora do escopo da
+                                           tela "Administração" (Sprint 16) — uso interno meu, não do cliente
+POST   /organizations/:id/activation-codes  TerminalApiKeyGuard (Sprint 16 — antes SEM auth nenhuma) + o
+                                           terminal autenticado precisa pertencer à MESMA organização do
+                                           `:id` da URL (403 OrganizationMismatchError, senão qualquer
+                                           terminal ativado poderia gerar código pra organização de outro
+                                           cliente). { storeId } (loja existente, novo terminal na mesma
+                                           loja) OU { storeName } (cria loja nova) → gera um código de 8
+                                           caracteres (alfabeto sem 0/O/1/I/L), expira em 30min, uso único
 POST   /terminals/activate                { code, terminalName? } → valida o código (404 inválido, 409
                                            expirado ou já usado — UPDATE condicional atômico evita corrida
                                            em duas ativações simultâneas com o mesmo código), cria Terminal
                                            e retorna { terminalId, organizationId, storeId, storeName,
                                            apiKey } — apiKey em texto puro só nesta resposta, nunca
-                                           persistida aqui (só o hash SHA-256, Terminal.apiKeyHash)
+                                           persistida aqui (só o hash SHA-256, Terminal.apiKeyHash).
+                                           Sprint 16: dispara em background (fire-and-forget, não bloqueia
+                                           esta resposta) uma importação do catálogo do Bling da
+                                           organização, se ela tiver integração conectada — erro (ex: sem
+                                           Bling conectado) só loga, nunca falha a ativação
+
+GET    /integrations/bling/products?organizationId=  chamado pelo pdv-backend (POST /products/sync-bling) —
+                                           exige apiKey de terminal. **Bug corrigido na Sprint 16**: resolvia
+                                           a integração Bling via `findFirstActive("bling")` (primeira
+                                           conexão ativa em TODO o Intermediador, "simplificação single-tenant"
+                                           documentada no próprio código) — inofensivo enquanto só existia 1
+                                           organização real, mas exporia dados de uma organização pra outra
+                                           assim que uma segunda existisse. Agora usa
+                                           `findByOrganization(terminal.organizationId, "bling")`
 ```
 
 Endpoints de `/organizations` e `/terminals` seguem sem autenticação (bootstrapping manual, sem UI de admin ainda). Os demais endpoints sem `(Bearer)`/apiKey explícitos acima seguem sem autenticação (mesmo risco aberto desde a Sprint 6 — ver docs/ERROR-HANDLING.md); `POST /sync` é o único endpoint do Intermediador com autenticação real até agora (apiKey de terminal, Sprint 10).

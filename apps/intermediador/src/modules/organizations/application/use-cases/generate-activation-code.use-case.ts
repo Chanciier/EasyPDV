@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
 import type { GenerateActivationCodeInput } from "@easypdv/shared-validation";
-import { OrganizationNotFoundError, StoreNotFoundError } from "../../domain/errors.js";
+import { OrganizationMismatchError, OrganizationNotFoundError, StoreNotFoundError } from "../../domain/errors.js";
 import {
   ACTIVATION_CODE_REPOSITORY,
   type ActivationCodeRepositoryPort,
@@ -39,7 +39,15 @@ export class GenerateActivationCodeUseCase {
     @Inject(ACTIVATION_CODE_REPOSITORY) private readonly activationCodeRepository: ActivationCodeRepositoryPort,
   ) {}
 
-  async execute(organizationId: string, input: GenerateActivationCodeInput): Promise<GenerateActivationCodeResult> {
+  async execute(
+    organizationId: string,
+    input: GenerateActivationCodeInput,
+    requestingTerminalOrganizationId: string,
+  ): Promise<GenerateActivationCodeResult> {
+    if (requestingTerminalOrganizationId !== organizationId) {
+      throw new OrganizationMismatchError();
+    }
+
     const organization = await this.organizationRepository.findById(organizationId);
     if (!organization) {
       throw new OrganizationNotFoundError(organizationId);

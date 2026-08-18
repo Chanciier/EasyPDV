@@ -7,6 +7,7 @@ export interface UserProps {
   passwordHash: string;
   role: UserRole;
   active: boolean;
+  employeeCode: number;
 }
 
 /**
@@ -20,6 +21,7 @@ export class User {
   readonly passwordHash: string;
   readonly role: UserRole;
   readonly active: boolean;
+  readonly employeeCode: number;
 
   constructor(props: UserProps) {
     this.id = props.id;
@@ -28,5 +30,6 @@ export class User {
     this.passwordHash = props.passwordHash;
     this.role = props.role;
     this.active = props.active;
+    this.employeeCode = props.employeeCode;
   }
 }

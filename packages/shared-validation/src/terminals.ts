@@ -25,6 +25,15 @@ export const activateTerminalSchema = z.object({
   terminalName: z.string().optional(),
 });
 
+// Chamado pelo PDV local (POST /provisioning/activation-codes, admin-only) —
+// só cria loja nova nesta V1, não suporta adicionar terminal a uma loja já
+// existente (diferente do generateActivationCodeSchema acima, que é o
+// contrato do Intermediador em si e aceita os dois casos).
+export const generateActivationCodeForNewStoreSchema = z.object({
+  storeName: z.string().min(1),
+});
+
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export type GenerateActivationCodeInput = z.infer<typeof generateActivationCodeSchema>;
 export type ActivateTerminalInput = z.infer<typeof activateTerminalSchema>;
+export type GenerateActivationCodeForNewStoreInput = z.infer<typeof generateActivationCodeForNewStoreSchema>;

@@ -28,8 +28,18 @@ export class PrismaUserRepository implements UserRepositoryPort {
     return toDomainUser(record);
   }
 
+  async findAll(): Promise<User[]> {
+    const records = await this.prisma.user.findMany({ orderBy: { employeeCode: "asc" } });
+    return records.map(toDomainUser);
+  }
+
   async existsAny(): Promise<boolean> {
     const count = await this.prisma.user.count();
     return count > 0;
+  }
+
+  async getMaxEmployeeCode(): Promise<number> {
+    const result = await this.prisma.user.aggregate({ _max: { employeeCode: true } });
+    return result._max.employeeCode ?? 0;
   }
 }

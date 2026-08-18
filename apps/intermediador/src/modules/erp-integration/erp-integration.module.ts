@@ -17,6 +17,7 @@ import { ConnectBlingUseCase } from "./application/use-cases/connect-bling.use-c
 import { HandleBlingCallbackUseCase } from "./application/use-cases/handle-bling-callback.use-case.js";
 import { GetBlingConnectionStatusUseCase } from "./application/use-cases/get-bling-connection-status.use-case.js";
 import { GetFiscalStatusUseCase } from "./application/use-cases/get-fiscal-status.use-case.js";
+import { ListBlingProductsUseCase } from "./application/use-cases/list-bling-products.use-case.js";
 
 @Module({
   imports: [OrganizationsModule],
@@ -35,6 +36,7 @@ import { GetFiscalStatusUseCase } from "./application/use-cases/get-fiscal-statu
     HandleBlingCallbackUseCase,
     GetBlingConnectionStatusUseCase,
     GetFiscalStatusUseCase,
+    ListBlingProductsUseCase,
     { provide: ERP_INTEGRATION_REPOSITORY, useClass: PrismaErpIntegrationRepository },
     { provide: ERP_SYNC_MAPPING_REPOSITORY, useClass: PrismaErpSyncMappingRepository },
     { provide: FISCAL_DOCUMENT_REPOSITORY, useClass: PrismaFiscalDocumentRepository },

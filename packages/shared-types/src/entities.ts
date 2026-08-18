@@ -23,6 +23,7 @@ export interface User {
   email: string;
   role: UserRole;
   active: boolean;
+  employeeCode: number;
 }
 
 export interface AuthTokens {
@@ -297,6 +298,26 @@ export interface FiscalStatusPayload {
   qrCodeUrl: string | null;
   errorMessage: string | null;
   issuedAt: string | null;
+}
+
+// Resposta de POST /provisioning/activation-codes (pdv-backend, admin-only) —
+// repassa o retorno de POST /organizations/:id/activation-codes no
+// Intermediador. Usado pela tela Administração (aba "Ativar novo terminal").
+export interface ActivationCodeResult {
+  code: string;
+  expiresAt: string;
+  storeId: string;
+  storeName: string;
+}
+
+// Resposta de GET /integrations/bling/products no Intermediador — usado pelo
+// pdv-backend pra importar/atualizar o catálogo local a partir do Bling
+// (botão manual "Sincronizar com Bling"). `price` vem null quando o Bling não
+// retorna preço pro produto (situação incompleta no cadastro de origem).
+export interface BlingProductSummary {
+  code: string;
+  name: string;
+  price: number | null;
 }
 
 // Trilha imutável de eventos sensíveis (Sprint 13) — ver docs/DATABASE.md pra
