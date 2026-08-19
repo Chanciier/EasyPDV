@@ -65,6 +65,17 @@ export interface CreateSalesOrderInput {
   discountAmount: number;
   dueDate: string;
   items: CreateSalesOrderItem[];
+  /**
+   * `saleId` local — vai em `numeroPedidoCompra` (achado real, 2026-08-19):
+   * o Bling rejeita `POST /pedidos/vendas` com 400 ("Informações idênticas
+   * a última venda salva, altere alguma informação caso deseje prosseguir")
+   * quando um pedido novo bate contato+itens+valor+forma de pagamento+data
+   * de um pedido recente — cenário real de loja pequena (mesmo produto
+   * barato, "Consumidor Final", dinheiro, mesmo dia), não só teste. Um
+   * valor único por pedido nesse campo (que já existe pra guardar referência
+   * externa) evita o falso-positivo de duplicata sem inventar nenhum dado.
+   */
+  saleId: string;
 }
 
 export interface CreateSalesOrderResult {
@@ -203,6 +214,7 @@ export class BlingApiClient {
   async createSalesOrder(accessToken: string, input: CreateSalesOrderInput): Promise<CreateSalesOrderResult> {
     const body = {
       data: input.dueDate,
+      numeroPedidoCompra: input.saleId,
       contato: { id: input.contatoId },
       // `desconto` só entra quando existe de fato — mandar `{ valor: 0 }` num
       // pedido sem desconto é ruído desnecessário no cadastro do lojista.

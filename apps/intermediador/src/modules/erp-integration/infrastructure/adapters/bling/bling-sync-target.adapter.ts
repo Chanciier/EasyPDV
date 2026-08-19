@@ -339,6 +339,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       discountAmount: computeOrderDiscount(items, payload.totalAmount),
       dueDate,
       items,
+      saleId: payload.saleId,
     });
 
     await this.erpSyncMappingRepository.upsert({
