@@ -46,4 +46,11 @@ export class PrismaErpSyncMappingRepository implements ErpSyncMappingRepositoryP
     });
     return toDomainErpSyncMapping(record);
   }
+
+  async deleteByTypes(organizationId: string, provider: ErpProviderCode, localEntityTypes: string[]): Promise<number> {
+    const result = await this.prisma.erpSyncMapping.deleteMany({
+      where: { organizationId, provider, localEntityType: { in: localEntityTypes } },
+    });
+    return result.count;
+  }
 }

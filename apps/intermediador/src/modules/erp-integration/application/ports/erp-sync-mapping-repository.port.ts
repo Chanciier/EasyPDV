@@ -17,6 +17,7 @@ export interface ErpSyncMappingRepositoryPort {
     localEntityId: string,
   ): Promise<ErpSyncMapping | null>;
   upsert(data: UpsertErpSyncMappingData): Promise<ErpSyncMapping>;
+  deleteByTypes(organizationId: string, provider: ErpProviderCode, localEntityTypes: string[]): Promise<number>;
 }
 
 export const ERP_SYNC_MAPPING_REPOSITORY = Symbol("ERP_SYNC_MAPPING_REPOSITORY");
