@@ -6,6 +6,7 @@ import { PRICE_LIST_REPOSITORY, type PriceListRepositoryPort } from "../ports/pr
 export interface SyncProductsFromBlingResult {
   created: number;
   updated: number;
+  deactivated: number;
   total: number;
 }
 
@@ -18,6 +19,14 @@ export interface SyncProductsFromBlingResult {
  * confirmada com o usuário (produtos nascem no Bling, cadastrados no galpão).
  * `unit`/`categoryId` não vêm do Bling — preservados como estavam num
  * produto já existente, default "un"/null num produto novo.
+ *
+ * **Desativa produtos que sumiram do Bling** (2026-08-19, pedido do usuário
+ * depois de notar que um produto apagado no Bling continuava aparecendo no
+ * PDV) — só num sync COMPLETO (`since` indefinido: incremental só traz o que
+ * mudou, não prova que algo foi removido) e só pra produtos com
+ * `blingSyncedAt` preenchido (já vistos pelo Bling alguma vez — nunca um
+ * produto cadastrado só localmente). Desativa, nunca apaga: `Product` pode
+ * ter `SaleItem` histórico ligado.
  *
  * Loop de escrita bate direto no PrismaService (não em ProductRepositoryPort)
  * de propósito — bug real de performance achado testando com o catálogo Bling
@@ -59,6 +68,9 @@ export class SyncProductsFromBlingUseCase {
    * que sincronizar com sucesso empurra o marcador pra frente.
    */
   async execute(since?: Date): Promise<SyncProductsFromBlingResult> {
+    // Capturado ANTES de qualquer escrita — é o corte usado depois pra achar
+    // produtos que ficaram de fora deste sync (ver `blingSyncedAt` abaixo).
+    const syncStartedAt = new Date();
     const products = await this.blingCatalogGateway.listProducts(since);
 
     let priceList = await this.priceListRepository.findActive();
@@ -91,12 +103,15 @@ export class SyncProductsFromBlingUseCase {
           let productId: string;
 
           if (existing) {
-            await tx.product.update({ where: { id: existing.id }, data: { name: item.name, active: true } });
+            await tx.product.update({
+              where: { id: existing.id },
+              data: { name: item.name, active: true, blingSyncedAt: syncStartedAt },
+            });
             productId = existing.id;
             batchUpdated++;
           } else {
             const product = await tx.product.create({
-              data: { sku: item.code, name: item.name, categoryId: null, unit: "un" },
+              data: { sku: item.code, name: item.name, categoryId: null, unit: "un", blingSyncedAt: syncStartedAt },
             });
             productId = product.id;
             batchCreated++;
@@ -146,12 +161,33 @@ export class SyncProductsFromBlingUseCase {
       updated += batchResult.updated;
     }
 
+    /**
+     * Desativa localmente o que sumiu do Bling — só num sync COMPLETO
+     * (`since` indefinido): um sync incremental só traz o que MUDOU, não a
+     * lista inteira, então a ausência de um SKU não prova nada (pode só não
+     * ter mudado). Só entra nessa varredura produto com `blingSyncedAt`
+     * preenchido (já visto pelo Bling alguma vez) — nunca um produto
+     * cadastrado só localmente (`+ Novo produto`, `blingSyncedAt` null),
+     * que não tem relação nenhuma com o Bling pra começo de conversa. Bling
+     * é a fonte da verdade nesta direção (mesma decisão de nome/preço/
+     * estoque) — desativa, nunca apaga (produto pode ter `SaleItem`
+     * histórico ligado).
+     */
+    let deactivated = 0;
+    if (!since) {
+      const result = await this.prisma.product.updateMany({
+        where: { active: true, blingSyncedAt: { not: null, lt: syncStartedAt } },
+        data: { active: false },
+      });
+      deactivated = result.count;
+    }
+
     // Fora da transação de propósito: já commitou os produtos, e mesmo que
     // essa escrita falhe (terminal desativado entre o início e o fim do
     // sync, por exemplo) não deve desfazer o sync que já aconteceu — só o
     // próximo poll incremental volta a puxar um pouco mais de trás.
     await this.prisma.storeIdentity.updateMany({ data: { lastBlingSyncAt: new Date() } });
 
-    return { created, updated, total: products.length };
+    return { created, updated, deactivated, total: products.length };
   }
 }

@@ -82,9 +82,10 @@ export function ProductsView() {
     setSyncMessage(null)
     try {
       const result = await syncBling.mutateAsync()
+      const deactivatedText = result.deactivated > 0 ? `, ${result.deactivated} desativado(s)` : ''
       setSyncMessage({
         ok: true,
-        text: `Sincronizado: ${result.created} novo(s), ${result.updated} atualizado(s) de ${result.total} produto(s) no Bling.`,
+        text: `Sincronizado: ${result.created} novo(s), ${result.updated} atualizado(s)${deactivatedText} de ${result.total} produto(s) no Bling.`,
       })
     } catch (e) {
       setSyncMessage({ ok: false, text: describeError(e, 'Falha ao sincronizar com o Bling') })

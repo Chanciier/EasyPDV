@@ -75,7 +75,7 @@ export class ActivateTerminalUseCase {
     // com Bling" na tela Produtos cobre retry/atualização depois.
     void this.syncProductsFromBlingUseCase
       .execute()
-      .then((r) => this.logger.log(`Sync automático de catálogo Bling na ativação: ${r.created} novo(s), ${r.updated} atualizado(s) de ${r.total}`))
+      .then((r) => this.logger.log(`Sync automático de catálogo Bling na ativação: ${r.created} novo(s), ${r.updated} atualizado(s), ${r.deactivated} desativado(s) de ${r.total}`))
       .catch((error) => this.logger.error(`Sync automático de catálogo Bling na ativação falhou: ${String(error)}`));
 
     return identity;

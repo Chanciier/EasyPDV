@@ -103,6 +103,15 @@ model Product {
   active     Boolean    @default(true)
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
+  // Timestamp da última vez que este produto foi criado/atualizado por um
+  // sync do Bling (qualquer um dos dois: completo ou incremental) — null
+  // pra produto criado só localmente (botão "+ Novo produto"), nunca visto
+  // no Bling. Usado por SyncProductsFromBlingUseCase pra decidir quais
+  // produtos DESATIVAR quando um sync completo não traz mais um SKU que
+  // antes existia (produto apagado/inativado no Bling) — só produtos com
+  // blingSyncedAt preenchido entram nessa varredura, pra nunca desativar
+  // por engano algo cadastrado só no PDV (2026-08-19).
+  blingSyncedAt DateTime?
 
   barcodes       Barcode[]
   priceListItems PriceListItem[]

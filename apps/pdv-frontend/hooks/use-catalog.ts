@@ -83,7 +83,7 @@ export function useSyncProductsFromBling() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () =>
-      apiRequest<{ created: number; updated: number; total: number }>('/products/sync-bling', { method: 'POST' }),
+      apiRequest<{ created: number; updated: number; deactivated: number; total: number }>('/products/sync-bling', { method: 'POST' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['products', 'search'] }),
   })
 }
