@@ -20,7 +20,11 @@ PATCH  /users/:id/role (Bearer + role administrador) → troca o papel
 
 GET    /products/search?query=          (Bearer) → busca textual por nome/SKU, só produtos ativos, até 25
                                          (sem paginação — limite conhecido do V1, ver docs/CHANGELOG.md Sprint 9)
-GET    /products/by-barcode/:code       (Bearer) → produto + preço vigente
+GET    /products/by-barcode/:code       (Bearer) → produto + preço vigente. Busca primeiro na tabela
+                                         `Barcode` dedicada, com fallback pra `sku` (2026-08-19) —
+                                         produto sincronizado do Bling nunca ganha uma linha em
+                                         `Barcode`, só `sku` (= `codigo` do Bling), e pra muitos
+                                         lojistas esse código JÁ É o código de barras físico
 GET    /products/:id/price              (Bearer) → preço vigente (ResolvePriceUseCase); 404 se produto
                                          sem preço na tabela ativa
 GET    /products/:id                    (Bearer) → produto por id (Sprint 9 — frontend precisava resolver

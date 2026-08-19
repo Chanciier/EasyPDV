@@ -1,6 +1,13 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Leitor de código de barras nunca encontrava produto sincronizado do Bling (2026-08-19)
+Depois do fix do caixa e do bloqueio de estoque, o usuário bipou um produto recém-sincronizado do Bling (SKU/código `7897725022409`) e recebeu "Produto não encontrado" mesmo o produto existindo e aparecendo normal na tela Produtos.
+
+- **Causa**: `FindProductByBarcodeUseCase`/`PrismaProductRepository.findByBarcode()` buscava só na tabela `Barcode` dedicada — nunca em `Product.sku`. `SyncProductsFromBlingUseCase` só grava `sku` (= `codigo` do Bling), nunca cria uma linha em `Barcode`. Resultado: **nenhum produto sincronizado do Bling** conseguia ser encontrado pelo leitor de código de barras — só os cadastrados manualmente pela tela Produtos com um barcode explícito adicionado. Pra muitos lojistas o "Código" do Bling já É o código de barras físico do produto (como neste caso), então isso bloqueava o caso de uso mais comum, não um caso raro.
+- **Corrigido** com fallback em `findByBarcode()`: se não achar na tabela `Barcode`, tenta por `sku` antes de devolver "não encontrado".
+- `pnpm -w typecheck` e `lint` passam.
+
 ### Segundo terminal ativado de verdade destrava mais dois bugs de bootstrap + controle real de estoque (2026-08-19)
 Usuário ativou um segundo terminal (mesma loja, conta Bling nova conectada — ver seção de reconexão do Bling abaixo) e bateu em dois problemas novos, nenhum relacionado ao Bling: o botão "Abrir caixa" ficava permanentemente desabilitado, e depois — já operando — pediu controle real contra vender além do estoque ("não posso ter 5 produtos cadastrados e no fim acabar tendo 6 vendidos").
 

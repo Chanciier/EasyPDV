@@ -22,9 +22,23 @@ export class PrismaProductRepository implements ProductRepositoryPort {
     return record ? toDomainProduct(record) : null;
   }
 
+  /**
+   * Cai pro `sku` quando não acha na tabela `Barcode` dedicada — achado real
+   * (2026-08-19): produto sincronizado do Bling só ganha `sku` (= `codigo` do
+   * Bling), nunca uma linha em `Barcode` (`SyncProductsFromBlingUseCase`
+   * nunca cria uma). Pra muitos lojistas o "Código" cadastrado no Bling JÁ É
+   * o código de barras físico do produto (como neste caso: "7897725022409")
+   * — sem esse fallback, o leitor de código de barras nunca encontra NENHUM
+   * produto vindo do Bling, só os cadastrados manualmente com um barcode
+   * explícito pela tela Produtos.
+   */
   async findByBarcode(code: string): Promise<Product | null> {
     const barcode = await this.prisma.barcode.findUnique({ where: { code }, include: { product: true } });
-    return barcode ? toDomainProduct(barcode.product) : null;
+    if (barcode) {
+      return toDomainProduct(barcode.product);
+    }
+    const bySku = await this.prisma.product.findUnique({ where: { sku: code } });
+    return bySku ? toDomainProduct(bySku) : null;
   }
 
   async search(query: string): Promise<Product[]> {
