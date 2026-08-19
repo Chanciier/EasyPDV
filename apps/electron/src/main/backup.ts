@@ -6,10 +6,21 @@ import type { BackupInfo } from "@easypdv/shared-types";
 /**
  * Backup local automático (Sprint 15) — cópia periódica do easypdv.db pra
  * uma pasta de backup local, com rotação. Sem envio pra nuvem/Intermediador
- * nesta rodada (decisão confirmada com o usuário). SQLite deste projeto usa
- * o journal padrão (rollback), não WAL — confirmado sem `.db-wal`/`.db-shm`
- * ao lado do banco em uso normal — mas a cópia dos sidecars abaixo é
- * defensiva (não falha se não existirem), pra não quebrar se isso mudar.
+ * nesta rodada (decisão confirmada com o usuário).
+ *
+ * **2026-08-19: SQLite passou a rodar em modo WAL** (`PrismaService`, achado
+ * real — sem WAL, uma transação de escrita longa como o sync do catálogo
+ * Bling travava o app inteiro). A cópia dos sidecars `-wal`/`-shm` abaixo,
+ * que já existia defensivamente "pra não quebrar se isso mudar", passou a
+ * ser necessária de verdade. Risco NÃO tratado ainda (latente, sem sintoma
+ * reportado): copiar `.db` + `.db-wal` com `fs.copyFileSync` não é atômico
+ * entre os dois arquivos — uma escrita concorrente entre as duas cópias
+ * poderia, em teoria, deixar o par inconsistente. Mitigação correta seria
+ * pedir um `PRAGMA wal_checkpoint(TRUNCATE)` ao pdv-backend (única conexão
+ * viva com o banco) antes de copiar, esvaziando o `-wal` — não implementado
+ * ainda, fica como follow-up (ver Decisões e Riscos Abertos no cofre
+ * Obsidian). Janela de risco é pequena (escritas de POS são esporádicas,
+ * backup roda a cada 6h + no boot), mas existe.
  */
 
 const MAX_BACKUPS = 10;

@@ -201,12 +201,24 @@ export function SaleView() {
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (e.nativeEvent.isComposing || e.keyCode === 229) return
-      if (matches[highlight]) {
+      // `matches` vem de `debouncedTerm` (250ms atrás de `term`) — só confia
+      // nele quando o debounce já alcançou o texto atual. Bug real
+      // (2026-08-19): um leitor de código de barras USB digita + Enter bem
+      // mais rápido que 250ms, então `matches`/`highlight` ainda refletiam a
+      // ÚLTIMA busca por nome feita antes do scan (o React Query mantém
+      // `data` do último resultado mesmo com a query desabilitada por termo
+      // vazio) — todo código lido virava o primeiro item daquela busca
+      // antiga, nunca o produto escaneado de verdade. Sem essa checagem de
+      // frescor, o fallback de leitura exata (`findProductByBarcode`) logo
+      // abaixo nunca era alcançado.
+      const searchIsFresh = debouncedTerm === term.trim()
+      if (searchIsFresh && matches[highlight]) {
         addProduct(matches[highlight])
-      } else if (matches.length === 1) {
+      } else if (searchIsFresh && matches.length === 1) {
         addProduct(matches[0])
       } else if (term.trim()) {
-        // Sem match por nome/SKU — busca não indexa código de barras, tenta leitura exata.
+        // Sem match por nome/SKU (ou busca desatualizada) — busca não indexa
+        // código de barras, tenta leitura exata.
         setError(null)
         setAdding(true)
         try {

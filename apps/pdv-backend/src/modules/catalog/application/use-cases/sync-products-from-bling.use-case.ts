@@ -23,10 +23,23 @@ export interface SyncProductsFromBlingResult {
  * de propósito — bug real de performance achado testando com o catálogo Bling
  * de verdade (~11 mil produtos): cada `create`/`update`/`upsertItem` fora de
  * uma transação explícita é seu próprio commit SQLite (fsync individual),
- * levando o sync a passar de 8 minutos. Envolvendo TODO o loop num único
- * `$transaction` interativo, o SQLite faz um fsync só no final — mesmo
- * catálogo, poucos segundos.
+ * levando o sync a passar de 8 minutos.
+ *
+ * **Escrita em lotes de `BATCH_SIZE`, não numa `$transaction` única pro
+ * catálogo inteiro** — achado real (2026-08-19, catálogo de ~27 mil
+ * produtos): uma única transação levou ~9-10 minutos, e o SQLite (fora do
+ * modo WAL até então — ver `PrismaService`) mantém lock exclusivo do arquivo
+ * INTEIRO enquanto uma transação de escrita está aberta. Resultado: o app
+ * inteiro ficou fora do ar durante o sync — busca de produto, venda,
+ * `GET /provisioning/status`, tudo devolvendo erro. Lotes pequenos limitam
+ * quanto tempo qualquer commit segura o lock, deixando outras escritas
+ * (ex: confirmar uma venda) intercalarem entre lotes em vez de esperar o
+ * sync inteiro. Efeito colateral aceitável: um crash no meio do sync deixa
+ * o catálogo parcialmente atualizado — inofensivo, é um espelho idempotente
+ * do Bling, o próximo sync (manual ou o poll incremental) completa o resto.
  */
+const BATCH_SIZE = 200;
+
 @Injectable()
 export class SyncProductsFromBlingUseCase {
   constructor(
@@ -64,25 +77,29 @@ export class SyncProductsFromBlingUseCase {
      */
     const warehouse = await this.prisma.warehouse.findFirst({ orderBy: { createdAt: "asc" } });
 
-    const { created, updated } = await this.prisma.$transaction(
-      async (tx) => {
-        let created = 0;
-        let updated = 0;
+    let created = 0;
+    let updated = 0;
 
-        for (const item of products) {
+    for (let i = 0; i < products.length; i += BATCH_SIZE) {
+      const batch = products.slice(i, i + BATCH_SIZE);
+      const batchResult = await this.prisma.$transaction(async (tx) => {
+        let batchCreated = 0;
+        let batchUpdated = 0;
+
+        for (const item of batch) {
           const existing = await tx.product.findUnique({ where: { sku: item.code } });
           let productId: string;
 
           if (existing) {
             await tx.product.update({ where: { id: existing.id }, data: { name: item.name, active: true } });
             productId = existing.id;
-            updated++;
+            batchUpdated++;
           } else {
             const product = await tx.product.create({
               data: { sku: item.code, name: item.name, categoryId: null, unit: "un" },
             });
             productId = product.id;
-            created++;
+            batchCreated++;
           }
 
           if (item.price !== null) {
@@ -122,10 +139,12 @@ export class SyncProductsFromBlingUseCase {
           }
         }
 
-        return { created, updated };
-      },
-      { timeout: 10 * 60 * 1000, maxWait: 10 * 60 * 1000 },
-    );
+        return { created: batchCreated, updated: batchUpdated };
+      });
+
+      created += batchResult.created;
+      updated += batchResult.updated;
+    }
 
     // Fora da transação de propósito: já commitou os produtos, e mesmo que
     // essa escrita falhe (terminal desativado entre o início e o fim do
