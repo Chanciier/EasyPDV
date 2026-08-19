@@ -10,7 +10,7 @@ import type {
 } from '@easypdv/shared-types'
 import { apiRequest } from '@/lib/api-client'
 
-export function useSalesList(params?: { status?: SaleStatus; cashSessionId?: string }) {
+export function useSalesList(params?: { status?: SaleStatus | SaleStatus[]; cashSessionId?: string }) {
   return useQuery({
     queryKey: ['sales', 'list', params ?? {}],
     queryFn: () =>

@@ -16,16 +16,21 @@ export class ApiError extends Error {
 export interface ApiRequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
-  query?: Record<string, string | undefined>;
+  query?: Record<string, string | string[] | undefined>;
   /** /auth/login e /auth/refresh não anexam Bearer nem disparam retry de refresh em 401. */
   skipAuth?: boolean;
 }
 
-function buildUrl(path: string, query?: Record<string, string | undefined>): string {
+function buildUrl(path: string, query?: Record<string, string | string[] | undefined>): string {
   const url = new URL(path, API_BASE_URL);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
-      if (value !== undefined) url.searchParams.set(key, value);
+      if (value === undefined) continue;
+      if (Array.isArray(value)) {
+        for (const v of value) url.searchParams.append(key, v);
+      } else {
+        url.searchParams.set(key, value);
+      }
     }
   }
   return url.toString();

@@ -67,7 +67,7 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
 }
 
 export function HistoryView() {
-  const { data: sales = [], isLoading } = useSalesList({ status: 'confirmed' })
+  const { data: sales = [], isLoading } = useSalesList({ status: ['confirmed', 'cancelled'] })
   const { data: dashboard } = useDashboardReport()
   const user = useAuthStore((s) => s.user)
   const canVoid = !!user && VOID_ROLES.includes(user.role)
@@ -163,11 +163,12 @@ export function HistoryView() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card">
-        <div className="grid grid-cols-[10rem_1fr_9rem_8rem_7rem] items-center gap-3 border-b border-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="grid grid-cols-[10rem_1fr_9rem_8rem_7rem_7rem] items-center gap-3 border-b border-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           <span>Cupom</span>
           <span>Cliente</span>
           <span>Pagamento</span>
           <span>Hora</span>
+          <span>Status</span>
           <span className="text-right">Total</span>
         </div>
         <div className="h-full overflow-y-auto pb-16">
@@ -181,7 +182,7 @@ export function HistoryView() {
               <button
                 key={s.id}
                 onClick={() => openDetail(s)}
-                className="grid w-full grid-cols-[10rem_1fr_9rem_8rem_7rem] items-center gap-3 border-b border-border/60 px-4 py-2.5 text-left text-sm hover:bg-muted/50"
+                className={`grid w-full grid-cols-[10rem_1fr_9rem_8rem_7rem_7rem] items-center gap-3 border-b border-border/60 px-4 py-2.5 text-left text-sm hover:bg-muted/50 ${s.status === 'cancelled' ? 'opacity-60' : ''}`}
               >
                 <span className="truncate font-mono text-xs text-muted-foreground">{s.id}</span>
                 <span className="truncate font-medium">
@@ -197,6 +198,16 @@ export function HistoryView() {
                         minute: '2-digit',
                       })
                     : '—'}
+                </span>
+                <span>
+                  {s.status === 'cancelled' ? (
+                    <span className="flex items-center gap-1 text-xs font-medium text-destructive">
+                      <Ban className="size-3.5" />
+                      Cancelada
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Confirmada</span>
+                  )}
                 </span>
                 <span className="text-right font-mono font-semibold">{formatBRL(s.totalAmount)}</span>
               </button>
@@ -245,7 +256,7 @@ export function HistoryView() {
             </div>
           ) : (
             <>
-              {canVoid && (
+              {canVoid && detail?.status !== 'cancelled' && (
                 <button
                   onClick={() => setVoidOpen(true)}
                   className="rounded-lg px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"

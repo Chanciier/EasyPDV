@@ -8,7 +8,7 @@ import { SALE_REPOSITORY, type SaleRepositoryPort } from "../ports/sale-reposito
 export class ListSalesUseCase {
   constructor(@Inject(SALE_REPOSITORY) private readonly saleRepository: SaleRepositoryPort) {}
 
-  execute(params?: { status?: SaleStatus; cashSessionId?: string }): Promise<Sale[]> {
+  execute(params?: { status?: SaleStatus | SaleStatus[]; cashSessionId?: string }): Promise<Sale[]> {
     return this.saleRepository.findMany({ status: params?.status, cashSessionId: params?.cashSessionId, limit: 100 });
   }
 }

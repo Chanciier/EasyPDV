@@ -47,7 +47,7 @@ export class SalesController {
   ) {}
 
   @Get()
-  list(@Query("status") status?: SaleStatus, @Query("cashSessionId") cashSessionId?: string) {
+  list(@Query("status") status?: SaleStatus | SaleStatus[], @Query("cashSessionId") cashSessionId?: string) {
     return this.listSalesUseCase.execute({ status, cashSessionId });
   }
 

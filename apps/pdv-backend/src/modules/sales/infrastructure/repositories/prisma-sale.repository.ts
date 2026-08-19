@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { SaleStatus, SaleSyncPayload } from "@easypdv/shared-types";
+import type { SaleStatus, SaleSyncPayload, SaleVoidSyncPayload } from "@easypdv/shared-types";
 import { Sale } from "../../domain/entities/sale.entity.js";
 import { InsufficientStockError, SaleWarehouseNotResolvableError } from "../../domain/errors.js";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
@@ -22,10 +22,10 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     return record ? toDomainSale(record) : null;
   }
 
-  async findMany(params?: { status?: SaleStatus; cashSessionId?: string; limit?: number }): Promise<Sale[]> {
+  async findMany(params?: { status?: SaleStatus | SaleStatus[]; cashSessionId?: string; limit?: number }): Promise<Sale[]> {
     const records = await this.prisma.sale.findMany({
       where: {
-        status: params?.status,
+        status: Array.isArray(params?.status) ? { in: params.status } : params?.status,
         cashSessionId: params?.cashSessionId,
       },
       include: SALE_INCLUDE,
@@ -209,6 +209,11 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
    * de cada item é derivado das StockMovement "venda" originais (não "o
    * primeiro depósito" como confirm() faz ao debitar pela primeira vez) —
    * mais correto e já preparado pra um cenário multi-depósito futuro.
+   *
+   * Também grava um SyncOutbox "sale_void" (2026-08-19) — achado numa venda
+   * real: sem isso, o estoque devolvido aqui é revertido silenciosamente
+   * pelo próximo poll incremental Bling→PDV (que trata o Bling como fonte da
+   * verdade e nunca soube que essa venda foi cancelada). Ver BlingSyncTargetAdapter.
    */
   async voidConfirmed(saleId: string, actorUserId: string | null, reason: string): Promise<Sale> {
     const sale = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
@@ -246,9 +251,31 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
       ];
     });
 
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: sale.items.map((item) => item.productId) } },
+      select: { id: true, sku: true, name: true },
+    });
+    const productById = new Map(products.map((product) => [product.id, product]));
+    const voidPayload: SaleVoidSyncPayload = {
+      saleId,
+      items: sale.items.map((item) => {
+        const product = productById.get(item.productId);
+        return {
+          productId: item.productId,
+          sku: product?.sku ?? "",
+          name: product?.name ?? "",
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+        };
+      }),
+    };
+
     await this.prisma.$transaction([
       this.prisma.sale.update({ where: { id: saleId }, data: { status: "cancelled" } }),
       ...stockOperations,
+      this.prisma.syncOutbox.create({
+        data: { entityType: "sale_void", entityId: saleId, payload: JSON.stringify(voidPayload) },
+      }),
       this.prisma.auditLog.create({
         data: {
           userId: actorUserId,

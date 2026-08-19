@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { SaleSyncPayload } from "@easypdv/shared-types";
+import type { SaleSyncPayload, SaleVoidSyncPayload } from "@easypdv/shared-types";
 import type { SyncTargetInput, SyncTargetPort } from "../../../../sync/application/ports/sync-target.port.js";
 import type { ErpProviderCode } from "../../../domain/entities/erp-integration.entity.js";
 import { ErpIntegrationNotFoundError } from "../../../domain/errors.js";
@@ -129,6 +129,10 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
   ) {}
 
   async process(input: SyncTargetInput): Promise<void> {
+    if (input.entityType === "sale_void") {
+      await this.processVoid(input);
+      return;
+    }
     if (input.entityType !== "sale") {
       this.logger.warn(`entityType "${input.entityType}" ainda não suportado pelo Adapter Bling — ignorando.`);
       return;
@@ -199,6 +203,70 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     });
 
     this.logger.log(`Estoque baixado no Bling: sale=${payload.saleId} deposito=${depositoId} itens=${payload.items.length}`);
+  }
+
+  /**
+   * Estorno de venda confirmada (2026-08-19) — repõe no Bling o estoque que
+   * `pushStockMovements` baixou, senão o poll incremental Bling→PDV (fonte
+   * da verdade = Bling) reverte silenciosamente a devolução de estoque que o
+   * `voidConfirmed` já fez localmente assim que rodar de novo. Não tenta
+   * mudar a `situação` do pedido de venda pra "Cancelado" — a conta Bling
+   * pode ter "Estornar estoque" ligado nessa transição (Gerenciador de
+   * transições), o que dobraria a devolução de estoque feita aqui via
+   * `POST /estoques`; cancelar o pedido no painel do Bling continua manual
+   * por ora (mesma decisão de manter estoque só pela API explícita, ver
+   * `pushStockMovements`).
+   */
+  private async processVoid(input: SyncTargetInput): Promise<void> {
+    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+    if (!integration) {
+      throw new ErpIntegrationNotFoundError("(nenhuma organização com Bling conectado)");
+    }
+    const accessToken = await this.tokenProvider.getValidAccessToken(integration);
+    const payload = input.payload as SaleVoidSyncPayload;
+    await this.pushVoidStockMovements(accessToken, integration.organizationId, payload);
+  }
+
+  /**
+   * Só repõe estoque se a baixa original (`pushStockMovements`, marca
+   * "sale_stock") realmente aconteceu — uma venda estornada antes do
+   * SyncOutbox alcançar o Bling nunca baixou nada lá, então não há o que
+   * devolver (repor às cegas infla o estoque indevidamente).
+   */
+  private async pushVoidStockMovements(accessToken: string, organizationId: string, payload: SaleVoidSyncPayload): Promise<void> {
+    const originalPush = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "sale_stock", payload.saleId);
+    if (!originalPush) {
+      this.logger.log(`Estorno ${payload.saleId}: baixa original nunca chegou no Bling — nada a repor.`);
+      return;
+    }
+
+    const alreadyReverted = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "sale_void_stock", payload.saleId);
+    if (alreadyReverted) {
+      return;
+    }
+
+    const depositoId = await this.resolveWarehouseId(accessToken, organizationId);
+
+    for (const item of payload.items) {
+      const produtoId = await this.resolveProduct(accessToken, organizationId, item.sku, item.name);
+      await this.blingApiClient.createStockMovement(accessToken, {
+        produtoId,
+        depositoId,
+        operacao: "E",
+        quantidade: item.quantity,
+        observacoes: `Estorno de venda PDV ${payload.saleId}`,
+      });
+    }
+
+    await this.erpSyncMappingRepository.upsert({
+      organizationId,
+      provider: PROVIDER,
+      localEntityType: "sale_void_stock",
+      localEntityId: payload.saleId,
+      externalId: "ok",
+    });
+
+    this.logger.log(`Estoque reposto no Bling (estorno): sale=${payload.saleId} deposito=${depositoId} itens=${payload.items.length}`);
   }
 
   /**

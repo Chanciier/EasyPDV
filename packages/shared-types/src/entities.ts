@@ -285,6 +285,19 @@ export interface SaleSyncPayload {
   payments: SaleSyncPayloadPayment[];
 }
 
+/**
+ * Contrato do payload de SyncOutbox/SyncJob quando entityType="sale_void"
+ * (2026-08-19) — gravado por `PrismaSaleRepository.voidConfirmed()`, repõe
+ * no Bling o estoque baixado quando a venda original sincronizou. Sem isso,
+ * o poll incremental Bling→PDV (que trata o Bling como fonte da verdade de
+ * estoque) reverte silenciosamente a devolução de estoque feita localmente
+ * pelo estorno, assim que rodar de novo.
+ */
+export interface SaleVoidSyncPayload {
+  saleId: string;
+  items: SaleSyncPayloadItem[];
+}
+
 // Resposta de GET /fiscal/sale/:saleId no Intermediador (Sprint 12) — é o que
 // o pdv-backend usa pra espelhar o FiscalDocument local. 404 quando a venda
 // ainda não tem NFC-e (emissão é opt-in via BLING_NFCE_AUTO_EMIT, e mesmo

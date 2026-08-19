@@ -26,7 +26,7 @@ export interface RegisterPaymentData {
 export interface SaleRepositoryPort {
   findById(id: string): Promise<Sale | null>;
   /** Histórico (Sprint 9) — mais recente primeiro. */
-  findMany(params?: { status?: SaleStatus; cashSessionId?: string; limit?: number }): Promise<Sale[]>;
+  findMany(params?: { status?: SaleStatus | SaleStatus[]; cashSessionId?: string; limit?: number }): Promise<Sale[]>;
   start(data: StartSaleData): Promise<Sale>;
   addItem(data: AddSaleItemData): Promise<Sale>;
   removeItem(saleId: string, itemId: string): Promise<Sale>;
