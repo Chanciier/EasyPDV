@@ -63,7 +63,12 @@ export class ListBlingProductsUseCase {
         if (item.situacao && item.situacao !== "A") {
           continue;
         }
-        products.push({ code: item.codigo, name: item.nome, price: item.preco ?? null });
+        products.push({
+          code: item.codigo,
+          name: item.nome,
+          price: item.preco ?? null,
+          stock: item.estoque?.saldoVirtualTotal ?? null,
+        });
       }
       if (page.length < PAGE_SIZE) {
         hitPageCeiling = false;

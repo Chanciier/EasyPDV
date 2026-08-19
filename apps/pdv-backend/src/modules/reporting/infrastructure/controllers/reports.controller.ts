@@ -9,8 +9,22 @@ import { GetDashboardReportUseCase } from "../../application/use-cases/get-dashb
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * Bug real corrigido (2026-08-18): `to` vem sempre de um `<input type="date">`
+ * no frontend (Relatórios), ex: "2026-08-18" — `new Date("2026-08-18")` vira
+ * meia-noite UTC daquele dia, então uma venda confirmada às 15h do PRÓPRIO
+ * dia final do período ficava de fora do filtro `confirmedAt: { lte: to }`
+ * (15h > 00h). "Até 18/08" precisa incluir o dia 18 inteiro, não só o
+ * instante zero dele.
+ */
+function endOfDay(date: Date): Date {
+  const end = new Date(date);
+  end.setUTCHours(23, 59, 59, 999);
+  return end;
+}
+
 function resolveRange(from?: string, to?: string): { from: Date; to: Date } {
-  const toDate = to ? new Date(to) : new Date();
+  const toDate = to ? endOfDay(new Date(to)) : new Date();
   const fromDate = from ? new Date(from) : new Date(toDate.getTime() - THIRTY_DAYS_MS);
   return { from: fromDate, to: toDate };
 }

@@ -1,0 +1,33 @@
+# `railway up` empacota o diretório inteiro e sobe — ao contrário do git, ele
+# NÃO respeita .gitignore. Sem este arquivo, cada deploy do Intermediador
+# tentava subir os artefatos de build do Electron junto: `dist-installer/`
+# sozinho chegou a 753 MB (vários instaladores de 174 MB acumulados de
+# rebuilds seguidos), e os deploys começaram a falhar/travar em
+# "Initializing" — bug real, achado em 2026-08-18 depois de 3 deploys
+# falharem sem log útil enquanto o serviço no ar continuava rodando código
+# antigo. O Dockerfile do Intermediador não usa NADA disso (buildar do
+# código-fonte via turbo, ver docker/Dockerfile.intermediador).
+
+# Artefatos de build do Electron (instaladores, ~174 MB cada)
+apps/electron/dist-installer/
+apps/electron/resources-build/
+apps/electron/dist/
+
+# Builds compilados — o Dockerfile recompila do fonte
+**/dist/
+**/.next/
+apps/pdv-frontend/out/
+
+# Dependências — o Dockerfile roda pnpm install
+**/node_modules/
+
+# Banco local de dev, nunca vai pro Intermediador
+**/*.db
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
+
+# Misc
+.git/
+.turbo/
+**/.turbo/

@@ -318,6 +318,14 @@ export interface BlingProductSummary {
   code: string;
   name: string;
   price: number | null;
+  /**
+   * Saldo de estoque no Bling (`estoque.saldoVirtualTotal`). `null` quando o
+   * Bling não devolve o campo pro produto. Adicionado em 2026-08-18: até
+   * então o sync trazia só SKU/nome/preço, e o PDV nascia com estoque ZERO
+   * pra todo produto importado — a primeira venda real de um produto deixava
+   * o saldo local negativo (-1) enquanto o Bling mostrava 1.
+   */
+  stock: number | null;
 }
 
 // Trilha imutável de eventos sensíveis (Sprint 13) — ver docs/DATABASE.md pra

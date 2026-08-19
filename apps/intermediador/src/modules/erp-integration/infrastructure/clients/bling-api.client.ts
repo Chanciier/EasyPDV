@@ -11,6 +11,8 @@ export interface BlingProduct {
 export interface BlingProductListItem extends BlingProduct {
   preco?: number;
   situacao?: string;
+  /** `saldoVirtualTotal` é o saldo que o Bling exibe na listagem de Produtos (confirmado contra a interface pública da API v3). */
+  estoque?: { saldoVirtualTotal?: number };
 }
 
 export interface BlingContact {
@@ -29,6 +31,8 @@ export interface CreateSalesOrderInput {
   contatoId: number;
   formaPagamentoId: number;
   totalAmount: number;
+  /** Desconto da venda em R$, no nível do pedido — ver computeOrderDiscount no BlingSyncTargetAdapter. */
+  discountAmount: number;
   dueDate: string;
   items: CreateSalesOrderItem[];
 }
@@ -105,6 +109,13 @@ export class BlingApiClient {
     const body = {
       data: input.dueDate,
       contato: { id: input.contatoId },
+      // `desconto` só entra quando existe de fato — mandar `{ valor: 0 }` num
+      // pedido sem desconto é ruído desnecessário no cadastro do lojista.
+      // `unidade: "REAL"` = valor absoluto em R$ (o outro válido é
+      // "PERCENTUAL"), confirmado contra a interface pública da API v3.
+      ...(input.discountAmount > 0
+        ? { desconto: { valor: input.discountAmount, unidade: "REAL" as const } }
+        : {}),
       itens: input.items.map((item) => ({
         produto: { id: item.produtoId },
         quantidade: item.quantidade,
@@ -208,9 +219,18 @@ export class BlingApiClient {
 
     const parsed = (await response.json().catch(() => null)) as (T & BlingErrorEnvelope) | null;
     if (!response.ok) {
+      // `error.message` do Bling costuma ser um resumo genérico demais pra
+      // depurar ("Não foi possível salvar a venda") — `error.description`
+      // é onde a validação específica de verdade costuma vir (campo por
+      // campo). Achado real (2026-08-18): sem isso, um 400 de verdade fica
+      // opaco tanto no log quanto no SyncJob.lastError — inclui o corpo
+      // inteiro do erro nos dois lugares agora.
       const message = parsed?.error?.message ?? JSON.stringify(parsed);
-      this.logger.error(`Bling API ${method} ${path} falhou (HTTP ${response.status}): ${message}`);
-      throw new Error(`Bling API ${method} ${path} falhou (HTTP ${response.status}): ${message}`);
+      const detail = parsed?.error?.description ? ` — ${JSON.stringify(parsed.error.description)}` : "";
+      this.logger.error(
+        `Bling API ${method} ${path} falhou (HTTP ${response.status}): ${message}${detail} | corpo completo da resposta: ${JSON.stringify(parsed)} | corpo enviado: ${JSON.stringify(body)}`,
+      );
+      throw new Error(`Bling API ${method} ${path} falhou (HTTP ${response.status}): ${message}${detail}`);
     }
     return (parsed ?? ({} as T)) as T;
   }

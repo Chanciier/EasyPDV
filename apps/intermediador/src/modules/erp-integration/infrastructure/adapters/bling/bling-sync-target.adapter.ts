@@ -25,6 +25,37 @@ const DEFAULT_CONTACT_NAME = "Consumidor Final";
 const DEFAULT_CONTACT_KEY = "default";
 
 /**
+ * Bling rejeita `POST /pedidos/vendas` com um 400 genérico ("Não foi possível
+ * salvar a venda") quando a soma de `itens[].valor * quantidade` não fecha com
+ * `parcelas[].valor` — achado numa venda REAL com desconto (2026-08-18).
+ *
+ * O desconto do PDV é sempre no nível da VENDA (`Sale.discountAmount`, nunca
+ * por item — ver docs/DATABASE.md), então `SaleSyncPayloadItem.unitPrice`
+ * chega aqui com o preço CHEIO. A primeira tentativa de corrigir isso foi
+ * ratear o desconto nos preços unitários — e uma verificação da própria
+ * matemática (antes de subir!) provou que **isso é impossível de fechar em
+ * geral**: com `quantidade > 1`, um preço unitário de 2 casas só consegue
+ * expressar totais múltiplos da quantidade (ex.: total R$20,00 com 3 unidades
+ * → 6,67×3 = 20,01 ou 6,66×3 = 19,98, nunca 20,00). Rateio foi descartado.
+ *
+ * A forma correta é a que o próprio Bling oferece: itens com o preço REAL
+ * (importa pro relatório/NF-e do lojista) + `desconto` no nível do pedido
+ * (`{ valor, unidade: "REAL" }`, confirmado contra a interface pública da
+ * API v3). Fecha exato, sem arredondamento, e o desconto aparece como
+ * desconto no Bling em vez de sumir dentro do preço do produto.
+ *
+ * Derivado dos itens (subtotal − total) em vez de vir no payload: mantém
+ * compatibilidade com `SyncJob`s já gravados antes desta correção, que não
+ * têm `discountAmount` nenhum — o job travado da venda real é justamente um
+ * desses.
+ */
+function computeOrderDiscount(items: { quantidade: number; valor: number }[], totalAmount: number): number {
+  const subtotal = items.reduce((sum, item) => sum + item.valor * item.quantidade, 0);
+  const discount = Math.round((subtotal - totalAmount) * 100) / 100;
+  return discount > 0 ? discount : 0;
+}
+
+/**
  * 1 Pendente, 3 Aguardando recibo, 7 Registrada, 8 Aguardando protocolo,
  * 10 Consulta situação → pending (ainda sem veredito da SEFAZ).
  * 5 Autorizada, 6 Emitida DANFE → issued.
@@ -126,6 +157,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       contatoId,
       formaPagamentoId,
       totalAmount: payload.totalAmount,
+      discountAmount: computeOrderDiscount(items, payload.totalAmount),
       dueDate,
       items,
     });

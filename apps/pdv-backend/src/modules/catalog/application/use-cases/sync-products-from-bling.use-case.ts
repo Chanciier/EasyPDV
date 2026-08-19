@@ -44,6 +44,16 @@ export class SyncProductsFromBlingUseCase {
     }
     const priceListId = priceList.id;
 
+    /**
+     * Estoque também vem do Bling desde 2026-08-18 — antes o sync trazia só
+     * SKU/nome/preço e todo produto importado nascia com saldo ZERO local,
+     * então a primeira venda real já deixava o saldo negativo (-1) enquanto o
+     * Bling mostrava 1. `ensureDefaultWarehouse` (main.ts) garante que este
+     * depósito existe em todo boot; se por algum motivo não existir, o sync
+     * de catálogo segue normalmente e só o estoque fica de fora.
+     */
+    const warehouse = await this.prisma.warehouse.findFirst({ orderBy: { createdAt: "asc" } });
+
     const { created, updated } = await this.prisma.$transaction(
       async (tx) => {
         let created = 0;
@@ -71,6 +81,34 @@ export class SyncProductsFromBlingUseCase {
               create: { priceListId, productId, price: item.price },
               update: { price: item.price },
             });
+          }
+
+          // Bling é a fonte da verdade do estoque nesta direção (mesma decisão
+          // já valendo pra nome/preço) — sobrescreve o saldo local. O ledger
+          // (StockMovement) recebe um lançamento de ajuste com a DIFERENÇA,
+          // pra não quebrar a invariante "StockItem é projeção do ledger"
+          // (ver docs/DATABASE.md).
+          if (warehouse && item.stock !== null) {
+            const current = await tx.stockItem.findUnique({
+              where: { warehouseId_productId: { warehouseId: warehouse.id, productId } },
+            });
+            const delta = item.stock - (current?.quantity ?? 0);
+            if (delta !== 0) {
+              await tx.stockMovement.create({
+                data: {
+                  warehouseId: warehouse.id,
+                  productId,
+                  type: "ajuste",
+                  quantity: delta,
+                  referenceType: "bling_sync",
+                },
+              });
+              await tx.stockItem.upsert({
+                where: { warehouseId_productId: { warehouseId: warehouse.id, productId } },
+                create: { warehouseId: warehouse.id, productId, quantity: item.stock },
+                update: { quantity: item.stock },
+              });
+            }
           }
         }
 
