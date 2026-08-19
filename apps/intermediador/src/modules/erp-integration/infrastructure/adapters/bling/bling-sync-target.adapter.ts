@@ -23,6 +23,7 @@ import { BlingTokenProviderService } from "../../clients/bling-token-provider.se
 const PROVIDER: ErpProviderCode = "bling";
 const DEFAULT_CONTACT_NAME = "Consumidor Final";
 const DEFAULT_CONTACT_KEY = "default";
+const DEFAULT_WAREHOUSE_KEY = "default";
 
 /**
  * Bling rejeita `POST /pedidos/vendas` com um 400 genérico ("Não foi possível
@@ -91,8 +92,11 @@ function mapSituacaoToStatus(situacao: number | null): FiscalDocumentStatusCode 
 /**
  * Implementa a mesma SyncTargetPort do NoopSyncTargetAdapter (Sprint 6) —
  * substituição transparente, sem tocar no SyncProcessor nem nos use-cases.
- * Só sabe processar entityType="sale" por enquanto (estoque não sincroniza
- * com o Bling ainda). V1 simplificação single-tenant: resolve "a" integração
+ * Só sabe processar entityType="sale" por enquanto. Além de criar o pedido de
+ * venda, também baixa o estoque vendido no Bling (`pushStockMovements`,
+ * 2026-08-19) — a metade PDV→Bling do sync bidirecional de estoque; a
+ * metade Bling→PDV é o poll incremental em `SyncProductsFromBlingUseCase`
+ * (pdv-backend). V1 simplificação single-tenant: resolve "a" integração
  * ativa em vez de rotear por loja (Sprint 10 resolve isso de verdade).
  * Contato usa um valor padrão fixo ("Consumidor Final", resolvido/criado e
  * cacheado via ErpSyncMapping). Forma de pagamento vem de config — Bling não
@@ -141,9 +145,97 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
 
     const orderExternalId = await this.resolveSalesOrder(accessToken, organizationId, payload);
 
+    // Baixa de estoque é caminho crítico (ao contrário da NFC-e, que é
+    // "best effort" — ver ensureFiscalDocument): sem isso, o estoque do Bling
+    // fica desatualizado até o próximo poll incremental notar a divergência,
+    // e como o poll só reage a mudanças DO LADO do Bling, uma venda cujo push
+    // falhou nunca se autocorrige sozinha. Deixa o erro propagar de propósito
+    // — o SyncProcessor marca o SyncJob como failed e retenta, mesma
+    // semântica de resolveSalesOrder.
+    await this.pushStockMovements(accessToken, organizationId, payload);
+
     if (this.isNfceAutoEmitEnabled()) {
       await this.ensureFiscalDocument(accessToken, organizationId, payload.saleId, orderExternalId);
     }
+  }
+
+  /**
+   * Baixa no Bling o estoque vendido no PDV (`operacao: "S"`, um `POST
+   * /estoques` por item). Decisão (2026-08-19, pedido do usuário: "o bling
+   * tem que andar junto com o estoque do intermediador") de usar a API de
+   * estoque explícita em vez de avançar a `situação` do pedido de venda —
+   * ver comentário de `BlingApiClient.createStockMovement`. Idempotente via
+   * ErpSyncMapping própria (localEntityType "sale_stock"), independente da
+   * marca de `resolveSalesOrder`: um retry de SyncJob pode acontecer depois
+   * do pedido já ter sido criado mas antes da baixa de estoque (ou vice-versa
+   * numa falha parcial), então as duas idempotências precisam ser
+   * verificadas/gravadas separadamente.
+   */
+  private async pushStockMovements(accessToken: string, organizationId: string, payload: SaleSyncPayload): Promise<void> {
+    const alreadyPushed = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "sale_stock", payload.saleId);
+    if (alreadyPushed) {
+      return;
+    }
+
+    const depositoId = await this.resolveWarehouseId(accessToken, organizationId);
+
+    for (const item of payload.items) {
+      const produtoId = await this.resolveProduct(accessToken, organizationId, item.sku, item.name);
+      await this.blingApiClient.createStockMovement(accessToken, {
+        produtoId,
+        depositoId,
+        operacao: "S",
+        quantidade: item.quantity,
+        observacoes: `Venda PDV ${payload.saleId}`,
+      });
+    }
+
+    await this.erpSyncMappingRepository.upsert({
+      organizationId,
+      provider: PROVIDER,
+      localEntityType: "sale_stock",
+      localEntityId: payload.saleId,
+      externalId: "ok",
+    });
+
+    this.logger.log(`Estoque baixado no Bling: sale=${payload.saleId} deposito=${depositoId} itens=${payload.items.length}`);
+  }
+
+  /**
+   * Resolve o depósito da conta Bling pra usar em `POST /estoques` — cache
+   * (ErpSyncMapping) → `GET /depositos` (prefere `padrao: true`, senão o
+   * primeiro ativo, senão o primeiro que vier) → falha explícita se a conta
+   * não tiver nenhum depósito (não deveria acontecer: toda conta Bling nasce
+   * com um depósito padrão).
+   */
+  private async resolveWarehouseId(accessToken: string, organizationId: string): Promise<number> {
+    const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "warehouse", DEFAULT_WAREHOUSE_KEY);
+    if (cached) {
+      return Number(cached.externalId);
+    }
+
+    const warehouses = await this.blingApiClient.listWarehouses(accessToken);
+    if (warehouses.length === 0) {
+      throw new Error("Conta Bling não tem nenhum depósito cadastrado — não é possível baixar estoque.");
+    }
+    const active = warehouses.filter((w) => w.situacao === undefined || w.situacao === "A");
+    const pool = active.length > 0 ? active : warehouses;
+    // `pool` nunca é vazio aqui (deriva de `warehouses`, já checado acima) —
+    // `?? pool[0]` é só pra satisfazer `noUncheckedIndexedAccess`.
+    const resolved = pool.find((w) => w.padrao)?.id ?? pool[0]?.id;
+    if (resolved === undefined) {
+      throw new Error("Conta Bling não tem nenhum depósito cadastrado — não é possível baixar estoque.");
+    }
+
+    await this.erpSyncMappingRepository.upsert({
+      organizationId,
+      provider: PROVIDER,
+      localEntityType: "warehouse",
+      localEntityId: DEFAULT_WAREHOUSE_KEY,
+      externalId: String(resolved),
+    });
+    this.logger.log(`Depósito Bling resolvido pra baixa de estoque: id=${resolved}`);
+    return resolved;
   }
 
   private async resolveSalesOrder(

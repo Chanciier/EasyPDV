@@ -47,17 +47,20 @@ export class ErpIntegrationController {
   }
 
   /**
-   * Chamado pelo terminal (botão "Sincronizar com Bling" na tela Produtos e
-   * pelo sync automático na ativação), não uma tela de admin — mesma
-   * fronteira de confiança de /fiscal e /sync. Escopado pela organização do
-   * terminal autenticado (bug real corrigido: antes usava findFirstActive,
-   * que pegava qualquer integração Bling ativa no Intermediador inteiro,
-   * sem filtrar por organização — inofensivo enquanto só existia 1
-   * organização real, mas loja B ativando terminal puxaria o catálogo da A).
+   * Chamado pelo terminal (botão "Sincronizar com Bling" na tela Produtos, o
+   * sync automático na ativação, e o poll periódico de estoque — ver
+   * bling-stock-sync.worker.ts no pdv-backend), não uma tela de admin —
+   * mesma fronteira de confiança de /fiscal e /sync. Escopado pela
+   * organização do terminal autenticado (bug real corrigido: antes usava
+   * findFirstActive, que pegava qualquer integração Bling ativa no
+   * Intermediador inteiro, sem filtrar por organização — inofensivo enquanto
+   * só existia 1 organização real, mas loja B ativando terminal puxaria o
+   * catálogo da A). `since` (opcional, ISO) filtra pra só produtos alterados
+   * a partir dessa data — ver ListBlingProductsUseCase.
    */
   @Get("bling/products")
   @UseGuards(TerminalApiKeyGuard)
-  products(@CurrentTerminal() terminal: AuthenticatedTerminal) {
-    return this.listBlingProductsUseCase.execute(terminal.organizationId);
+  products(@CurrentTerminal() terminal: AuthenticatedTerminal, @Query("since") since?: string) {
+    return this.listBlingProductsUseCase.execute(terminal.organizationId, since ? new Date(since) : undefined);
   }
 }

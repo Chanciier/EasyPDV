@@ -24,6 +24,7 @@ import { UpsertPriceListItemUseCase } from "./application/use-cases/upsert-price
 import { GetActivePriceListUseCase } from "./application/use-cases/get-active-price-list.use-case.js";
 import { ResolvePriceUseCase } from "./application/use-cases/resolve-price.use-case.js";
 import { SyncProductsFromBlingUseCase } from "./application/use-cases/sync-products-from-bling.use-case.js";
+import { BlingStockSyncWorker } from "./infrastructure/workers/bling-stock-sync.worker.js";
 
 @Module({
   imports: [AuditModule],
@@ -42,6 +43,7 @@ import { SyncProductsFromBlingUseCase } from "./application/use-cases/sync-produ
     GetActivePriceListUseCase,
     ResolvePriceUseCase,
     SyncProductsFromBlingUseCase,
+    BlingStockSyncWorker,
     { provide: PRODUCT_REPOSITORY, useClass: PrismaProductRepository },
     { provide: CATEGORY_REPOSITORY, useClass: PrismaCategoryRepository },
     { provide: PRICE_LIST_REPOSITORY, useClass: PrismaPriceListRepository },

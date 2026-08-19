@@ -238,14 +238,22 @@ POST   /terminals/activate                { code, terminalName? } → valida o c
                                            organização, se ela tiver integração conectada — erro (ex: sem
                                            Bling conectado) só loga, nunca falha a ativação
 
-GET    /integrations/bling/products?organizationId=  chamado pelo pdv-backend (POST /products/sync-bling) —
-                                           exige apiKey de terminal. **Bug corrigido na Sprint 16**: resolvia
-                                           a integração Bling via `findFirstActive("bling")` (primeira
-                                           conexão ativa em TODO o Intermediador, "simplificação single-tenant"
-                                           documentada no próprio código) — inofensivo enquanto só existia 1
-                                           organização real, mas exporia dados de uma organização pra outra
-                                           assim que uma segunda existisse. Agora usa
-                                           `findByOrganization(terminal.organizationId, "bling")`
+GET    /integrations/bling/products?since=  chamado pelo pdv-backend (botão "Sincronizar com Bling",
+                                           sync automático na ativação, e o poll periódico de estoque —
+                                           ver BlingStockSyncWorker) — exige apiKey de terminal, organização
+                                           vem do terminal autenticado (@CurrentTerminal), não de query
+                                           param. **Bug corrigido na Sprint 16**: resolvia a integração Bling
+                                           via `findFirstActive("bling")` (primeira conexão ativa em TODO o
+                                           Intermediador, "simplificação single-tenant" documentada no
+                                           próprio código) — inofensivo enquanto só existia 1 organização
+                                           real, mas exporia dados de uma organização pra outra assim que uma
+                                           segunda existisse. Agora usa
+                                           `findByOrganization(terminal.organizationId, "bling")`.
+                                           `since` (opcional, ISO) — adicionado 2026-08-19 pro sync
+                                           bidirecional de estoque: filtra só produtos alterados no Bling a
+                                           partir dessa data (`dataAlteracaoInicial`, formato `YYYY-MM-DD`
+                                           com 1 dia de folga pra trás contra fuso horário). Sem `since`,
+                                           catálogo inteiro (comportamento de sempre)
 ```
 
 Endpoints de `/organizations` e `/terminals` seguem sem autenticação (bootstrapping manual, sem UI de admin ainda). Os demais endpoints sem `(Bearer)`/apiKey explícitos acima seguem sem autenticação (mesmo risco aberto desde a Sprint 6 — ver docs/ERROR-HANDLING.md); `POST /sync` é o único endpoint do Intermediador com autenticação real até agora (apiKey de terminal, Sprint 10).

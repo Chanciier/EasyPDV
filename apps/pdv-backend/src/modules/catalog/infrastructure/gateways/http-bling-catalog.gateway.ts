@@ -21,13 +21,17 @@ export class HttpBlingCatalogGateway implements BlingCatalogGatewayPort {
     this.baseUrl = configService.get<string>("INTERMEDIADOR_URL") ?? "http://127.0.0.1:4002";
   }
 
-  async listProducts(): Promise<BlingProductSummary[]> {
+  async listProducts(since?: Date): Promise<BlingProductSummary[]> {
     const identity = await this.prisma.storeIdentity.findFirst();
     if (!identity) {
       throw new Error("Terminal ainda não foi ativado — sem apiKey pra sincronizar com o Intermediador");
     }
 
-    const response = await fetch(`${this.baseUrl}/integrations/bling/products`, {
+    const url = new URL(`${this.baseUrl}/integrations/bling/products`);
+    if (since) {
+      url.searchParams.set("since", since.toISOString());
+    }
+    const response = await fetch(url, {
       headers: { "X-Terminal-Api-Key": identity.apiKey },
     });
     if (!response.ok) {

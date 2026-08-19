@@ -26,6 +26,14 @@ model StoreIdentity {
   terminalId     String
   apiKey         String
   activatedAt    DateTime @default(now())
+  // Timestamp do último SyncProductsFromBlingUseCase bem-sucedido (manual,
+  // na ativação, ou pelo poll periódico) — usado como `since` do próximo
+  // poll incremental de estoque (bling-stock-sync.worker.ts, 2026-08-19).
+  // Nullable/sem default: fica null até o primeiro sync completo acontecer;
+  // o worker periódico NÃO roda enquanto for null, pra não disparar um sync
+  // de catálogo inteiro a cada 5 minutos indefinidamente se o Bling nunca
+  // tiver sido conectado (ver SyncProductsFromBlingUseCase e o worker).
+  lastBlingSyncAt DateTime?
 }
 
 // Papel do usuário. O banco local representa uma única loja (StoreIdentity),

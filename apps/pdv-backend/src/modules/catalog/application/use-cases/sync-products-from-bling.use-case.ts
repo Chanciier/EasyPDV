@@ -35,8 +35,18 @@ export class SyncProductsFromBlingUseCase {
     private readonly prisma: PrismaService,
   ) {}
 
-  async execute(): Promise<SyncProductsFromBlingResult> {
-    const products = await this.blingCatalogGateway.listProducts();
+  /**
+   * `since`, quando informado, faz um sync INCREMENTAL — só produtos
+   * alterados no Bling a partir dessa data (usado pelo poll periódico,
+   * `BlingStockSyncWorker`, 2026-08-19). Sem `since`, sync completo (botão
+   * manual e ativação de terminal). Em qualquer um dos dois casos, ao
+   * terminar com sucesso grava `StoreIdentity.lastBlingSyncAt = agora` — é
+   * o `since` que o PRÓXIMO poll incremental vai usar. Centralizado aqui
+   * (em vez de no worker) pra ter uma fonte só de verdade: qualquer chamador
+   * que sincronizar com sucesso empurra o marcador pra frente.
+   */
+  async execute(since?: Date): Promise<SyncProductsFromBlingResult> {
+    const products = await this.blingCatalogGateway.listProducts(since);
 
     let priceList = await this.priceListRepository.findActive();
     if (!priceList) {
@@ -116,6 +126,12 @@ export class SyncProductsFromBlingUseCase {
       },
       { timeout: 10 * 60 * 1000, maxWait: 10 * 60 * 1000 },
     );
+
+    // Fora da transação de propósito: já commitou os produtos, e mesmo que
+    // essa escrita falhe (terminal desativado entre o início e o fim do
+    // sync, por exemplo) não deve desfazer o sync que já aconteceu — só o
+    // próximo poll incremental volta a puxar um pouco mais de trás.
+    await this.prisma.storeIdentity.updateMany({ data: { lastBlingSyncAt: new Date() } });
 
     return { created, updated, total: products.length };
   }

@@ -20,6 +20,23 @@ export interface BlingContact {
   nome: string;
 }
 
+/** `situacao: "A"` = ativo (mesma convenção de `BlingProductListItem.situacao`, confirmada contra a interface pública `depositos/interfaces/get.interface.ts`). `padrao: true` marca o depósito padrão da conta. */
+export interface BlingWarehouse {
+  id: number;
+  descricao: string;
+  situacao?: string;
+  padrao?: boolean;
+}
+
+/** `operacao`: `"E"` entrada, `"S"` saída, `"B"` balanço (ajuste pro valor informado). Ver `resolveWarehouseId`/`pushStockMovements` em BlingSyncTargetAdapter. */
+export interface CreateStockMovementInput {
+  produtoId: number;
+  depositoId: number;
+  operacao: "E" | "S" | "B";
+  quantidade: number;
+  observacoes?: string;
+}
+
 /**
  * `tipoPagamento` (documentado na API v3): 1 Dinheiro, 2 Cheque, 3 Cartão de
  * Crédito, 4 Cartão de Débito, 15 Boleto, 17 PIX dinâmico, 20 PIX estático,
@@ -95,13 +112,22 @@ export class BlingApiClient {
     return result.data?.[0] ?? null;
   }
 
-  /** Uma página de `GET /produtos` (`pagina`/`limite` — paginação padrão da API v3 do Bling). Retorna [] quando a página não tem mais itens — chamador decide quando parar. */
-  async listProductsPage(accessToken: string, pagina: number, limite = 100): Promise<BlingProductListItem[]> {
-    const result = await this.request<BlingListEnvelope<BlingProductListItem>>(
-      accessToken,
-      "GET",
-      `/produtos?pagina=${pagina}&limite=${limite}`,
-    );
+  /**
+   * Uma página de `GET /produtos` (`pagina`/`limite` — paginação padrão da API
+   * v3 do Bling). Retorna [] quando a página não tem mais itens — chamador
+   * decide quando parar. `dataAlteracaoInicial` (opcional, `YYYY-MM-DD`) filtra
+   * só produtos alterados a partir dessa data — usado pelo sync incremental
+   * periódico (2026-08-19: catálogo pode ter dezenas de milhares de SKUs,
+   * repaginar tudo a cada poll não é viável; ver `IGetParams` da lib pública
+   * `bling-erp-api-js`, que documenta o filtro mas não o formato exato — a
+   * data-only (sem hora) é o padrão observado nos outros filtros de data v3).
+   */
+  async listProductsPage(accessToken: string, pagina: number, limite = 100, dataAlteracaoInicial?: string): Promise<BlingProductListItem[]> {
+    const query = new URLSearchParams({ pagina: String(pagina), limite: String(limite) });
+    if (dataAlteracaoInicial) {
+      query.set("dataAlteracaoInicial", dataAlteracaoInicial);
+    }
+    const result = await this.request<BlingListEnvelope<BlingProductListItem>>(accessToken, "GET", `/produtos?${query.toString()}`);
     return result.data ?? [];
   }
 
@@ -117,6 +143,33 @@ export class BlingApiClient {
   async listPaymentMethods(accessToken: string): Promise<BlingPaymentMethod[]> {
     const result = await this.request<BlingListEnvelope<BlingPaymentMethod>>(accessToken, "GET", "/formas-pagamentos");
     return result.data ?? [];
+  }
+
+  /** `GET /depositos` — usado pra resolver o depósito da conta antes de baixar estoque (ver `resolveWarehouseId` em BlingSyncTargetAdapter). */
+  async listWarehouses(accessToken: string): Promise<BlingWarehouse[]> {
+    const result = await this.request<BlingListEnvelope<BlingWarehouse>>(accessToken, "GET", "/depositos");
+    return result.data ?? [];
+  }
+
+  /**
+   * `POST /estoques` — registra um MOVIMENTO de estoque (não um valor
+   * absoluto), confirmado contra a interface pública `estoques/interfaces/create.interface.ts`
+   * (`ICreateBody`: `produto`, `deposito`, `operacao`, `quantidade`). Usado
+   * pra baixar estoque no Bling a cada venda confirmada no PDV — decisão
+   * (2026-08-19) de fazer isso via API de estoque explícita, e não avançando
+   * a `situação` do pedido de venda (que também dispara baixa automática no
+   * Bling dependendo da configuração da conta): a `situação` é workflow do
+   * lojista (ele pode querer separar/despachar manualmente no painel), misturar
+   * os dois criaria baixa duplicada ou interferência indesejada.
+   */
+  async createStockMovement(accessToken: string, input: CreateStockMovementInput): Promise<void> {
+    await this.request<BlingItemEnvelope<{ id: number }>>(accessToken, "POST", "/estoques", {
+      produto: { id: input.produtoId },
+      deposito: { id: input.depositoId },
+      operacao: input.operacao,
+      quantidade: input.quantidade,
+      ...(input.observacoes ? { observacoes: input.observacoes } : {}),
+    });
   }
 
   async findContactByName(accessToken: string, nome: string): Promise<BlingContact | null> {

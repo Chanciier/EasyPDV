@@ -41,12 +41,24 @@ export class ListBlingProductsUseCase {
     private readonly blingApiClient: BlingApiClient,
   ) {}
 
-  async execute(organizationId: string): Promise<BlingProductSummary[]> {
+  /**
+   * `since`, quando informado, filtra só produtos alterados a partir dessa
+   * data (`dataAlteracaoInicial`) — usado pelo poll incremental periódico
+   * do pdv-backend (2026-08-19). Sem `since`, comportamento de sempre: puxa
+   * o catálogo inteiro (botão manual "Sincronizar com Bling" e sync na
+   * ativação de terminal continuam chamando sem esse parâmetro).
+   */
+  async execute(organizationId: string, since?: Date): Promise<BlingProductSummary[]> {
     const integration = await this.erpIntegrationRepository.findByOrganization(organizationId, PROVIDER);
     if (!integration) {
       throw new ErpIntegrationNotFoundError(organizationId);
     }
     const accessToken = await this.tokenProvider.getValidAccessToken(integration);
+    // `dataAlteracaoInicial` é data (sem hora) — um dia de folga pra trás
+    // evita perder mudança por causa de fuso horário na borda da meia-noite
+    // (custo é reprocessar produtos já vistos, idempotente e barato; perder
+    // uma mudança de estoque de verdade não é aceitável).
+    const dataAlteracaoInicial = since ? new Date(since.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10) : undefined;
 
     const products: BlingProductSummary[] = [];
     let hitPageCeiling = true;
@@ -54,7 +66,7 @@ export class ListBlingProductsUseCase {
       if (pagina > 1) {
         await sleep(PAGE_DELAY_MS);
       }
-      const page = await this.blingApiClient.listProductsPage(accessToken, pagina, PAGE_SIZE);
+      const page = await this.blingApiClient.listProductsPage(accessToken, pagina, PAGE_SIZE, dataAlteracaoInicial);
       if (page.length === 0) {
         hitPageCeiling = false;
         break;
