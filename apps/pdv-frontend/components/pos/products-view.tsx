@@ -15,6 +15,7 @@ import {
   useProductList,
   useProductPrice,
   useSetPrice,
+  useStockList,
   useSyncProductsFromBling,
   useUpdateProduct,
 } from '@/hooks/use-catalog'
@@ -60,6 +61,8 @@ export function ProductsView() {
 
   const priceQueries = useProductPrices(products.map((p) => p.id))
   const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories])
+  const { data: stockList = [] } = useStockList()
+  const stockByProductId = useMemo(() => new Map(stockList.map((s) => [s.productId, s.quantity])), [stockList])
 
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [creating, setCreating] = useState(false)
@@ -262,11 +265,12 @@ export function ProductsView() {
       )}
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card">
-        <div className="grid grid-cols-[8rem_1fr_9rem_6rem_6rem_5rem] items-center gap-3 border-b border-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="grid grid-cols-[8rem_1fr_9rem_6rem_6rem_6rem_5rem] items-center gap-3 border-b border-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           <span>SKU</span>
           <span>Produto</span>
           <span>Categoria</span>
           <span>Unidade</span>
+          <span className="text-right">Estoque</span>
           <span className="text-right">Preço</span>
           <span className="text-right">Ações</span>
         </div>
@@ -279,10 +283,11 @@ export function ProductsView() {
           ) : (
             products.map((p, i) => {
               const price = priceQueries[i]?.data
+              const stock = stockByProductId.get(p.id) ?? 0
               return (
                 <div
                   key={p.id}
-                  className="grid grid-cols-[8rem_1fr_9rem_6rem_6rem_5rem] items-center gap-3 border-b border-border/60 px-4 py-2.5 text-sm hover:bg-muted/50"
+                  className="grid grid-cols-[8rem_1fr_9rem_6rem_6rem_6rem_5rem] items-center gap-3 border-b border-border/60 px-4 py-2.5 text-sm hover:bg-muted/50"
                 >
                   <span className="font-mono text-xs text-muted-foreground">{p.sku}</span>
                   <span className="truncate font-medium">{p.name}</span>
@@ -290,6 +295,11 @@ export function ProductsView() {
                     {p.categoryId ? (categoryById.get(p.categoryId) ?? '—') : '—'}
                   </span>
                   <span className="text-muted-foreground">{p.unit}</span>
+                  <span
+                    className={`text-right font-mono font-semibold ${stock <= 0 ? 'text-destructive' : 'text-foreground'}`}
+                  >
+                    {stock}
+                  </span>
                   <span className="text-right font-mono font-semibold">
                     {price ? formatBRL(price.effectivePrice) : '—'}
                   </span>

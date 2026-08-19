@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import type { SaleStatus, SaleSyncPayload } from "@easypdv/shared-types";
 import { Sale } from "../../domain/entities/sale.entity.js";
-import { SaleWarehouseNotResolvableError } from "../../domain/errors.js";
+import { InsufficientStockError, SaleWarehouseNotResolvableError } from "../../domain/errors.js";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
 import type {
   AddSaleItemData,
@@ -97,37 +97,29 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
 
   /**
    * Confirma a venda, debita o estoque de cada item e grava a entrada de
-   * sincronização — tudo na mesma transação. O débito usa `decrement` atômico
-   * (SQL `SET quantity = quantity - X`), não um read-modify-write em código
-   * de aplicação — combinado com a serialização de escrita do próprio SQLite,
-   * isso resolve a race condition de dois caixas confirmando o último item do
-   * mesmo produto ao mesmo tempo (risco documentado desde a Sprint 3). O
-   * SyncOutbox segue o mesmo raciocínio: se a venda foi commitada, a entrada
-   * de sync também foi, sem exceção — grava-se aqui em vez de via
-   * SyncOutboxRepositoryPort para não sair do escopo desta transação (mesma
-   * exceção pragmática documentada em docs/DATABASE.md).
+   * sincronização — tudo na mesma transação. O débito usa `updateMany` com
+   * piso (`WHERE quantity >= X`) em vez de um `upsert`/`decrement` cego —
+   * pedido direto do usuário (2026-08-19: "não posso ter 5 produtos
+   * cadastrados e no fim acabar tendo 6 vendidos"). `updateMany` continua
+   * sendo uma escrita atômica (SQL `UPDATE ... WHERE ...`, não um
+   * read-modify-write em código de aplicação), então a resolução da race
+   * condition de dois caixas confirmando o último item do mesmo produto ao
+   * mesmo tempo (risco documentado desde a Sprint 3) continua valendo — a
+   * diferença é que agora, se a condição do WHERE não bater (estoque
+   * insuficiente OU produto sem `StockItem` nenhum, tratado como 0
+   * disponível), `count` vem 0 e a transação inteira é abortada
+   * (`InsufficientStockError`, ver domain/errors.ts) em vez de deixar o saldo
+   * ir negativo silenciosamente. Precisou virar transação interativa
+   * (`async (tx) => ...`) em vez do array de antes — o array não permite
+   * inspecionar o resultado de uma operação no meio pra decidir abortar as
+   * seguintes. O SyncOutbox segue o mesmo raciocínio de sempre: se a venda
+   * foi commitada, a entrada de sync também foi, sem exceção — grava-se aqui
+   * em vez de via SyncOutboxRepositoryPort para não sair do escopo desta
+   * transação (mesma exceção pragmática documentada em docs/DATABASE.md).
    */
   async confirm(saleId: string, warehouseId: string, actorUserId: string | null): Promise<Sale> {
     const sale = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
     const confirmedAt = new Date();
-
-    const stockOperations = sale.items.flatMap((item) => [
-      this.prisma.stockMovement.create({
-        data: {
-          warehouseId,
-          productId: item.productId,
-          type: "venda",
-          quantity: -item.quantity,
-          referenceType: "sale",
-          referenceId: saleId,
-        },
-      }),
-      this.prisma.stockItem.upsert({
-        where: { warehouseId_productId: { warehouseId, productId: item.productId } },
-        create: { warehouseId, productId: item.productId, quantity: -item.quantity },
-        update: { quantity: { decrement: item.quantity } },
-      }),
-    ]);
 
     // sku/name vêm do Catalog (outro módulo) só pra este payload de sync —
     // o Intermediador nunca acessa o SQLite local, precisa desses dados já
@@ -163,16 +155,40 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
       })),
     };
 
-    await this.prisma.$transaction([
-      this.prisma.sale.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.sale.update({
         where: { id: saleId },
         data: { status: "confirmed", confirmedAt },
-      }),
-      ...stockOperations,
-      this.prisma.syncOutbox.create({
+      });
+
+      for (const item of sale.items) {
+        const debited = await tx.stockItem.updateMany({
+          where: { warehouseId, productId: item.productId, quantity: { gte: item.quantity } },
+          data: { quantity: { decrement: item.quantity } },
+        });
+        if (debited.count === 0) {
+          const current = await tx.stockItem.findUnique({
+            where: { warehouseId_productId: { warehouseId, productId: item.productId } },
+          });
+          const product = productById.get(item.productId);
+          throw new InsufficientStockError(product?.name ?? item.productId, current?.quantity ?? 0, item.quantity);
+        }
+        await tx.stockMovement.create({
+          data: {
+            warehouseId,
+            productId: item.productId,
+            type: "venda",
+            quantity: -item.quantity,
+            referenceType: "sale",
+            referenceId: saleId,
+          },
+        });
+      }
+
+      await tx.syncOutbox.create({
         data: { entityType: "sale", entityId: saleId, payload: JSON.stringify(syncPayload) },
-      }),
-      this.prisma.auditLog.create({
+      });
+      await tx.auditLog.create({
         data: {
           userId: actorUserId,
           action: "sale.confirmed",
@@ -180,8 +196,8 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
           entityId: saleId,
           metadata: JSON.stringify({ totalAmount: sale.totalAmount, itemCount: sale.items.length }),
         },
-      }),
-    ]);
+      });
+    });
 
     const confirmed = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
     return toDomainSale(confirmed);

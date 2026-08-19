@@ -43,6 +43,10 @@ POST   /price-lists/:id/items           (Bearer + administrador/gerente) → def
 GET    /warehouses                      (Bearer) → lista
 POST   /warehouses                      (Bearer + administrador/gerente) → cria depósito
 
+GET    /stock                           (Bearer) → estoque de TODO o catálogo do depósito padrão num
+                                         tiro só, `{ productId, quantity }[]` — só produto com
+                                         StockItem materializado aparece (equivalente a 0 se ausente).
+                                         Alimenta a coluna "Estoque" da tela Produtos (2026-08-19)
 GET    /stock/:warehouseId/:productId   (Bearer) → saldo atual (zerado se nunca movimentado)
 GET    /stock/movements?warehouseId=&productId=  (Bearer) → últimos 100 movimentos
 POST   /stock/movements                 (Bearer + administrador/gerente/supervisor) → registra movimento;
@@ -65,7 +69,10 @@ POST   /sales                           (Bearer) → inicia venda (status draft)
 POST   /sales/:id/items                 (Bearer) → adiciona item (preço resolvido via Catalog); só em draft;
                                          sempre cria uma linha nova — não existe endpoint pra alterar
                                          quantidade de um item já existente (o frontend contorna com
-                                         DELETE + POST, ver docs/FRONTEND.md)
+                                         DELETE + POST, ver docs/FRONTEND.md). 409 se a quantidade pedida
+                                         excede o estoque disponível no depósito padrão (InsufficientStockError,
+                                         2026-08-19) — checagem cedo, não é a garantia final (essa é em
+                                         POST /sales/:id/confirm)
 DELETE /sales/:id/items/:itemId         (Bearer) → remove item; só em draft
 POST   /sales/:id/payments              (Bearer) → registra pagamento (dinheiro/cartao/pix/outro); só em draft;
                                          cartão em V1 é declarado manualmente já "aprovado" (sem TEF, ver ROADMAP.md).

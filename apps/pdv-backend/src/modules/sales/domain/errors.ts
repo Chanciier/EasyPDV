@@ -100,3 +100,17 @@ export class SaleWarehouseNotResolvableError extends DomainError {
     super(`Não foi possível determinar o depósito original da venda ${id} para o estorno de estoque`);
   }
 }
+
+/**
+ * Pedido direto do usuário (2026-08-19): "não posso ter 5 produtos
+ * cadastrados e no fim acabar tendo 6 vendidos". Até aqui nada verificava
+ * estoque disponível nem em AddSaleItemUseCase (feedback cedo) nem em
+ * confirm() (garantia final) — uma venda podia deixar `StockItem.quantity`
+ * negativo sem erro nenhum. Lançado nos dois pontos, com a mesma mensagem.
+ */
+export class InsufficientStockError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(productId: string, available: number, requested: number) {
+    super(`Estoque insuficiente para o produto ${productId}: disponível ${available}, solicitado ${requested}`);
+  }
+}

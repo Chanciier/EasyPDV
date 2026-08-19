@@ -16,6 +16,14 @@ export function useProductList(query: string) {
   })
 }
 
+/** Estoque de todo o catálogo (depósito padrão) num tiro só — coluna "Estoque" da tela Produtos (2026-08-19). */
+export function useStockList() {
+  return useQuery({
+    queryKey: ['stock', 'list'],
+    queryFn: () => apiRequest<{ productId: string; quantity: number }[]>('/stock'),
+  })
+}
+
 export function useCategories() {
   return useQuery({
     queryKey: ['categories'],

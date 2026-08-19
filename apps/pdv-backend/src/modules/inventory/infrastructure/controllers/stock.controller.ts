@@ -6,6 +6,7 @@ import { JwtAuthGuard } from "../../../identity/infrastructure/guards/jwt-auth.g
 import { RolesGuard } from "../../../identity/infrastructure/guards/roles.guard.js";
 import { Roles } from "../../../identity/infrastructure/decorators/roles.decorator.js";
 import { GetStockUseCase } from "../../application/use-cases/get-stock.use-case.js";
+import { ListStockUseCase } from "../../application/use-cases/list-stock.use-case.js";
 import { ListStockMovementsUseCase } from "../../application/use-cases/list-stock-movements.use-case.js";
 import { RegisterStockMovementUseCase } from "../../application/use-cases/register-stock-movement.use-case.js";
 
@@ -14,9 +15,23 @@ import { RegisterStockMovementUseCase } from "../../application/use-cases/regist
 export class StockController {
   constructor(
     private readonly getStockUseCase: GetStockUseCase,
+    private readonly listStockUseCase: ListStockUseCase,
     private readonly listStockMovementsUseCase: ListStockMovementsUseCase,
     private readonly registerStockMovementUseCase: RegisterStockMovementUseCase,
   ) {}
+
+  /**
+   * Estoque de todo o catálogo num tiro só, pra tela Produtos mostrar uma
+   * coluna "Estoque" sem uma chamada por produto (2026-08-19). Precisa vir
+   * ANTES de `:warehouseId/:productId` no arquivo — Nest resolve rotas por
+   * ordem de declaração, e um literal genérico feito de dois segmentos
+   * casaria com `/stock/summary` "de qualquer jeito" só por acidente de
+   * nome, então mantém como rota de zero segmentos mesmo (`GET /stock`).
+   */
+  @Get()
+  listAll() {
+    return this.listStockUseCase.execute();
+  }
 
   @Get("movements")
   listMovements(@Query("warehouseId") warehouseId?: string, @Query("productId") productId?: string) {

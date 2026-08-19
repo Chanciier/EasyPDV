@@ -10,6 +10,7 @@ import { CreateWarehouseUseCase } from "./application/use-cases/create-warehouse
 import { ListWarehousesUseCase } from "./application/use-cases/list-warehouses.use-case.js";
 import { RegisterStockMovementUseCase } from "./application/use-cases/register-stock-movement.use-case.js";
 import { GetStockUseCase } from "./application/use-cases/get-stock.use-case.js";
+import { ListStockUseCase } from "./application/use-cases/list-stock.use-case.js";
 import { ListStockMovementsUseCase } from "./application/use-cases/list-stock-movements.use-case.js";
 
 @Module({
@@ -20,12 +21,15 @@ import { ListStockMovementsUseCase } from "./application/use-cases/list-stock-mo
     ListWarehousesUseCase,
     RegisterStockMovementUseCase,
     GetStockUseCase,
+    ListStockUseCase,
     ListStockMovementsUseCase,
     { provide: WAREHOUSE_REPOSITORY, useClass: PrismaWarehouseRepository },
     { provide: STOCK_REPOSITORY, useClass: PrismaStockRepository },
   ],
   // ListWarehousesUseCase é consumido pelo módulo Sales (ConfirmSaleUseCase)
   // pra resolver o depósito padrão — leitura síncrona entre módulos, ver docs/MODULES.md.
-  exports: [ListWarehousesUseCase],
+  // GetStockUseCase: mesmo padrão, consumido por AddSaleItemUseCase pra checar
+  // estoque disponível antes de deixar adicionar um item à venda (2026-08-19).
+  exports: [ListWarehousesUseCase, GetStockUseCase],
 })
 export class InventoryModule {}

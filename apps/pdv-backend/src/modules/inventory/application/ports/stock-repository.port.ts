@@ -25,6 +25,8 @@ export interface StockRepositoryPort {
   getStockItem(warehouseId: string, productId: string): Promise<StockItem | null>;
   registerMovement(data: RegisterMovementData): Promise<StockMovement>;
   listMovements(filter: ListMovementsFilter): Promise<StockMovement[]>;
+  /** Só linhas com StockItem já materializado — produto nunca movimentado não aparece (equivalente a 0, ver GetStockUseCase). */
+  listByWarehouse(warehouseId: string): Promise<StockItem[]>;
 }
 
 export const STOCK_REPOSITORY = Symbol("STOCK_REPOSITORY");

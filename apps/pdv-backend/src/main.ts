@@ -75,6 +75,24 @@ async function ensureDefaultWarehouse(prisma: PrismaService): Promise<void> {
 }
 
 /**
+ * Mesmo bug do `ensureDefaultWarehouse` acima, achado do mesmo jeito — só
+ * que dessa vez com `CashRegister` (2026-08-19, segundo terminal ativado de
+ * verdade): `OpenCashSessionUseCase` exige um `cashRegisterId` já existente
+ * (`CashRegisterNotFoundError` se não achar), e o frontend (`cash-view.tsx`)
+ * desabilita o próprio botão "Abrir caixa" quando `useCashRegisters()` não
+ * devolve nenhum registro — terminal recém-ativado fica com a tela de Caixa
+ * inteiramente travada, bloqueando toda venda (abrir caixa é pré-requisito).
+ * `ActivateTerminalUseCase` nunca criou um `CashRegister`, só o seed de dev
+ * cria ("Caixa 1"). Mesmo padrão idempotente das duas funções acima.
+ */
+async function ensureDefaultCashRegister(prisma: PrismaService): Promise<void> {
+  const existing = await prisma.cashRegister.count();
+  if (existing > 0) return;
+
+  await prisma.cashRegister.create({ data: { name: "Caixa 1" } });
+}
+
+/**
  * Backend local do PDV. Sobe em localhost, chamado pelo renderer do Electron.
  * Nunca deve depender de rede externa para responder — ver
  * Claude/Projetos/EasyPDV/Arquitetura e Stack.md no cofre Obsidian.
@@ -87,6 +105,7 @@ async function bootstrap() {
   const prisma = app.get(PrismaService);
   await ensureAdminUser(prisma);
   await ensureDefaultWarehouse(prisma);
+  await ensureDefaultCashRegister(prisma);
   // O server só escuta em 127.0.0.1 — a fronteira de segurança real é essa,
   // não CORS. Liberado geral porque o frontend roda em origem própria
   // (dev server / protocolo do Electron) e a API usa Bearer token, não

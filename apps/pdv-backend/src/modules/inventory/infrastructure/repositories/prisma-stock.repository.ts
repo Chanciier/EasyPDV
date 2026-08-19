@@ -60,4 +60,9 @@ export class PrismaStockRepository implements StockRepositoryPort {
     });
     return records.map(toDomainStockMovement);
   }
+
+  async listByWarehouse(warehouseId: string): Promise<StockItem[]> {
+    const records = await this.prisma.stockItem.findMany({ where: { warehouseId } });
+    return records.map(toDomainStockItem);
+  }
 }
