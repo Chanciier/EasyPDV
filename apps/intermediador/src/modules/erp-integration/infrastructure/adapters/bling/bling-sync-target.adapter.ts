@@ -49,6 +49,22 @@ const DEFAULT_CONTACT_KEY = "default";
  * têm `discountAmount` nenhum — o job travado da venda real é justamente um
  * desses.
  */
+/**
+ * Método de pagamento do PDV → `tipoPagamento` do Bling, em ordem de
+ * preferência (o primeiro que existir na conta do lojista vence). Códigos
+ * documentados na API v3: 1 Dinheiro, 3 Cartão de Crédito, 4 Cartão de
+ * Débito, 17 PIX dinâmico, 20 PIX estático, 99 Outros.
+ */
+const PREFERRED_TIPO_PAGAMENTO: Record<string, number[]> = {
+  dinheiro: [1],
+  pix: [17, 20],
+  cartao_credito: [3],
+  cartao_debito: [4],
+  // "cartao" sem detalhe: crédito é o caso mais comum no balcão.
+  cartao: [3, 4],
+  outro: [99],
+};
+
 function computeOrderDiscount(items: { quantidade: number; valor: number }[], totalAmount: number): number {
   const subtotal = items.reduce((sum, item) => sum + item.valor * item.quantidade, 0);
   const discount = Math.round((subtotal - totalAmount) * 100) / 100;
@@ -142,9 +158,12 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
 
     const contatoId = await this.resolveDefaultContact(accessToken, organizationId);
     const primaryPayment = payload.payments?.[0];
-    const formaPagamentoId = primaryPayment
-      ? this.resolvePaymentMethodId(primaryPayment.method, primaryPayment.cardType)
-      : this.resolveDefaultPaymentMethodId();
+    const formaPagamentoId = await this.resolvePaymentMethodId(
+      accessToken,
+      organizationId,
+      primaryPayment?.method ?? "outro",
+      primaryPayment?.cardType ?? null,
+    );
 
     const items = [];
     for (const item of payload.items) {
@@ -293,13 +312,79 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
   }
 
   /**
-   * Chave do mapa: "cartao_credito"/"cartao_debito" quando cardType existe,
-   * senão só o method ("dinheiro"/"pix"/"outro"/"cartao" sem detalhe). Sem
-   * entrada específica no mapa (ou sem BLING_PAYMENT_METHOD_ID_MAP definida),
-   * cai pro id fixo único de sempre — onboarding continua exigindo só uma
-   * env var nova opcional, não um cadastro à parte.
+   * Resolve a forma de pagamento **na conta Bling do próprio lojista**, em vez
+   * de depender de um id fixo em env var. Bug real (2026-08-19): TODA venda
+   * falhava com `"Id da forma de pagamento inválido"` (code 12) porque
+   * `BLING_DEFAULT_PAYMENT_METHOD_ID` estava com um id que não existe nessa
+   * conta — e o erro só ficou visível depois de passar a logar `error.fields`
+   * do Bling. Config errada assim é praticamente inevitável no onboarding: o
+   * id é específico de cada conta e a Sprint 7 concluiu (errado) que não dava
+   * pra descobrir por API, deixando o lojista copiar à mão do painel.
+   *
+   * Ordem: cache (ErpSyncMapping) → conta Bling por `tipoPagamento` → forma
+   * marcada como padrão na conta → qualquer ativa → só então as env vars
+   * (que viram escape hatch, não mais o mecanismo principal).
    */
-  private resolvePaymentMethodId(method: string, cardType?: string | null): number {
+  private async resolvePaymentMethodId(
+    accessToken: string,
+    organizationId: string,
+    method: string,
+    cardType?: string | null,
+  ): Promise<number> {
+    const key = cardType ? `${method}_${cardType}` : method;
+
+    const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "payment_method", key);
+    if (cached) {
+      return Number(cached.externalId);
+    }
+
+    const resolved = await this.resolvePaymentMethodFromAccount(accessToken, key, method);
+    if (resolved !== null) {
+      await this.erpSyncMappingRepository.upsert({
+        organizationId,
+        provider: PROVIDER,
+        localEntityType: "payment_method",
+        localEntityId: key,
+        externalId: String(resolved),
+      });
+      this.logger.log(`Forma de pagamento "${key}" resolvida na conta Bling: id=${resolved}`);
+      return resolved;
+    }
+
+    return this.resolveConfiguredPaymentMethodId(method, cardType);
+  }
+
+  private async resolvePaymentMethodFromAccount(
+    accessToken: string,
+    key: string,
+    method: string,
+  ): Promise<number | null> {
+    let methods;
+    try {
+      methods = await this.blingApiClient.listPaymentMethods(accessToken);
+    } catch (error) {
+      this.logger.warn(`Não foi possível listar formas de pagamento do Bling: ${String(error)}`);
+      return null;
+    }
+
+    // `situacao` ausente = conta antiga sem o campo; trata como ativa.
+    const active = methods.filter((m) => m.situacao === undefined || m.situacao === 1);
+    if (active.length === 0) {
+      return null;
+    }
+
+    for (const tipo of PREFERRED_TIPO_PAGAMENTO[key] ?? PREFERRED_TIPO_PAGAMENTO[method] ?? []) {
+      const found = active.find((m) => m.tipoPagamento === tipo);
+      if (found) {
+        return found.id;
+      }
+    }
+
+    return active.find((m) => m.padrao === 1)?.id ?? active[0]?.id ?? null;
+  }
+
+  /** Escape hatch: só usado quando a conta Bling não expõe nenhuma forma utilizável. */
+  private resolveConfiguredPaymentMethodId(method: string, cardType?: string | null): number {
     const map = this.parsePaymentMethodIdMap();
     const specificKey = cardType ? `${method}_${cardType}` : method;
     const resolved = map[specificKey] ?? map[method];

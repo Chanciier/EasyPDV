@@ -20,6 +20,19 @@ export interface BlingContact {
   nome: string;
 }
 
+/**
+ * `tipoPagamento` (documentado na API v3): 1 Dinheiro, 2 Cheque, 3 Cartão de
+ * Crédito, 4 Cartão de Débito, 15 Boleto, 17 PIX dinâmico, 20 PIX estático,
+ * 99 Outros. `padrao: 1` marca a forma padrão da conta. `situacao: 1` = ativa.
+ */
+export interface BlingPaymentMethod {
+  id: number;
+  descricao: string;
+  tipoPagamento: number;
+  situacao?: number;
+  padrao?: number;
+}
+
 export interface CreateSalesOrderItem {
   produtoId: number;
   quantidade: number;
@@ -89,6 +102,20 @@ export class BlingApiClient {
       "GET",
       `/produtos?pagina=${pagina}&limite=${limite}`,
     );
+    return result.data ?? [];
+  }
+
+  /**
+   * `GET /formas-pagamentos` — plural nos DOIS termos. A Sprint 7 concluiu que
+   * "o Bling não tem endpoint de listagem de formas de pagamento" depois de
+   * `GET /formas-pagamento` (singular no segundo) voltar 404; o endpoint
+   * sempre existiu, só com outro nome (confirmado na entidade
+   * `formasDePagamento` da lib pública `bling-erp-api-js`). Achado em
+   * 2026-08-19, ao descobrir que TODA venda estava falhando com
+   * "Id da forma de pagamento inválido" por causa do id fixo em config.
+   */
+  async listPaymentMethods(accessToken: string): Promise<BlingPaymentMethod[]> {
+    const result = await this.request<BlingListEnvelope<BlingPaymentMethod>>(accessToken, "GET", "/formas-pagamentos");
     return result.data ?? [];
   }
 
