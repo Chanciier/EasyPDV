@@ -47,6 +47,12 @@ export class ListBlingProductsUseCase {
    * do pdv-backend (2026-08-19). Sem `since`, comportamento de sempre: puxa
    * o catálogo inteiro (botão manual "Sincronizar com Bling" e sync na
    * ativação de terminal continuam chamando sem esse parâmetro).
+   *
+   * **Achado testando contra o Bling real**: `dataAlteracaoInicial` sozinho
+   * é IGNORADO pelo Bling (sem erro — só devolve o catálogo inteiro, como se
+   * o filtro não existisse). Só funciona mandando `dataAlteracaoFinal`
+   * junto — por isso sempre calculamos os dois quando `since` existe. Ver
+   * `BlingApiClient.listProductsPage`.
    */
   async execute(organizationId: string, since?: Date): Promise<BlingProductSummary[]> {
     const integration = await this.erpIntegrationRepository.findByOrganization(organizationId, PROVIDER);
@@ -54,11 +60,13 @@ export class ListBlingProductsUseCase {
       throw new ErpIntegrationNotFoundError(organizationId);
     }
     const accessToken = await this.tokenProvider.getValidAccessToken(integration);
-    // `dataAlteracaoInicial` é data (sem hora) — um dia de folga pra trás
-    // evita perder mudança por causa de fuso horário na borda da meia-noite
-    // (custo é reprocessar produtos já vistos, idempotente e barato; perder
-    // uma mudança de estoque de verdade não é aceitável).
+    // Datas (sem hora) com 1 dia de folga pros dois lados da janela — evita
+    // perder mudança por causa de fuso horário na borda da meia-noite ou
+    // relógio do servidor ligeiramente adiantado (custo é reprocessar
+    // produtos já vistos, idempotente e barato; perder uma mudança de
+    // estoque de verdade não é aceitável).
     const dataAlteracaoInicial = since ? new Date(since.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10) : undefined;
+    const dataAlteracaoFinal = since ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10) : undefined;
 
     const products: BlingProductSummary[] = [];
     let hitPageCeiling = true;
@@ -66,7 +74,7 @@ export class ListBlingProductsUseCase {
       if (pagina > 1) {
         await sleep(PAGE_DELAY_MS);
       }
-      const page = await this.blingApiClient.listProductsPage(accessToken, pagina, PAGE_SIZE, dataAlteracaoInicial);
+      const page = await this.blingApiClient.listProductsPage(accessToken, pagina, PAGE_SIZE, dataAlteracaoInicial, dataAlteracaoFinal);
       if (page.length === 0) {
         hitPageCeiling = false;
         break;

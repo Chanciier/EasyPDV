@@ -115,17 +115,32 @@ export class BlingApiClient {
   /**
    * Uma página de `GET /produtos` (`pagina`/`limite` — paginação padrão da API
    * v3 do Bling). Retorna [] quando a página não tem mais itens — chamador
-   * decide quando parar. `dataAlteracaoInicial` (opcional, `YYYY-MM-DD`) filtra
-   * só produtos alterados a partir dessa data — usado pelo sync incremental
-   * periódico (2026-08-19: catálogo pode ter dezenas de milhares de SKUs,
-   * repaginar tudo a cada poll não é viável; ver `IGetParams` da lib pública
-   * `bling-erp-api-js`, que documenta o filtro mas não o formato exato — a
-   * data-only (sem hora) é o padrão observado nos outros filtros de data v3).
+   * decide quando parar. `dataAlteracaoInicial`/`dataAlteracaoFinal` (opcionais,
+   * `YYYY-MM-DD`) filtram por produtos alterados nessa janela — usado pelo
+   * sync incremental periódico (2026-08-19: catálogo pode ter dezenas de
+   * milhares de SKUs, repaginar tudo a cada poll não é viável).
+   *
+   * **Achado real testando direto contra o Bling (2026-08-19)**: mandar só
+   * `dataAlteracaoInicial` faz o Bling IGNORAR o filtro silenciosamente e
+   * devolver o catálogo inteiro sem erro nenhum — confirmado comparando a
+   * mesma chamada com e sem o parâmetro (mesma contagem de resultados nos
+   * dois casos, inclusive com uma data no FUTURO). O filtro só passa a valer
+   * quando `dataAlteracaoInicial` E `dataAlteracaoFinal` vêm juntos — testado
+   * com uma janela no futuro e confirmado zero resultados. A interface pública
+   * `IGetParams` da lib `bling-erp-api-js` documenta os dois campos mas não
+   * essa dependência entre eles — só apareceu testando a API de verdade.
    */
-  async listProductsPage(accessToken: string, pagina: number, limite = 100, dataAlteracaoInicial?: string): Promise<BlingProductListItem[]> {
+  async listProductsPage(
+    accessToken: string,
+    pagina: number,
+    limite = 100,
+    dataAlteracaoInicial?: string,
+    dataAlteracaoFinal?: string,
+  ): Promise<BlingProductListItem[]> {
     const query = new URLSearchParams({ pagina: String(pagina), limite: String(limite) });
-    if (dataAlteracaoInicial) {
+    if (dataAlteracaoInicial && dataAlteracaoFinal) {
       query.set("dataAlteracaoInicial", dataAlteracaoInicial);
+      query.set("dataAlteracaoFinal", dataAlteracaoFinal);
     }
     const result = await this.request<BlingListEnvelope<BlingProductListItem>>(accessToken, "GET", `/produtos?${query.toString()}`);
     return result.data ?? [];
