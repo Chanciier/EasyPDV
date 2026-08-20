@@ -17,7 +17,7 @@ import {
   type FiscalDocumentRepositoryPort,
 } from "../../../application/ports/fiscal-document-repository.port.js";
 import type { FiscalDocument, FiscalDocumentStatusCode } from "../../../domain/entities/fiscal-document.entity.js";
-import { BlingApiClient } from "../../clients/bling-api.client.js";
+import { BlingApiClient, BlingApiError } from "../../clients/bling-api.client.js";
 import { BlingTokenProviderService } from "../../clients/bling-token-provider.service.js";
 
 const PROVIDER: ErpProviderCode = "bling";
@@ -222,6 +222,14 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * — não duplica a baixa explícita de `pushStockMovements`. Deliberadamente
    * não avança situação no estorno (`processVoid`) — risco de duplicar
    * ESTORNO de estoque é mais direto ali, ver comentário de `processVoid`.
+   *
+   * **Achado numa venda real (2026-08-20)**: nem todo pedido nasce "Em
+   * aberto" — um pedido com contato por CPF + pagamento à vista já veio
+   * criado direto em "Atendido" nesta conta (Bling recusou o PATCH com
+   * `code: 50` "A venda possui a mesma situação", não um erro de verdade).
+   * Sem tratar isso, o `SyncJob` inteiro ficava preso em retry eterno — o
+   * `code: 50` agora é tratado como sucesso (o objetivo, "estar em
+   * Atendido", já foi alcançado por outro caminho).
    */
   private async advanceSalesOrderToAtendido(
     accessToken: string,
@@ -235,7 +243,15 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     }
 
     const situacaoId = await this.resolveAtendidoSituacaoId(accessToken, organizationId);
-    await this.blingApiClient.updateSalesOrderSituacao(accessToken, Number(orderExternalId), situacaoId);
+    try {
+      await this.blingApiClient.updateSalesOrderSituacao(accessToken, Number(orderExternalId), situacaoId);
+    } catch (error) {
+      if (error instanceof BlingApiError && error.hasFieldCode(50)) {
+        this.logger.log(`Pedido de venda ${orderExternalId} já estava em "Atendido" — nada a fazer.`);
+      } else {
+        throw error;
+      }
+    }
 
     await this.erpSyncMappingRepository.upsert({
       organizationId,

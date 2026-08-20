@@ -121,8 +121,35 @@ interface BlingItemEnvelope<T> {
   data?: T;
 }
 
+interface BlingErrorField {
+  code: number;
+  msg: string;
+  element?: string;
+}
+
 interface BlingErrorEnvelope {
-  error?: { message?: string; description?: unknown };
+  error?: { message?: string; description?: unknown; fields?: BlingErrorField[] };
+}
+
+/**
+ * Erro estruturado do Bling — carrega `fields` (código + mensagem por campo)
+ * pra quem chama poder reagir a um código específico sem precisar
+ * fazer parsing de string na mensagem (achado real, 2026-08-20: `code: 50`
+ * "A venda possui a mesma situação" precisa ser tratado como sucesso em
+ * `advanceSalesOrderToAtendido`, não como falha).
+ */
+export class BlingApiError extends Error {
+  constructor(
+    message: string,
+    public readonly fields: BlingErrorField[],
+  ) {
+    super(message);
+    this.name = "BlingApiError";
+  }
+
+  hasFieldCode(code: number): boolean {
+    return this.fields.some((f) => f.code === code);
+  }
 }
 
 /**
@@ -385,7 +412,7 @@ export class BlingApiClient {
       this.logger.error(
         `Bling API ${method} ${path} falhou (HTTP ${response.status}): ${message}${detail} | corpo completo da resposta: ${JSON.stringify(parsed)} | corpo enviado: ${JSON.stringify(body)}`,
       );
-      throw new Error(`Bling API ${method} ${path} falhou (HTTP ${response.status}): ${message}${detail}`);
+      throw new BlingApiError(`Bling API ${method} ${path} falhou (HTTP ${response.status}): ${message}${detail}`, parsed?.error?.fields ?? []);
     }
     return (parsed ?? ({} as T)) as T;
   }
