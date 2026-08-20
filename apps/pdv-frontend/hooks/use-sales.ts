@@ -138,6 +138,19 @@ export function useApplySaleDiscount() {
   })
 }
 
+/** "CPF na nota" (2026-08-19) — anexa/troca o cliente de uma venda em andamento, chamado no fechamento do pagamento. */
+export function useAttachCustomer() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { saleId: string; document: string; name?: string }) =>
+      apiRequest<Sale>(`/sales/${input.saleId}/customer`, {
+        method: 'PATCH',
+        body: { document: input.document, name: input.name },
+      }),
+    onSuccess: (sale) => queryClient.setQueryData(['sale', sale.id], sale),
+  })
+}
+
 export function useConfirmSale() {
   const queryClient = useQueryClient()
   return useMutation({

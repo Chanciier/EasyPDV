@@ -33,6 +33,8 @@ export interface SaleRepositoryPort {
   cancel(id: string): Promise<Sale>;
   /** Desconto fixo (R$) no total da venda — recalcula totalAmount = max(0, subtotal - discountAmount). */
   applyDiscount(saleId: string, discountAmount: number): Promise<Sale>;
+  /** "CPF na nota" (2026-08-19) — anexa/troca o cliente de uma venda já iniciada (o seletor da tela de Venda só seta isso no início; o pagamento pode chegar depois). */
+  attachCustomer(saleId: string, customerId: string): Promise<Sale>;
   registerPayment(data: RegisterPaymentData): Promise<Sale>;
   /**
    * Confirma a venda e debita o estoque no `warehouseId` informado, tudo

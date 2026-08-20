@@ -18,5 +18,9 @@ import { SearchCustomersUseCase } from "./application/use-cases/search-customers
     SearchCustomersUseCase,
     { provide: CUSTOMER_REPOSITORY, useClass: PrismaCustomerRepository },
   ],
+  // Consumido por AttachCustomerToSaleUseCase (Sales) pro fluxo "CPF na
+  // nota" — busca-ou-cria por documento é acesso a dado simples, não
+  // justifica um use-case novo só pra existir cross-módulo.
+  exports: [CUSTOMER_REPOSITORY],
 })
 export class CustomersModule {}

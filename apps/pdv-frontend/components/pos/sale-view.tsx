@@ -13,6 +13,7 @@ import {
   findProductByBarcode,
   useAddSaleItem,
   useApplySaleDiscount,
+  useAttachCustomer,
   useCancelSale,
   useConfirmSale,
   useProductPrices,
@@ -23,6 +24,7 @@ import {
   useSale,
   useStartSale,
 } from '@/hooks/use-sales'
+import { formatCpf } from '@easypdv/shared-validation'
 import { PaymentDialog } from './payment-dialog'
 import { ReceiptDialog } from './receipt-dialog'
 
@@ -47,6 +49,7 @@ export function SaleView() {
   const removeItemMut = useRemoveSaleItem()
   const registerPayment = useRegisterPayment()
   const confirmSale = useConfirmSale()
+  const attachCustomer = useAttachCustomer()
   const cancelSale = useCancelSale()
   const applyDiscount = useApplySaleDiscount()
   const { data: hardwareSettings } = useHardwareSettings()
@@ -304,11 +307,18 @@ export function SaleView() {
     received: number,
     cardType: PaymentCardType | null,
     installments: number | null,
+    cpf: string | null,
   ) => {
     if (!sale) return
     setPaymentSubmitting(true)
     setPaymentError(null)
     try {
+      // Antes do pagamento/confirmação, de propósito: o payload de sync que
+      // vira NFC-e no Bling é montado em confirm() a partir do customerId já
+      // gravado na venda — precisa estar lá ANTES de confirmar.
+      if (cpf) {
+        await attachCustomer.mutateAsync({ saleId: sale.id, document: cpf })
+      }
       await registerPayment.mutateAsync({
         saleId: sale.id,
         method,
@@ -319,6 +329,11 @@ export function SaleView() {
       const confirmed = await confirmSale.mutateAsync(sale.id)
       setPaymentOpen(false)
       const change = method === 'dinheiro' ? Math.max(0, received - confirmed.totalAmount) : 0
+      const customerDocument = cpf
+        ? formatCpf(cpf)
+        : selectedCustomer?.document
+          ? formatCpf(selectedCustomer.document)
+          : undefined
       setReceipt({
         sale: confirmed,
         method,
@@ -341,6 +356,7 @@ export function SaleView() {
           paymentLabel: PAYMENT_LABELS[method],
           received: method === 'dinheiro' ? received : undefined,
           change: change > 0 ? change : undefined,
+          customerDocument,
         })
       }
       if (method === 'dinheiro' && hardwareSettings?.autoOpenDrawerOnCash) {
@@ -653,6 +669,7 @@ export function SaleView() {
         total={sale?.totalAmount ?? 0}
         submitting={paymentSubmitting}
         error={paymentError}
+        showCpfField={!sale?.customerId}
         onClose={() => {
           if (!paymentSubmitting) {
             setPaymentOpen(false)

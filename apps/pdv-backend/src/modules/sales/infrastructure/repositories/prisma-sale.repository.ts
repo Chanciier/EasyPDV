@@ -71,6 +71,11 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     return this.recalculateTotal(saleId);
   }
 
+  async attachCustomer(saleId: string, customerId: string): Promise<Sale> {
+    const record = await this.prisma.sale.update({ where: { id: saleId }, data: { customerId }, include: SALE_INCLUDE });
+    return toDomainSale(record);
+  }
+
   async cancel(id: string): Promise<Sale> {
     const record = await this.prisma.sale.update({
       where: { id },
@@ -130,10 +135,18 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     });
     const productById = new Map(products.map((product) => [product.id, product]));
 
+    // "CPF na nota" (2026-08-19) — venda sem cliente anexado (caso comum,
+    // anônima) manda os dois campos null, comportamento idêntico a antes.
+    const customer = sale.customerId
+      ? await this.prisma.customer.findUnique({ where: { id: sale.customerId }, select: { document: true, name: true } })
+      : null;
+
     const syncPayload: SaleSyncPayload = {
       saleId,
       totalAmount: sale.totalAmount,
       confirmedAt: confirmedAt.toISOString(),
+      customerDocument: customer?.document ?? null,
+      customerName: customer?.name ?? null,
       items: sale.items.map((item) => {
         const product = productById.get(item.productId);
         return {

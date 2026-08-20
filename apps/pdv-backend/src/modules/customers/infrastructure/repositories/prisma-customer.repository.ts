@@ -17,6 +17,11 @@ export class PrismaCustomerRepository implements CustomerRepositoryPort {
     return record ? toDomainCustomer(record) : null;
   }
 
+  async findByDocument(document: string): Promise<Customer | null> {
+    const record = await this.prisma.customer.findUnique({ where: { document } });
+    return record ? toDomainCustomer(record) : null;
+  }
+
   async search(query?: string): Promise<Customer[]> {
     const records = await this.prisma.customer.findMany({
       where: query

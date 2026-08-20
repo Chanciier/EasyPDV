@@ -27,6 +27,8 @@ export interface ReceiptPrintPayload {
   change?: number;
   storeName?: string;
   fiscal?: ReceiptFiscalDetail;
+  /** CPF do cliente na venda (2026-08-19) — impresso como linha "CPF: ..." quando presente, tanto no comprovante não-fiscal quanto no cupom fiscal reimpresso. */
+  customerDocument?: string;
 }
 
 export interface HardwareSettings {

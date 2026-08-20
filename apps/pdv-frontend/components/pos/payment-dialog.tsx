@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Banknote, CreditCard, QrCode, HelpCircle } from 'lucide-react'
 import type { PaymentCardType, PaymentMethod } from '@easypdv/shared-types'
+import { formatCpf, isValidCpf, onlyDigits } from '@easypdv/shared-validation'
 import { Modal } from './ui/modal'
 import { formatBRL } from '@/lib/pos-data'
 
@@ -23,6 +24,7 @@ export function PaymentDialog({
   total,
   submitting = false,
   error = null,
+  showCpfField = false,
   onClose,
   onConfirm,
 }: {
@@ -30,18 +32,22 @@ export function PaymentDialog({
   total: number
   submitting?: boolean
   error?: string | null
+  /** Só mostra o campo "CPF na nota" se a venda ainda não tem cliente anexado (evita conflito com o seletor de cliente de antes dos itens). */
+  showCpfField?: boolean
   onClose: () => void
   onConfirm: (
     method: PaymentMethod,
     received: number,
     cardType: PaymentCardType | null,
     installments: number | null,
+    cpf: string | null,
   ) => void
 }) {
   const [method, setMethod] = useState<PaymentMethod>('dinheiro')
   const [received, setReceived] = useState<string>('')
   const [cardType, setCardType] = useState<PaymentCardType>('credito')
   const [installments, setInstallments] = useState(1)
+  const [cpf, setCpf] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -50,6 +56,7 @@ export function PaymentDialog({
       setReceived('')
       setCardType('credito')
       setInstallments(1)
+      setCpf('')
       setTimeout(() => inputRef.current?.focus(), 50)
     }
   }, [open])
@@ -58,7 +65,9 @@ export function PaymentDialog({
   const change = useMemo(() => Math.max(0, receivedNum - total), [receivedNum, total])
   const isCash = method === 'dinheiro'
   const isCard = method === 'cartao'
-  const canConfirm = !submitting && (!isCash || receivedNum >= total)
+  const cpfDigits = onlyDigits(cpf)
+  const cpfIsValid = cpfDigits.length === 0 || isValidCpf(cpfDigits)
+  const canConfirm = !submitting && (!isCash || receivedNum >= total) && cpfIsValid
 
   const confirm = () => {
     if (!canConfirm) return
@@ -67,6 +76,7 @@ export function PaymentDialog({
       isCash ? receivedNum : total,
       isCard ? cardType : null,
       isCard ? installments : null,
+      cpfDigits.length > 0 ? cpfDigits : null,
     )
   }
 
@@ -120,6 +130,26 @@ export function PaymentDialog({
           </p>
           <p className="mt-1 font-mono text-4xl font-bold text-foreground">{formatBRL(total)}</p>
         </div>
+
+        {showCpfField && (
+          <div>
+            <label htmlFor="cpf-na-nota" className="mb-1.5 block text-sm font-medium">
+              CPF na nota <span className="font-normal text-muted-foreground">(opcional)</span>
+            </label>
+            <input
+              id="cpf-na-nota"
+              value={cpf}
+              onChange={(e) => setCpf(formatCpf(onlyDigits(e.target.value).slice(0, 11)))}
+              disabled={submitting}
+              placeholder="000.000.000-00"
+              inputMode="numeric"
+              className={`w-full rounded-lg border bg-background px-4 py-2.5 font-mono text-sm outline-none focus:ring-2 focus:ring-ring/40 disabled:opacity-50 ${
+                cpfIsValid ? 'border-input focus:border-primary' : 'border-destructive focus:border-destructive'
+              }`}
+            />
+            {!cpfIsValid && <p className="mt-1 text-xs text-destructive">CPF inválido.</p>}
+          </div>
+        )}
 
         <div>
           <p className="mb-2 text-sm font-medium">Forma de pagamento</p>

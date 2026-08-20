@@ -16,6 +16,8 @@ export interface UpdateCustomerData {
 
 export interface CustomerRepositoryPort {
   findById(id: string): Promise<Customer | null>;
+  /** Match exato de `document` — usado pelo fluxo "CPF na nota" pra achar/criar o `Customer` certo sem depender de busca textual. */
+  findByDocument(document: string): Promise<Customer | null>;
   /** Sem `query` devolve todos (tela de gestão); com `query`, filtra por nome/documento (autocomplete da Venda). */
   search(query?: string): Promise<Customer[]>;
   create(data: CreateCustomerData): Promise<Customer>;

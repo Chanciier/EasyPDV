@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AuditModule } from "../audit/audit.module.js";
 import { CatalogModule } from "../catalog/catalog.module.js";
+import { CustomersModule } from "../customers/customers.module.js";
 import { InventoryModule } from "../inventory/inventory.module.js";
 import { RealtimeModule } from "../realtime/realtime.module.js";
 import { CashController } from "./infrastructure/controllers/cash.controller.js";
@@ -30,9 +31,10 @@ import { RegisterPaymentUseCase } from "./application/use-cases/register-payment
 import { ConfirmSaleUseCase } from "./application/use-cases/confirm-sale.use-case.js";
 import { ApplySaleDiscountUseCase } from "./application/use-cases/apply-sale-discount.use-case.js";
 import { VoidConfirmedSaleUseCase } from "./application/use-cases/void-confirmed-sale.use-case.js";
+import { AttachCustomerToSaleUseCase } from "./application/use-cases/attach-customer-to-sale.use-case.js";
 
 @Module({
-  imports: [CatalogModule, InventoryModule, AuditModule, RealtimeModule],
+  imports: [CatalogModule, InventoryModule, AuditModule, RealtimeModule, CustomersModule],
   controllers: [CashController, SalesController],
   providers: [
     CreateCashRegisterUseCase,
@@ -54,6 +56,7 @@ import { VoidConfirmedSaleUseCase } from "./application/use-cases/void-confirmed
     ConfirmSaleUseCase,
     ApplySaleDiscountUseCase,
     VoidConfirmedSaleUseCase,
+    AttachCustomerToSaleUseCase,
     { provide: CASH_REPOSITORY, useClass: PrismaCashRepository },
     { provide: SALE_REPOSITORY, useClass: PrismaSaleRepository },
     { provide: FISCAL_STATUS_READER, useClass: PrismaFiscalStatusReader },

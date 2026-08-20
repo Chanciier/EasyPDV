@@ -11,6 +11,15 @@ export function useCustomerSearch(query?: string) {
   })
 }
 
+/** Busca um cliente por id — usado pra reimprimir o cupom fiscal com o CPF (Histórico só tem `sale.customerId`, não o cliente inteiro). */
+export function useCustomer(id: string | null) {
+  return useQuery({
+    queryKey: ['customers', id],
+    queryFn: () => apiRequest<Customer>(`/customers/${id}`),
+    enabled: !!id,
+  })
+}
+
 export function useCreateCustomer() {
   const queryClient = useQueryClient()
   return useMutation({

@@ -35,6 +35,9 @@ export function buildReceipt(payload: ReceiptPrintPayload): Buffer {
   if (payload.change !== undefined && payload.change > 0) {
     chunks.push(twoColumns("Troco", formatBRL(payload.change), WIDTH));
   }
+  if (payload.customerDocument) {
+    chunks.push(text(`CPF: ${payload.customerDocument}`));
+  }
 
   chunks.push(text(""));
   chunks.push(text(""));
@@ -93,6 +96,9 @@ export function buildFiscalReceipt(payload: ReceiptPrintPayload): Buffer {
   }
   if (payload.change !== undefined && payload.change > 0) {
     chunks.push(twoColumns("Troco", formatBRL(payload.change), WIDTH));
+  }
+  if (payload.customerDocument) {
+    chunks.push(text(`CPF: ${payload.customerDocument}`));
   }
 
   chunks.push(separator(WIDTH));

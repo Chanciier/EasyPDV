@@ -283,6 +283,15 @@ export interface SaleSyncPayload {
   confirmedAt: string;
   items: SaleSyncPayloadItem[];
   payments: SaleSyncPayloadPayment[];
+  /**
+   * CPF do cliente ("CPF na nota", 2026-08-19) — null pra venda anônima
+   * (comportamento de sempre, contato "Consumidor Final" compartilhado no
+   * Bling). Quando presente, o Adapter Bling resolve/cria um contato
+   * DEDICADO a esse CPF em vez do contato padrão, pra a NFC-e sair no nome
+   * do cliente. Ver `BlingSyncTargetAdapter.resolveContactByCpf`.
+   */
+  customerDocument: string | null;
+  customerName: string | null;
 }
 
 /**

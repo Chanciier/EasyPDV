@@ -18,7 +18,25 @@ export interface BlingProductListItem extends BlingProduct {
 export interface BlingContact {
   id: number;
   nome: string;
+  /** CPF/CNPJ do contato — confirmado contra a API real (2026-08-19), campo `numeroDocumento` (não `documento`/`cpf`, que eram só candidatos). */
+  numeroDocumento?: string;
 }
+
+/**
+ * Situação de pedido de venda — id é ESPECÍFICO DA CONTA (achado real,
+ * 2026-08-19, testando contra o Bling do usuário: módulo "Vendas" tem id
+ * fixo 98310, mas os ids das situações dentro dele — "Em aberto"=6,
+ * "Atendido"=9 nesta conta — não têm garantia documentada de serem os
+ * mesmos em outra conta). Por isso resolvido por NOME via `GET
+ * /situacoes/modulos/{idModulo}` e cacheado, nunca hardcoded.
+ */
+export interface BlingOrderSituacao {
+  id: number;
+  nome: string;
+}
+
+/** Módulo "Vendas" (Pedidos de Venda) — constante fixa do Bling, confirmada contra `GET /situacoes/modulos` real (não muda por conta). */
+const SALES_ORDER_MODULE_ID = 98310;
 
 /** `situacao: "A"` = ativo (mesma convenção de `BlingProductListItem.situacao`, confirmada contra a interface pública `depositos/interfaces/get.interface.ts`). `padrao: true` marca o depósito padrão da conta. */
 export interface BlingWarehouse {
@@ -203,12 +221,42 @@ export class BlingApiClient {
     return result.data?.find((contact) => contact.nome === nome) ?? result.data?.[0] ?? null;
   }
 
-  async createContact(accessToken: string, nome: string): Promise<BlingContact> {
-    const result = await this.request<BlingItemEnvelope<BlingContact>>(accessToken, "POST", "/contatos", { nome, tipo: "F" });
+  /** `?pesquisa=` busca por nome OU documento (confirmado contra a API real) — reaproveita o mesmo endpoint de `findContactByName`, só filtra o match pelo `numeroDocumento` em vez do `nome`. */
+  async findContactByDocument(accessToken: string, document: string): Promise<BlingContact | null> {
+    const result = await this.request<BlingListEnvelope<BlingContact>>(accessToken, "GET", `/contatos?pesquisa=${encodeURIComponent(document)}`);
+    return result.data?.find((contact) => contact.numeroDocumento === document) ?? null;
+  }
+
+  /**
+   * `situacao: "A"` (ativo) — achado real (2026-08-19): o Bling passou a
+   * EXIGIR esse campo em `POST /contatos` (antes não exigia; `createContact`
+   * sem ele funcionava até há pouco). Sem isso, todo `createContact` falha
+   * com 400 "Situação inválida", inclusive pra recriar o "Consumidor Final"
+   * depois de uma reconexão que limpa o cache — bug latente na conta real,
+   * corrigido antes de causar um incidente.
+   */
+  async createContact(accessToken: string, nome: string, document?: string): Promise<BlingContact> {
+    const result = await this.request<BlingItemEnvelope<BlingContact>>(accessToken, "POST", "/contatos", {
+      nome,
+      tipo: "F",
+      situacao: "A",
+      ...(document ? { numeroDocumento: document } : {}),
+    });
     if (!result.data) {
       throw new Error(`Bling não retornou o contato criado: ${JSON.stringify(result)}`);
     }
     return result.data;
+  }
+
+  /** `GET /situacoes/modulos/{idModulo}` — lista as situações configuradas na conta pro módulo de Pedidos de Venda. */
+  async listSalesOrderSituacoes(accessToken: string): Promise<BlingOrderSituacao[]> {
+    const result = await this.request<BlingListEnvelope<BlingOrderSituacao>>(accessToken, "GET", `/situacoes/modulos/${SALES_ORDER_MODULE_ID}`);
+    return result.data ?? [];
+  }
+
+  /** `PATCH /pedidos/vendas/{id}/situacoes/{idSituacao}` — confirmado contra a API real (2026-08-19; é PATCH, não PUT). Devolve 204 sem corpo. */
+  async updateSalesOrderSituacao(accessToken: string, pedidoVendaId: number, idSituacao: number): Promise<void> {
+    await this.request<void>(accessToken, "PATCH", `/pedidos/vendas/${pedidoVendaId}/situacoes/${idSituacao}`);
   }
 
   async createSalesOrder(accessToken: string, input: CreateSalesOrderInput): Promise<CreateSalesOrderResult> {

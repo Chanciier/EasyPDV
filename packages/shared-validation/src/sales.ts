@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidCpf } from "./document.js";
 
 /**
  * Schemas usados tanto no backend (DTO de entrada) quanto no frontend
@@ -50,8 +51,20 @@ export const voidSaleSchema = z.object({
   reason: z.string().min(1),
 });
 
+// "CPF na nota" (2026-08-19) — anexa/troca o cliente de uma venda já
+// iniciada. `name` opcional (convenção de balcão: cliente geralmente só
+// informa o CPF) — default vira "Consumidor CPF {cpf formatado}" no
+// use-case quando não vem nome. Validação de dígito verificador aqui
+// mesmo (defesa em profundidade — o frontend também valida antes de
+// habilitar o submit, mas o backend nunca confia só nisso).
+export const attachCustomerToSaleSchema = z.object({
+  document: z.string().refine(isValidCpf, { message: "CPF inválido" }),
+  name: z.string().min(1).optional(),
+});
+
 export type StartSaleInput = z.infer<typeof startSaleSchema>;
 export type AddSaleItemInput = z.infer<typeof addSaleItemSchema>;
 export type RegisterPaymentInput = z.infer<typeof registerPaymentSchema>;
 export type ApplySaleDiscountInput = z.infer<typeof applySaleDiscountSchema>;
 export type VoidSaleInput = z.infer<typeof voidSaleSchema>;
+export type AttachCustomerToSaleInput = z.infer<typeof attachCustomerToSaleSchema>;

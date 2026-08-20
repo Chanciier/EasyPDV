@@ -285,7 +285,7 @@ enum SaleStatus {
 model Customer {
   id        String   @id @default(cuid())
   name      String
-  document  String?
+  document  String?  @unique
   phone     String?
   email     String?
   createdAt DateTime @default(now())

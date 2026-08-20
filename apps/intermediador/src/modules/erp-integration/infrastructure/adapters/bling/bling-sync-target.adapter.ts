@@ -161,6 +161,14 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     if (this.isNfceAutoEmitEnabled()) {
       await this.ensureFiscalDocument(accessToken, organizationId, payload.saleId, orderExternalId);
     }
+
+    // Depois da NFC-e de propósito (2026-08-19): sem confirmação de que
+    // gerar-nfce funciona contra um pedido já "Atendido", e o caminho de
+    // NFC-e já é testado/estável — não vale arriscar quebrá-lo pela
+    // situação nova. Testado contra a conta real: essa transição não baixa
+    // estoque sozinha nesta conta (nenhuma duplicação da baixa explícita
+    // acima) — ver `advanceSalesOrderToAtendido`.
+    await this.advanceSalesOrderToAtendido(accessToken, organizationId, payload.saleId, orderExternalId);
   }
 
   /**
@@ -203,6 +211,68 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     });
 
     this.logger.log(`Estoque baixado no Bling: sale=${payload.saleId} deposito=${depositoId} itens=${payload.items.length}`);
+  }
+
+  /**
+   * Avança o pedido de venda de "Em aberto" pra "Atendido" (2026-08-19,
+   * pedido do usuário). Confirmado contra a conta real do usuário antes de
+   * automatizar: `PATCH /pedidos/vendas/{id}/situacoes/{idSituacao}` (não
+   * `PUT` — testado, `PUT` devolve 404) não baixa estoque sozinho nesta
+   * conta (comparado antes/depois via `GET /produtos/{id}`, saldo idêntico)
+   * — não duplica a baixa explícita de `pushStockMovements`. Deliberadamente
+   * não avança situação no estorno (`processVoid`) — risco de duplicar
+   * ESTORNO de estoque é mais direto ali, ver comentário de `processVoid`.
+   */
+  private async advanceSalesOrderToAtendido(
+    accessToken: string,
+    organizationId: string,
+    saleId: string,
+    orderExternalId: string,
+  ): Promise<void> {
+    const alreadyAdvanced = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "sale_situacao", saleId);
+    if (alreadyAdvanced) {
+      return;
+    }
+
+    const situacaoId = await this.resolveAtendidoSituacaoId(accessToken, organizationId);
+    await this.blingApiClient.updateSalesOrderSituacao(accessToken, Number(orderExternalId), situacaoId);
+
+    await this.erpSyncMappingRepository.upsert({
+      organizationId,
+      provider: PROVIDER,
+      localEntityType: "sale_situacao",
+      localEntityId: saleId,
+      externalId: "ok",
+    });
+    this.logger.log(`Pedido de venda avançado pra "Atendido" no Bling: local=${saleId} bling=${orderExternalId}`);
+  }
+
+  /**
+   * Resolve o id da situação "Atendido" pro módulo de Pedidos de Venda —
+   * NUNCA hardcoded: o id é específico da conta (confirmado real: "Em
+   * aberto"=6, "Atendido"=9 na conta do usuário, sem garantia documentada de
+   * valer pra outra conta), só o id do MÓDULO "Vendas" (98310) é fixo.
+   */
+  private async resolveAtendidoSituacaoId(accessToken: string, organizationId: string): Promise<number> {
+    const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "order_situacao", "atendido");
+    if (cached) {
+      return Number(cached.externalId);
+    }
+
+    const situacoes = await this.blingApiClient.listSalesOrderSituacoes(accessToken);
+    const atendido = situacoes.find((s) => s.nome === "Atendido");
+    if (!atendido) {
+      throw new Error('Conta Bling não tem situação "Atendido" cadastrada pro módulo de Pedidos de Venda.');
+    }
+
+    await this.erpSyncMappingRepository.upsert({
+      organizationId,
+      provider: PROVIDER,
+      localEntityType: "order_situacao",
+      localEntityId: "atendido",
+      externalId: String(atendido.id),
+    });
+    return atendido.id;
   }
 
   /**
@@ -316,7 +386,9 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       return cached.externalId;
     }
 
-    const contatoId = await this.resolveDefaultContact(accessToken, organizationId);
+    const contatoId = payload.customerDocument
+      ? await this.resolveContactByCpf(accessToken, organizationId, payload.customerDocument, payload.customerName)
+      : await this.resolveDefaultContact(accessToken, organizationId);
     const primaryPayment = payload.payments?.[0];
     const formaPagamentoId = await this.resolvePaymentMethodId(
       accessToken,
@@ -467,6 +539,41 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       provider: PROVIDER,
       localEntityType: "contact",
       localEntityId: DEFAULT_CONTACT_KEY,
+      externalId: String(contact.id),
+    });
+    return contact.id;
+  }
+
+  /**
+   * Resolve/cria um contato Bling específico pra um CPF ("CPF na nota",
+   * 2026-08-19) — mesmo padrão de `resolveDefaultContact`, mas o cache é
+   * chaveado pelo PRÓPRIO CPF (`localEntityId: cpf`), nunca por
+   * `Customer.id` local: `Customer.document` não tem `@unique` hoje, então
+   * dois checkouts simultâneos com o mesmo CPF novo podem gerar dois
+   * `Customer` locais — chavear pelo CPF garante que os dois convergem pro
+   * MESMO contato Bling em vez de criar um duplicado por corrida.
+   */
+  private async resolveContactByCpf(
+    accessToken: string,
+    organizationId: string,
+    cpf: string,
+    name: string | null,
+  ): Promise<number> {
+    const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "contact", cpf);
+    if (cached) {
+      return Number(cached.externalId);
+    }
+
+    let contact = await this.blingApiClient.findContactByDocument(accessToken, cpf);
+    if (!contact) {
+      contact = await this.blingApiClient.createContact(accessToken, name ?? `Consumidor CPF ${cpf}`, cpf);
+    }
+
+    await this.erpSyncMappingRepository.upsert({
+      organizationId,
+      provider: PROVIDER,
+      localEntityType: "contact",
+      localEntityId: cpf,
       externalId: String(contact.id),
     });
     return contact.id;

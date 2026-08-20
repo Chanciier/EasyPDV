@@ -3,11 +3,13 @@
 import { useMemo, useState } from 'react'
 import { Search, Receipt, TrendingUp, Hash, CheckCircle2, Clock3, AlertCircle, Ban, ExternalLink } from 'lucide-react'
 import type { FiscalDocument, PaymentMethod, Sale, UserRole } from '@easypdv/shared-types'
+import { formatCpf } from '@easypdv/shared-validation'
 import { formatBRL, normalize } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/lib/auth-store'
 import { useFiscalStatus, useProducts, useSalesList, useVoidSale } from '@/hooks/use-sales'
 import { useDashboardReport } from '@/hooks/use-reports'
+import { useCustomer } from '@/hooks/use-customers'
 import { usePrintReceipt } from '@/hooks/use-hardware'
 import { Modal } from './ui/modal'
 import { StatCard } from './ui/stat-card'
@@ -79,6 +81,7 @@ export function HistoryView() {
   const [voidReason, setVoidReason] = useState('')
   const [voidError, setVoidError] = useState<string | null>(null)
   const { data: detailFiscal } = useFiscalStatus(detail?.id ?? null)
+  const { data: detailCustomer } = useCustomer(detail?.customerId ?? null)
 
   function openDetail(sale: Sale) {
     setDetail(sale)
@@ -119,6 +122,7 @@ export function HistoryView() {
       totalAmount: detail.totalAmount,
       paymentLabel: detail.payments[0] ? PAYMENT_LABELS[detail.payments[0].method] : '',
       fiscal: { documentNumber, accessKey, qrCodeUrl },
+      customerDocument: detailCustomer?.document ? formatCpf(detailCustomer.document) : undefined,
     })
   }
 
