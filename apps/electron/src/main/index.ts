@@ -179,6 +179,10 @@ function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
+    // Empacotado: electron-builder já grava o ícone no .exe (build.win.icon)
+    // via rcedit — isso aqui é só pra dev (`electron .` mostraria o ícone
+    // padrão do Electron sem isso).
+    icon: app.isPackaged ? undefined : path.join(__dirname, "../../build/icon.ico"),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,
@@ -189,7 +193,25 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
+/**
+ * PDV de loja fica ligado o dia todo num terminal dedicado — sem isso, uma
+ * queda de energia/reinício do Windows deixa o caixa fora do ar até alguém
+ * abrir o app manualmente. `setLoginItemSettings` grava a entrada padrão do
+ * Windows (Run key), sem depender de instalador/serviço à parte. Só faz
+ * sentido empacotado — em dev o execPath aponta pro binário do Electron.
+ */
+function ensureAutoLaunch(): void {
+  app.setLoginItemSettings({
+    openAtLogin: true,
+    path: process.execPath,
+  });
+}
+
 async function boot(): Promise<void> {
+  if (app.isPackaged) {
+    ensureAutoLaunch();
+  }
+
   try {
     await startBackend();
   } catch (error) {
