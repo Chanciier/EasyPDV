@@ -92,7 +92,16 @@ export function useSyncProductsFromBling() {
   return useMutation({
     mutationFn: () =>
       apiRequest<{ created: number; updated: number; deactivated: number; total: number }>('/products/sync-bling', { method: 'POST' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['products', 'search'] }),
+    // Achado real (2026-08-21): sincronizar atualizava preço/estoque certo
+    // no banco, mas só invalidava a busca de produtos — a coluna Estoque
+    // (useStockList) e o preço por produto (useProductPrice/useProductPrices,
+    // mesma chave 'product-price') continuavam mostrando o valor de ANTES da
+    // sincronização até o usuário trocar de tela e voltar.
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products', 'search'] })
+      queryClient.invalidateQueries({ queryKey: ['stock', 'list'] })
+      queryClient.invalidateQueries({ queryKey: ['product-price'] })
+    },
   })
 }
 
