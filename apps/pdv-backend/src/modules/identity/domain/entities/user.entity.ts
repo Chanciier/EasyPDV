@@ -11,6 +11,8 @@ export interface UserProps {
   /** Login único entre terminais (2026-08-21) — null pra usuário nunca confirmado centralmente. Ver user-verification-gateway.port.ts. */
   orgUserId: string | null;
   lastVerifiedCentrallyAt: Date | null;
+  /** Troca/reset de senha (2026-08-21) — força a tela de troca antes de liberar o resto do app. */
+  mustChangePassword: boolean;
 }
 
 /**
@@ -27,6 +29,7 @@ export class User {
   readonly employeeCode: number;
   readonly orgUserId: string | null;
   readonly lastVerifiedCentrallyAt: Date | null;
+  readonly mustChangePassword: boolean;
 
   constructor(props: UserProps) {
     this.id = props.id;
@@ -38,5 +41,6 @@ export class User {
     this.employeeCode = props.employeeCode;
     this.orgUserId = props.orgUserId;
     this.lastVerifiedCentrallyAt = props.lastVerifiedCentrallyAt;
+    this.mustChangePassword = props.mustChangePassword;
   }
 }

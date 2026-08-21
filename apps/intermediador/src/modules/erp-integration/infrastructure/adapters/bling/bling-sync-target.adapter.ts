@@ -405,13 +405,18 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     const contatoId = payload.customerDocument
       ? await this.resolveContactByCpf(accessToken, organizationId, payload.customerDocument, payload.customerName)
       : await this.resolveDefaultContact(accessToken, organizationId);
-    const primaryPayment = payload.payments?.[0];
-    const formaPagamentoId = await this.resolvePaymentMethodId(
-      accessToken,
-      organizationId,
-      primaryPayment?.method ?? "outro",
-      primaryPayment?.cardType ?? null,
-    );
+
+    // Pagamento dividido (2026-08-21) — uma parcela por perna de pagamento,
+    // cada uma com sua própria forma de pagamento resolvida na conta Bling
+    // (antes só usava payload.payments[0], ignorando o resto). Sem nenhuma
+    // perna (payload antigo/incompleto), cai num pagamento "outro" cobrindo
+    // o total — mesmo fallback de sempre.
+    const paymentsToResolve = payload.payments?.length ? payload.payments : [{ method: "outro" as const, amount: payload.totalAmount, cardType: null }];
+    const parcelas = [];
+    for (const payment of paymentsToResolve) {
+      const formaPagamentoId = await this.resolvePaymentMethodId(accessToken, organizationId, payment.method, payment.cardType);
+      parcelas.push({ valor: payment.amount, formaPagamentoId });
+    }
 
     const items = [];
     for (const item of payload.items) {
@@ -422,7 +427,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     const dueDate = payload.confirmedAt.slice(0, 10);
     const result = await this.blingApiClient.createSalesOrder(accessToken, {
       contatoId,
-      formaPagamentoId,
+      parcelas,
       totalAmount: payload.totalAmount,
       discountAmount: computeOrderDiscount(items, payload.totalAmount),
       dueDate,

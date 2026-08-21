@@ -66,7 +66,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         confirmedAt: new Date().toISOString(),
         items: [{ name: 'Item de teste', quantity: 1, totalAmount: 0 }],
         totalAmount: 0,
-        paymentLabel: 'Teste de configuracao',
+        payments: [{ label: 'Teste de configuracao', amount: 0 }],
       })
       setMessage('Enviado para a impressora.')
     } catch (e) {

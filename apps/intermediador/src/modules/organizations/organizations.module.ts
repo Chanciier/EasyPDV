@@ -25,6 +25,7 @@ import { CreateOrgUserUseCase } from "./application/use-cases/create-org-user.us
 import { ListOrgUsersUseCase } from "./application/use-cases/list-org-users.use-case.js";
 import { UpdateOrgUserUseCase } from "./application/use-cases/update-org-user.use-case.js";
 import { VerifyOrgUserLoginUseCase } from "./application/use-cases/verify-org-user-login.use-case.js";
+import { ChangeOrgUserPasswordUseCase } from "./application/use-cases/change-org-user-password.use-case.js";
 
 @Module({
   // ThrottlerModule só é usado pelo VerifyLoginThrottlerGuard (POST
@@ -43,6 +44,7 @@ import { VerifyOrgUserLoginUseCase } from "./application/use-cases/verify-org-us
     ListOrgUsersUseCase,
     UpdateOrgUserUseCase,
     VerifyOrgUserLoginUseCase,
+    ChangeOrgUserPasswordUseCase,
     TerminalApiKeyGuard,
     VerifyLoginThrottlerGuard,
     { provide: ORGANIZATION_REPOSITORY, useClass: PrismaOrganizationRepository },

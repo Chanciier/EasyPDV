@@ -7,6 +7,19 @@ function formatBRL(value: number): string {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+/** Pagamento dividido (2026-08-21) — uma linha por perna aprovada, reaproveitado por buildReceipt e buildFiscalReceipt. */
+function pushPaymentLines(chunks: Buffer[], payments: ReceiptPrintPayload["payments"]): void {
+  for (const payment of payments) {
+    chunks.push(twoColumns(payment.label, formatBRL(payment.amount), WIDTH));
+    if (payment.received !== undefined) {
+      chunks.push(twoColumns("  Recebido", formatBRL(payment.received), WIDTH));
+    }
+    if (payment.change !== undefined && payment.change > 0) {
+      chunks.push(twoColumns("  Troco", formatBRL(payment.change), WIDTH));
+    }
+  }
+}
+
 /** Monta o cupom não-fiscal completo (init → cabeçalho → itens → totais → corte). */
 export function buildReceipt(payload: ReceiptPrintPayload): Buffer {
   const chunks: Buffer[] = [ESC_POS.INIT, ESC_POS.ALIGN_CENTER, ESC_POS.BOLD_ON];
@@ -28,13 +41,7 @@ export function buildReceipt(payload: ReceiptPrintPayload): Buffer {
   chunks.push(ESC_POS.BOLD_ON);
   chunks.push(twoColumns("TOTAL", formatBRL(payload.totalAmount), WIDTH));
   chunks.push(ESC_POS.BOLD_OFF);
-  chunks.push(text(payload.paymentLabel));
-  if (payload.received !== undefined) {
-    chunks.push(twoColumns("Recebido", formatBRL(payload.received), WIDTH));
-  }
-  if (payload.change !== undefined && payload.change > 0) {
-    chunks.push(twoColumns("Troco", formatBRL(payload.change), WIDTH));
-  }
+  pushPaymentLines(chunks, payload.payments);
   if (payload.customerDocument) {
     chunks.push(text(`CPF: ${payload.customerDocument}`));
   }
@@ -90,13 +97,7 @@ export function buildFiscalReceipt(payload: ReceiptPrintPayload): Buffer {
   chunks.push(ESC_POS.BOLD_ON);
   chunks.push(twoColumns("TOTAL", formatBRL(payload.totalAmount), WIDTH));
   chunks.push(ESC_POS.BOLD_OFF);
-  chunks.push(text(payload.paymentLabel));
-  if (payload.received !== undefined) {
-    chunks.push(twoColumns("Recebido", formatBRL(payload.received), WIDTH));
-  }
-  if (payload.change !== undefined && payload.change > 0) {
-    chunks.push(twoColumns("Troco", formatBRL(payload.change), WIDTH));
-  }
+  pushPaymentLines(chunks, payload.payments);
   if (payload.customerDocument) {
     chunks.push(text(`CPF: ${payload.customerDocument}`));
   }

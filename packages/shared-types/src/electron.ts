@@ -17,14 +17,20 @@ export interface ReceiptFiscalDetail {
   qrCodeUrl: string;
 }
 
+/** Pagamento dividido (2026-08-21) — uma entrada por perna de pagamento aprovada. `received`/`change` só fazem sentido pra dinheiro (não persistidos no backend, calculados na hora). */
+export interface ReceiptPaymentPayload {
+  label: string;
+  amount: number;
+  received?: number;
+  change?: number;
+}
+
 export interface ReceiptPrintPayload {
   saleId: string;
   confirmedAt: string;
   items: ReceiptItemPayload[];
   totalAmount: number;
-  paymentLabel: string;
-  received?: number;
-  change?: number;
+  payments: ReceiptPaymentPayload[];
   storeName?: string;
   fiscal?: ReceiptFiscalDetail;
   /** CPF do cliente na venda (2026-08-19) — impresso como linha "CPF: ..." quando presente, tanto no comprovante não-fiscal quanto no cupom fiscal reimpresso. */

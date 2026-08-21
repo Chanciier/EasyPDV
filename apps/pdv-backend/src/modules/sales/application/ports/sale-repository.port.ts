@@ -36,6 +36,8 @@ export interface SaleRepositoryPort {
   /** "CPF na nota" (2026-08-19) — anexa/troca o cliente de uma venda já iniciada (o seletor da tela de Venda só seta isso no início; o pagamento pode chegar depois). */
   attachCustomer(saleId: string, customerId: string): Promise<Sale>;
   registerPayment(data: RegisterPaymentData): Promise<Sale>;
+  /** Pagamento dividido (2026-08-21) — corrige uma perna registrada errado sem precisar reiniciar a venda inteira. */
+  removePayment(saleId: string, paymentId: string): Promise<Sale>;
   /**
    * Confirma a venda e debita o estoque no `warehouseId` informado, tudo
    * numa única transação Prisma — é o "evento central" do sistema. Ver

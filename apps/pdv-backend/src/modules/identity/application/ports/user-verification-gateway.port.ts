@@ -34,6 +34,8 @@ export interface UserVerificationGatewayPort {
    */
   createCentralUser(input: CreateUserInput): Promise<OrgUserPayload>;
   updateCentralUserRole(orgUserId: string, role: UserRole): Promise<OrgUserPayload>;
+  /** Troca/reset de senha (2026-08-21) — mesmo padrão central-primeiro. `newPassword` em texto puro no corpo, o Intermediador é quem faz o hash (mesmo caminho de createCentralUser). */
+  changePassword(orgUserId: string, newPassword: string): Promise<void>;
 }
 
 export const USER_VERIFICATION_GATEWAY = Symbol("USER_VERIFICATION_GATEWAY");

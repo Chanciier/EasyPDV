@@ -14,23 +14,20 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
 }
 
 /**
- * `received`/`change` só existem no cupom, não no backend (Payment guarda
- * apenas `amount` — o valor efetivamente aplicado à venda). São calculados
- * no momento do pagamento em sale-view.tsx e passados aqui só para exibição.
+ * Pagamento dividido (2026-08-21) — `sale.payments` já traz método/valor de
+ * cada perna (persistido de verdade); só o troco total (`changeTotal`) é
+ * calculado à parte em sale-view.tsx, porque "recebido" em dinheiro nunca é
+ * persistido (Payment guarda só `amount`, o valor efetivamente aplicado).
  */
 export function ReceiptDialog({
   sale,
   productNames,
-  paymentMethod,
-  received,
-  change,
+  changeTotal,
   onClose,
 }: {
   sale: Sale | null
   productNames: Record<string, string>
-  paymentMethod: PaymentMethod | null
-  received: number
-  change: number
+  changeTotal: number
   onClose: () => void
 }) {
   useEffect(() => {
@@ -64,10 +61,10 @@ export function ReceiptDialog({
         <div className="space-y-4">
           <div className="flex flex-col items-center gap-2 py-2 text-center">
             <CheckCircle2 className="size-12 text-primary" />
-            {change > 0 && (
+            {changeTotal > 0 && (
               <div>
                 <p className="text-sm text-muted-foreground">Troco</p>
-                <p className="font-mono text-3xl font-bold">{formatBRL(change)}</p>
+                <p className="font-mono text-3xl font-bold">{formatBRL(changeTotal)}</p>
               </div>
             )}
           </div>
@@ -91,12 +88,17 @@ export function ReceiptDialog({
               <span>Total</span>
               <span>{formatBRL(sale.totalAmount)}</span>
             </div>
-            {paymentMethod && (
-              <div className="mt-1 flex justify-between text-muted-foreground">
-                <span>{PAYMENT_LABELS[paymentMethod]}</span>
-                <span>Recebido {formatBRL(received)}</span>
-              </div>
-            )}
+            {sale.payments
+              .filter((p) => p.status === 'aprovado')
+              .map((p) => (
+                <div key={p.id} className="mt-1 flex justify-between text-muted-foreground">
+                  <span>
+                    {PAYMENT_LABELS[p.method]}
+                    {p.cardType ? ` (${p.cardType === 'credito' ? 'Crédito' : 'Débito'})` : ''}
+                  </span>
+                  <span>{formatBRL(p.amount)}</span>
+                </div>
+              ))}
           </div>
         </div>
       )}

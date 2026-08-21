@@ -7,6 +7,8 @@ interface AuthState {
   tokens: AuthTokens | null;
   isAuthenticated: boolean;
   setSession: (user: User, tokens: AuthTokens) => void;
+  /** Troca/reset de senha (2026-08-21) — atualiza o usuário (ex: mustChangePassword) sem precisar de um novo login/tokens novos. */
+  setUser: (user: User) => void;
   clear: () => void;
 }
 
@@ -23,6 +25,7 @@ export const useAuthStore = create<AuthState>()(
       tokens: null,
       isAuthenticated: false,
       setSession: (user, tokens) => set({ user, tokens, isAuthenticated: true }),
+      setUser: (user) => set({ user }),
       clear: () => set({ user: null, tokens: null, isAuthenticated: false }),
     }),
     { name: "easypdv-auth" },

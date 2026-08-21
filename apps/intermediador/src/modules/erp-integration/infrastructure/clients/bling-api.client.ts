@@ -75,9 +75,15 @@ export interface CreateSalesOrderItem {
   descricao: string;
 }
 
+/** Pagamento dividido (2026-08-21) — uma entrada por perna de pagamento, cada uma com sua própria forma de pagamento no Bling. Soma de `valor` precisa fechar com `totalAmount`. */
+export interface CreateSalesOrderParcela {
+  valor: number;
+  formaPagamentoId: number;
+}
+
 export interface CreateSalesOrderInput {
   contatoId: number;
-  formaPagamentoId: number;
+  parcelas: CreateSalesOrderParcela[];
   totalAmount: number;
   /** Desconto da venda em R$, no nível do pedido — ver computeOrderDiscount no BlingSyncTargetAdapter. */
   discountAmount: number;
@@ -313,13 +319,13 @@ export class BlingApiClient {
         valor: item.valor,
         descricao: item.descricao,
       })),
-      parcelas: [
-        {
-          dataVencimento: input.dueDate,
-          valor: input.totalAmount,
-          formaPagamento: { id: input.formaPagamentoId },
-        },
-      ],
+      // Pagamento dividido (2026-08-21) — uma entrada por perna, cada uma com
+      // a forma de pagamento já resolvida por resolveSalesOrder no adapter.
+      parcelas: input.parcelas.map((parcela) => ({
+        dataVencimento: input.dueDate,
+        valor: parcela.valor,
+        formaPagamento: { id: parcela.formaPagamentoId },
+      })),
     };
 
     const result = await this.request<BlingItemEnvelope<{ id: number }>>(accessToken, "POST", "/pedidos/vendas", body);

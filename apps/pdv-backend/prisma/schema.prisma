@@ -80,6 +80,15 @@ model User {
   orgUserId               String?   @unique
   lastVerifiedCentrallyAt DateTime?
 
+  // Troca/reset de senha (2026-08-21) — força a tela de troca de senha antes
+  // de deixar usar o resto do app. Setado true quando: o bootstrap cria o
+  // admin de fallback com a senha padrão conhecida (ensureAdminUser em
+  // main.ts), ou quando um admin reseta a senha de outro usuário. Zerado
+  // quando a troca é concluída com sucesso (ChangePasswordUseCase). Só local
+  // (SQLite) — não propagado pro OrgUser/Postgres nesta versão, ver
+  // Claude/Projetos/EasyPDV/Decisões e Riscos Abertos.md no cofre Obsidian.
+  mustChangePassword Boolean @default(false)
+
   authSessions AuthSession[]
   cashSessions CashSession[]
 }

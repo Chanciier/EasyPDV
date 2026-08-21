@@ -24,6 +24,8 @@ export interface User {
   role: UserRole;
   active: boolean;
   employeeCode: number;
+  /** Troca/reset de senha (2026-08-21) — true força a tela de troca antes de liberar o resto do app. */
+  mustChangePassword: boolean;
 }
 
 export interface AuthTokens {

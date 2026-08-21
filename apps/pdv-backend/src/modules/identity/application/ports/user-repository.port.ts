@@ -33,6 +33,8 @@ export interface UserRepositoryPort {
   upsertCentralMirror(email: string, data: MirrorUserData): Promise<User>;
   /** Só atualiza o timestamp — usado quando o Intermediador confirma que o usuário segue ativo, sem precisar reescrever o resto. */
   touchLastVerifiedCentrally(id: string): Promise<void>;
+  /** Troca/reset de senha (2026-08-21) — autoatendimento zera `mustChangePassword`, reset por admin sempre seta `true`. */
+  updatePasswordHash(id: string, passwordHash: string, mustChangePassword: boolean): Promise<User>;
 }
 
 export const USER_REPOSITORY = Symbol("USER_REPOSITORY");

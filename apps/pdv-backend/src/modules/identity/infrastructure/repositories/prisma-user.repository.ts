@@ -69,4 +69,9 @@ export class PrismaUserRepository implements UserRepositoryPort {
   async touchLastVerifiedCentrally(id: string): Promise<void> {
     await this.prisma.user.update({ where: { id }, data: { lastVerifiedCentrallyAt: new Date() } });
   }
+
+  async updatePasswordHash(id: string, passwordHash: string, mustChangePassword: boolean): Promise<User> {
+    const record = await this.prisma.user.update({ where: { id }, data: { passwordHash, mustChangePassword } });
+    return toDomainUser(record);
+  }
 }

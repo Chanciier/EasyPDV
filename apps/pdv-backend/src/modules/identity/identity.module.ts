@@ -22,6 +22,8 @@ import { LoginUseCase } from "./application/use-cases/login.use-case.js";
 import { LogoutUseCase } from "./application/use-cases/logout.use-case.js";
 import { RefreshTokenUseCase } from "./application/use-cases/refresh-token.use-case.js";
 import { UpdateUserRoleUseCase } from "./application/use-cases/update-user-role.use-case.js";
+import { ChangePasswordUseCase } from "./application/use-cases/change-password.use-case.js";
+import { ResetUserPasswordUseCase } from "./application/use-cases/reset-user-password.use-case.js";
 
 @Module({
   imports: [
@@ -53,6 +55,8 @@ import { UpdateUserRoleUseCase } from "./application/use-cases/update-user-role.
     ListUsersUseCase,
     UpdateUserRoleUseCase,
     GetCurrentUserUseCase,
+    ChangePasswordUseCase,
+    ResetUserPasswordUseCase,
     { provide: USER_REPOSITORY, useClass: PrismaUserRepository },
     { provide: AUTH_SESSION_REPOSITORY, useClass: PrismaAuthSessionRepository },
     { provide: PASSWORD_HASHER, useClass: BcryptPasswordHasher },

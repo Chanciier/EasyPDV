@@ -27,6 +27,7 @@ import { CancelSaleUseCase } from "../../application/use-cases/cancel-sale.use-c
 import { GetSaleUseCase } from "../../application/use-cases/get-sale.use-case.js";
 import { ListSalesUseCase } from "../../application/use-cases/list-sales.use-case.js";
 import { RegisterPaymentUseCase } from "../../application/use-cases/register-payment.use-case.js";
+import { RemovePaymentUseCase } from "../../application/use-cases/remove-payment.use-case.js";
 import { ConfirmSaleUseCase } from "../../application/use-cases/confirm-sale.use-case.js";
 import { ApplySaleDiscountUseCase } from "../../application/use-cases/apply-sale-discount.use-case.js";
 import { VoidConfirmedSaleUseCase } from "../../application/use-cases/void-confirmed-sale.use-case.js";
@@ -43,6 +44,7 @@ export class SalesController {
     private readonly getSaleUseCase: GetSaleUseCase,
     private readonly listSalesUseCase: ListSalesUseCase,
     private readonly registerPaymentUseCase: RegisterPaymentUseCase,
+    private readonly removePaymentUseCase: RemovePaymentUseCase,
     private readonly confirmSaleUseCase: ConfirmSaleUseCase,
     private readonly applySaleDiscountUseCase: ApplySaleDiscountUseCase,
     private readonly voidConfirmedSaleUseCase: VoidConfirmedSaleUseCase,
@@ -82,6 +84,11 @@ export class SalesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.registerPaymentUseCase.execute(id, body, user.userId);
+  }
+
+  @Delete(":id/payments/:paymentId")
+  removePayment(@Param("id") id: string, @Param("paymentId") paymentId: string) {
+    return this.removePaymentUseCase.execute(id, paymentId);
   }
 
   @Patch(":id/discount")

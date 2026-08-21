@@ -44,8 +44,27 @@ export const updateOrgUserSchema = z
     message: "Informe role e/ou active",
   });
 
+// Troca/reset de senha (2026-08-21).
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
+});
+
+/** `PATCH /users/:id/reset-password` — admin não precisa saber a senha atual do outro usuário. */
+export const resetPasswordSchema = z.object({
+  newPassword: z.string().min(8),
+});
+
+/** `PATCH /organizations/:id/users/:userId/password` no Intermediador — mesmo corpo de resetPasswordSchema, schema próprio pra não acoplar os dois lados. */
+export const changeOrgUserPasswordSchema = z.object({
+  newPassword: z.string().min(8),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserRoleInput = z.infer<typeof updateUserRoleSchema>;
 export type UpdateOrgUserInput = z.infer<typeof updateOrgUserSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type ChangeOrgUserPasswordInput = z.infer<typeof changeOrgUserPasswordSchema>;

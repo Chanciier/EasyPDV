@@ -1,9 +1,11 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import {
+  changeOrgUserPasswordSchema,
   createUserSchema,
   loginSchema,
   updateOrgUserSchema,
+  type ChangeOrgUserPasswordInput,
   type CreateUserInput,
   type LoginInput,
   type UpdateOrgUserInput,
@@ -16,6 +18,7 @@ import { CreateOrgUserUseCase } from "../../application/use-cases/create-org-use
 import { ListOrgUsersUseCase } from "../../application/use-cases/list-org-users.use-case.js";
 import { UpdateOrgUserUseCase } from "../../application/use-cases/update-org-user.use-case.js";
 import { VerifyOrgUserLoginUseCase } from "../../application/use-cases/verify-org-user-login.use-case.js";
+import { ChangeOrgUserPasswordUseCase } from "../../application/use-cases/change-org-user-password.use-case.js";
 import { TerminalApiKeyGuard } from "../guards/terminal-api-key.guard.js";
 import { VerifyLoginThrottlerGuard } from "../guards/verify-login-throttler.guard.js";
 import { CurrentTerminal, type AuthenticatedTerminal } from "../decorators/current-terminal.decorator.js";
@@ -47,6 +50,7 @@ export class OrgUsersController {
     private readonly listOrgUsersUseCase: ListOrgUsersUseCase,
     private readonly updateOrgUserUseCase: UpdateOrgUserUseCase,
     private readonly verifyOrgUserLoginUseCase: VerifyOrgUserLoginUseCase,
+    private readonly changeOrgUserPasswordUseCase: ChangeOrgUserPasswordUseCase,
   ) {}
 
   private assertOwnsOrganization(organizationId: string, terminal: AuthenticatedTerminal): void {
@@ -85,6 +89,19 @@ export class OrgUsersController {
   ): Promise<OrgUserPayload> {
     this.assertOwnsOrganization(organizationId, terminal);
     const user = await this.updateOrgUserUseCase.execute(userId, body);
+    return toOrgUserPayload(user);
+  }
+
+  /** Troca/reset de senha (2026-08-21) — chamado pelo pdv-backend, terminal já confirmou identidade/autorização do lado dele (login ou role administrador). */
+  @Patch(":userId/password")
+  async changePassword(
+    @Param("organizationId") organizationId: string,
+    @Param("userId") userId: string,
+    @Body(new ZodValidationPipe(changeOrgUserPasswordSchema)) body: ChangeOrgUserPasswordInput,
+    @CurrentTerminal() terminal: AuthenticatedTerminal,
+  ): Promise<OrgUserPayload> {
+    this.assertOwnsOrganization(organizationId, terminal);
+    const user = await this.changeOrgUserPasswordUseCase.execute(userId, body.newPassword);
     return toOrgUserPayload(user);
   }
 

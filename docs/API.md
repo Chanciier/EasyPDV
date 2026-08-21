@@ -18,6 +18,11 @@ POST   /auth/refresh   { refreshToken } → tokens (rotaciona — o antigo é re
                         inteiro expirar (até 30 dias)
 POST   /auth/logout    { refreshToken } → revoga a sessão
 GET    /auth/me        (Bearer token) → usuário atual
+PATCH  /auth/change-password  (Bearer) → troca/reset de senha (2026-08-21). { currentPassword, newPassword }
+                        → cada um troca a PRÓPRIA senha, sabendo a atual (confirmada com a mesma lógica dual
+                        do login: central primeiro, cai pro hash local só se o Intermediador estiver
+                        inalcançável). Usuário central (`orgUserId` presente) escreve no Intermediador
+                        primeiro; zera `mustChangePassword` no sucesso
 GET    /users          (Bearer + role administrador) → lista todos, ordenado por `employeeCode` asc.
                         Sprint 16, tela "Administração" (aba Usuários)
 POST   /users          (Bearer + role administrador) → cria usuário; `employeeCode` calculado no
@@ -28,6 +33,10 @@ POST   /users          (Bearer + role administrador) → cria usuário; `employe
 PATCH  /users/:id/role (Bearer + role administrador) → troca o papel. Se o usuário for central
                         (`orgUserId` presente), edita lá primeiro também; usuário só local (pré-migração,
                         ou o admin de fallback do bootstrap) segue editável só localmente
+PATCH  /users/:id/reset-password  (Bearer + role administrador) → troca/reset de senha (2026-08-21).
+                        { newPassword } → admin NÃO precisa saber a senha atual do outro usuário (digita a
+                        nova direto na tela — sem infraestrutura de e-mail, sem senha temporária por e-mail).
+                        Sempre força `mustChangePassword: true` — a pessoa é obrigada a trocar no próximo login
 
 GET    /products/search?query=          (Bearer) → busca textual por nome/SKU, só produtos ativos, até 25
                                          (sem paginação — limite conhecido do V1, ver docs/CHANGELOG.md Sprint 9)
@@ -92,7 +101,13 @@ DELETE /sales/:id/items/:itemId         (Bearer) → remove item; só em draft
 POST   /sales/:id/payments              (Bearer) → registra pagamento (dinheiro/cartao/pix/outro); só em draft;
                                          cartão em V1 é declarado manualmente já "aprovado" (sem TEF, ver ROADMAP.md).
                                          cardType (credito/debito) e installments são opcionais, só fazem
-                                         sentido com method="cartao" (Sprint 14)
+                                         sentido com method="cartao" (Sprint 14). Pagamento dividido (2026-08-21):
+                                         pode ser chamado várias vezes por venda, uma perna por chamada — 409
+                                         (PaymentExceedsRemainingAmountError) se o valor ultrapassar o que falta
+                                         pagar (Sale.remainingAmount)
+DELETE /sales/:id/payments/:paymentId   (Bearer) → remove uma perna de pagamento já registrada; só em draft.
+                                         Pagamento dividido (2026-08-21) — corrige uma perna errada sem
+                                         precisar reiniciar a venda
 PATCH  /sales/:id/discount              (Bearer) → aplica desconto fixo (R$) no total da venda; só em draft;
                                          409 se discountAmount > subtotal (Sprint 14). Sem alçada — qualquer
                                          operador autenticado pode aplicar, mesmo padrão de sangria/suprimento
@@ -274,9 +289,18 @@ POST   /organizations/:id/users/verify-login   Chamado pelo `LoginUseCase` de QU
                                            rate limit próprio (5 tentativas/min, chaveado por terminal+e-mail,
                                            `VerifyLoginThrottlerGuard`). { email, password } → devolve o
                                            `OrgUser` (SEM token — cada terminal emite o próprio JWT local) se
-                                           válido E ativo; 401 pros três casos (e-mail não existe, senha
-                                           errada, usuário inativo) com a MESMA mensagem/formato, de propósito
-                                           — nunca vaza qual dos três aconteceu (ver docs/DATABASE.md `OrgUser`)
+                                           válido E ativo. **Corrigido em 2026-08-21** (bug de produção real):
+                                           e-mail que não existe na organização devolve 404 (não 401) — o
+                                           gateway do pdv-backend já trata qualquer resposta não-401/não-ok
+                                           como "não deu pra confirmar" e cai pro espelho local sozinho; sem
+                                           essa distinção, todo usuário local pré-existente (nunca cadastrado
+                                           aqui) ficava travado assim que o terminal tinha rede. Senha errada
+                                           OU usuário inativo continuam com a MESMA mensagem/401 — não vaza
+                                           qual dos dois (ver docs/DATABASE.md `OrgUser`)
+PATCH  /organizations/:id/users/:userId/password  Troca/reset de senha (2026-08-21) — chamado pelo
+                                           pdv-backend (autoatendimento ou reset por admin), mesma checagem
+                                           de organização dos outros endpoints deste grupo. { newPassword } →
+                                           hash feito aqui (`PASSWORD_HASHER`), nunca no pdv-backend
 
 GET    /integrations/bling/products?since=  chamado pelo pdv-backend (botão "Sincronizar com Bling",
                                            sync automático na ativação, e o poll periódico de estoque —

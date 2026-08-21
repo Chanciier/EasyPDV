@@ -100,6 +100,12 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     return toDomainSale(record);
   }
 
+  async removePayment(saleId: string, paymentId: string): Promise<Sale> {
+    await this.prisma.payment.delete({ where: { id: paymentId } });
+    const record = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
+    return toDomainSale(record);
+  }
+
   /**
    * Confirma a venda, debita o estoque de cada item e grava a entrada de
    * sincronização — tudo na mesma transação. O débito usa `updateMany` com

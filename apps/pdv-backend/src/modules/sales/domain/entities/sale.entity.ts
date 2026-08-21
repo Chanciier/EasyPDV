@@ -87,4 +87,16 @@ export class Sale {
   get isFullyPaid(): boolean {
     return this.approvedPaymentsTotal >= this.totalAmount;
   }
+
+  /**
+   * Quanto falta pagar — usado pelo pagamento dividido (2026-08-21) pra
+   * limitar cada novo pagamento e decidir quando "Confirmar venda" habilita.
+   * Arredondado pra 2 casas (mesmo padrão de computeOrderDiscount no Adapter
+   * Bling) — bug real achado testando de verdade: `49.8 - 20` em ponto
+   * flutuante JS dá `29.799999999999997`, o que rejeitava um pagamento EXATO
+   * de R$29,80 na segunda perna por comparação de ponto flutuante.
+   */
+  get remainingAmount(): number {
+    return Math.max(0, Math.round((this.totalAmount - this.approvedPaymentsTotal) * 100) / 100);
+  }
 }

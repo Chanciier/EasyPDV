@@ -12,5 +12,6 @@ export function toDomainUser(record: PrismaUser): User {
     employeeCode: record.employeeCode,
     orgUserId: record.orgUserId,
     lastVerifiedCentrallyAt: record.lastVerifiedCentrallyAt,
+    mustChangePassword: record.mustChangePassword,
   });
 }

@@ -63,6 +63,14 @@ export class InsufficientPaymentError extends DomainError {
   }
 }
 
+/** Pagamento dividido (2026-08-21) — cada pagamento é registrado na hora (ver register-payment.use-case.ts), então precisa de guarda-corrimão contra ultrapassar o restante em qualquer perna individual. */
+export class PaymentExceedsRemainingAmountError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(id: string, amount: number, remaining: number) {
+    super(`Pagamento de ${amount} excede o restante a pagar (${remaining}) da venda ${id}`);
+  }
+}
+
 export class NoWarehouseAvailableError extends DomainError {
   readonly kind: DomainErrorKind = "not_found";
   constructor() {

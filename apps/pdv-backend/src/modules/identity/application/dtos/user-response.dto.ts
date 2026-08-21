@@ -10,5 +10,6 @@ export function toUserResponseDto(user: UserEntity): User {
     role: user.role,
     active: user.active,
     employeeCode: user.employeeCode,
+    mustChangePassword: user.mustChangePassword,
   };
 }

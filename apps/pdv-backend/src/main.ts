@@ -71,7 +71,18 @@ async function ensureAdminUser(prisma: PrismaService, userVerificationGateway: U
   // employeeCode 1 — count()>0 já garantiu acima que não existe nenhum usuário
   // ainda, então este é sempre o primeiro.
   await prisma.user.create({
-    data: { name: "Administrador", email, passwordHash, role: "administrador", employeeCode: 1 },
+    data: {
+      name: "Administrador",
+      email,
+      passwordHash,
+      role: "administrador",
+      employeeCode: 1,
+      // Troca/reset de senha (2026-08-21) — a senha padrão é conhecida
+      // (documentada no próprio código), então força a troca antes de
+      // liberar o resto do app. Fecha o "risco aberto conhecido" citado
+      // acima.
+      mustChangePassword: true,
+    },
   });
 }
 

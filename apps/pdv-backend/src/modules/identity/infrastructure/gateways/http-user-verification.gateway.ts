@@ -152,4 +152,26 @@ export class HttpUserVerificationGateway implements UserVerificationGatewayPort 
     }
     return (await response.json()) as OrgUserPayload;
   }
+
+  async changePassword(orgUserId: string, newPassword: string): Promise<void> {
+    const identity = await this.storeIdentityRepository.find();
+    if (!identity) {
+      throw new Error("Terminal ainda não ativado — não é possível trocar a senha sem conexão com o Intermediador");
+    }
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}/organizations/${identity.organizationId}/users/${orgUserId}/password`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
+        body: JSON.stringify({ newPassword }),
+        signal: AbortSignal.timeout(8000),
+      });
+    } catch (error) {
+      throw new Error(`Não foi possível conectar ao servidor central para trocar a senha: ${String(error)}`);
+    }
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { message?: string } | null;
+      throw new Error(body?.message ?? `Intermediador respondeu ${response.status} ao trocar a senha`);
+    }
+  }
 }

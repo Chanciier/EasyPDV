@@ -49,4 +49,9 @@ export class PrismaOrgUserRepository implements OrgUserRepositoryPort {
     });
     return result._max.employeeCode ?? 0;
   }
+
+  async updatePassword(id: string, passwordHash: string): Promise<OrgUser> {
+    const record = await this.prisma.orgUser.update({ where: { id }, data: { passwordHash } });
+    return toDomainOrgUser(record);
+  }
 }

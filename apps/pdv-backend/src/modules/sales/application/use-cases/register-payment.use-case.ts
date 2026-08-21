@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { RegisterPaymentInput } from "@easypdv/shared-validation";
-import { SaleNotEditableError, SaleNotFoundError } from "../../domain/errors.js";
+import { PaymentExceedsRemainingAmountError, SaleNotEditableError, SaleNotFoundError } from "../../domain/errors.js";
 import type { Sale } from "../../domain/entities/sale.entity.js";
 import { SALE_REPOSITORY, type SaleRepositoryPort } from "../ports/sale-repository.port.js";
 import {
@@ -41,11 +41,20 @@ export class RegisterPaymentUseCase {
      * somando mais que o total do pedido). Sair sem fazer nada quando a venda
      * JÁ está integralmente paga deixa esse retry idempotente — a segunda
      * tentativa de confirmar segue normalmente, sem duplicar o pagamento.
-     * V1 não tem pagamento parcial/split na tela, então "já pago = não
-     * registra de novo" não bloqueia nenhum fluxo legítimo.
+     * Continua valendo com pagamento dividido (2026-08-21): essa guarda só
+     * dispara quando a venda JÁ está 100% paga, então cobre o retry-depois-do-
+     * último-pagamento; cada perna individual é registrada e confirmada pelo
+     * próprio operador na tela (payment-dialog.tsx), nunca reenviada em lote.
      */
     if (sale.isFullyPaid) {
       return sale;
+    }
+
+    // Pagamento dividido (2026-08-21): cada perna é registrada na hora, então
+    // precisa impedir que uma perna sozinha ultrapasse o que ainda falta —
+    // sem isso, duas pernas poderiam somar mais que o total da venda.
+    if (input.amount > sale.remainingAmount) {
+      throw new PaymentExceedsRemainingAmountError(saleId, input.amount, sale.remainingAmount);
     }
 
     const updated = await this.saleRepository.registerPayment({

@@ -28,6 +28,7 @@ import { CancelSaleUseCase } from "./application/use-cases/cancel-sale.use-case.
 import { GetSaleUseCase } from "./application/use-cases/get-sale.use-case.js";
 import { ListSalesUseCase } from "./application/use-cases/list-sales.use-case.js";
 import { RegisterPaymentUseCase } from "./application/use-cases/register-payment.use-case.js";
+import { RemovePaymentUseCase } from "./application/use-cases/remove-payment.use-case.js";
 import { ConfirmSaleUseCase } from "./application/use-cases/confirm-sale.use-case.js";
 import { ApplySaleDiscountUseCase } from "./application/use-cases/apply-sale-discount.use-case.js";
 import { VoidConfirmedSaleUseCase } from "./application/use-cases/void-confirmed-sale.use-case.js";
@@ -53,6 +54,7 @@ import { AttachCustomerToSaleUseCase } from "./application/use-cases/attach-cust
     GetSaleUseCase,
     ListSalesUseCase,
     RegisterPaymentUseCase,
+    RemovePaymentUseCase,
     ConfirmSaleUseCase,
     ApplySaleDiscountUseCase,
     VoidConfirmedSaleUseCase,

@@ -126,6 +126,16 @@ export function useRegisterPayment() {
   })
 }
 
+/** Pagamento dividido (2026-08-21) — corrige uma perna registrada errado sem reiniciar a venda. */
+export function useRemovePayment() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { saleId: string; paymentId: string }) =>
+      apiRequest<Sale>(`/sales/${input.saleId}/payments/${input.paymentId}`, { method: 'DELETE' }),
+    onSuccess: (sale) => queryClient.setQueryData(['sale', sale.id], sale),
+  })
+}
+
 export function useApplySaleDiscount() {
   const queryClient = useQueryClient()
   return useMutation({

@@ -120,7 +120,9 @@ export function HistoryView() {
         totalAmount: item.totalAmount,
       })),
       totalAmount: detail.totalAmount,
-      paymentLabel: detail.payments[0] ? PAYMENT_LABELS[detail.payments[0].method] : '',
+      payments: detail.payments
+        .filter((p) => p.status === 'aprovado')
+        .map((p) => ({ label: PAYMENT_LABELS[p.method], amount: p.amount })),
       fiscal: { documentNumber, accessKey, qrCodeUrl },
       customerDocument: detailCustomer?.document ? formatCpf(detailCustomer.document) : undefined,
     })

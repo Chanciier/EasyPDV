@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, Plus, Minus, Trash2, ShoppingCart, Lock, User } from 'lucide-react'
-import type { Customer, PaymentCardType, PaymentMethod, Product, ReceiptPrintPayload, Sale, SaleItem } from '@easypdv/shared-types'
+import type { Customer, Payment, PaymentMethod, Product, ReceiptPrintPayload, Sale, SaleItem } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
 import { useCartStore } from '@/lib/cart-store'
@@ -20,7 +20,6 @@ import {
   useProductPrices,
   useProductSearch,
   useProducts,
-  useRegisterPayment,
   useRemoveSaleItem,
   useSale,
   useStartSale,
@@ -29,13 +28,21 @@ import { formatCpf } from '@easypdv/shared-validation'
 import { PaymentDialog } from './payment-dialog'
 import { ReceiptDialog } from './receipt-dialog'
 
-type Receipt = { sale: Sale; method: PaymentMethod; received: number; change: number }
+type Receipt = { sale: Sale; changeTotal: number }
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   dinheiro: 'Dinheiro',
   cartao: 'Cartão',
   pix: 'PIX',
   outro: 'Outro',
+}
+
+/** Pagamento dividido (2026-08-21) — usado no cupom/recibo pra identificar cada perna (ex: "Cartão (Crédito 3x)"). */
+function paymentLegLabel(payment: Payment): string {
+  if (!payment.cardType) return PAYMENT_LABELS[payment.method]
+  const tipo = payment.cardType === 'credito' ? 'Crédito' : 'Débito'
+  const parcelas = payment.installments && payment.installments > 1 ? ` ${payment.installments}x` : ''
+  return `${PAYMENT_LABELS[payment.method]} (${tipo}${parcelas})`
 }
 
 export function SaleView() {
@@ -48,7 +55,6 @@ export function SaleView() {
   const startSale = useStartSale()
   const addItem = useAddSaleItem()
   const removeItemMut = useRemoveSaleItem()
-  const registerPayment = useRegisterPayment()
   const confirmSale = useConfirmSale()
   const attachCustomer = useAttachCustomer()
   const cancelSale = useCancelSale()
@@ -67,6 +73,11 @@ export function SaleView() {
   const [paymentSubmitting, setPaymentSubmitting] = useState(false)
   const [paymentError, setPaymentError] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
+  // Pagamento dividido (2026-08-21) — "recebido" (pra calcular troco) só
+  // existe na tela, nunca é persistido (Payment guarda só `amount`, o valor
+  // efetivamente aplicado). Populado por PaymentDialog a cada perna em
+  // dinheiro registrada, lido de volta ao montar o recibo/cupom.
+  const [receivedByPaymentId, setReceivedByPaymentId] = useState<Record<string, number>>({})
   const [discountOpen, setDiscountOpen] = useState(false)
   const [discountValue, setDiscountValue] = useState('')
   const [discountError, setDiscountError] = useState<string | null>(null)
@@ -341,44 +352,32 @@ export function SaleView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sale, selectedProductId, paymentOpen, receipt])
 
-  const handleConfirmPayment = async (
-    method: PaymentMethod,
-    received: number,
-    cardType: PaymentCardType | null,
-    installments: number | null,
-    cpf: string | null,
-  ) => {
+  /** Pagamento dividido (2026-08-21) — pagamento(s) já foram registrados individualmente por PaymentDialog antes de chegar aqui; esta função só anexa o CPF (se houver) e confirma a venda. */
+  const handleConfirmPayment = async (cpf: string | null) => {
     if (!sale) return
     setPaymentSubmitting(true)
     setPaymentError(null)
     try {
-      // Antes do pagamento/confirmação, de propósito: o payload de sync que
-      // vira NFC-e no Bling é montado em confirm() a partir do customerId já
-      // gravado na venda — precisa estar lá ANTES de confirmar.
+      // Antes da confirmação, de propósito: o payload de sync que vira NFC-e
+      // no Bling é montado em confirm() a partir do customerId já gravado na
+      // venda — precisa estar lá ANTES de confirmar.
       if (cpf) {
         await attachCustomer.mutateAsync({ saleId: sale.id, document: cpf })
       }
-      await registerPayment.mutateAsync({
-        saleId: sale.id,
-        method,
-        amount: sale.totalAmount,
-        cardType,
-        installments,
-      })
       const confirmed = await confirmSale.mutateAsync(sale.id)
       setPaymentOpen(false)
-      const change = method === 'dinheiro' ? Math.max(0, received - confirmed.totalAmount) : 0
+
+      const approvedPayments = confirmed.payments.filter((p) => p.status === 'aprovado')
+      const changeTotal = approvedPayments.reduce((sum, p) => {
+        const received = receivedByPaymentId[p.id] ?? p.amount
+        return sum + Math.max(0, received - p.amount)
+      }, 0)
       const customerDocument = cpf
         ? formatCpf(cpf)
         : selectedCustomer?.document
           ? formatCpf(selectedCustomer.document)
           : undefined
-      setReceipt({
-        sale: confirmed,
-        method,
-        received: method === 'dinheiro' ? received : confirmed.totalAmount,
-        change,
-      })
+      setReceipt({ sale: confirmed, changeTotal })
 
       const printBasePayload: Omit<ReceiptPrintPayload, 'fiscal'> = {
         saleId: confirmed.id,
@@ -389,9 +388,12 @@ export function SaleView() {
           totalAmount: item.totalAmount,
         })),
         totalAmount: confirmed.totalAmount,
-        paymentLabel: PAYMENT_LABELS[method],
-        received: method === 'dinheiro' ? received : undefined,
-        change: change > 0 ? change : undefined,
+        payments: approvedPayments.map((p) => ({
+          label: paymentLegLabel(p),
+          amount: p.amount,
+          received: receivedByPaymentId[p.id],
+          change: receivedByPaymentId[p.id] ? Math.max(0, receivedByPaymentId[p.id] - p.amount) : undefined,
+        })),
         customerDocument,
       }
 
@@ -404,13 +406,14 @@ export function SaleView() {
         // pronta (ver useEffect de pendingFiscalStatus acima).
         setPendingFiscalPrint({ saleId: confirmed.id, basePayload: printBasePayload })
       }
-      if (method === 'dinheiro' && hardwareSettings?.autoOpenDrawerOnCash) {
+      if (approvedPayments.some((p) => p.method === 'dinheiro') && hardwareSettings?.autoOpenDrawerOnCash) {
         openDrawer.mutate()
       }
 
       reset()
       setTerm('')
       setSelectedCustomer(null)
+      setReceivedByPaymentId({})
     } catch (e) {
       setPaymentError(describeError(e, 'Erro ao confirmar pagamento.'))
     } finally {
@@ -711,7 +714,7 @@ export function SaleView() {
 
       <PaymentDialog
         open={paymentOpen}
-        total={sale?.totalAmount ?? 0}
+        sale={sale}
         submitting={paymentSubmitting}
         error={paymentError}
         showCpfField={!sale?.customerId}
@@ -721,14 +724,15 @@ export function SaleView() {
             setPaymentError(null)
           }
         }}
+        onPaymentRegistered={(payment, received) =>
+          setReceivedByPaymentId((m) => ({ ...m, [payment.id]: received }))
+        }
         onConfirm={handleConfirmPayment}
       />
       <ReceiptDialog
         sale={receipt?.sale ?? null}
         productNames={productNames}
-        paymentMethod={receipt?.method ?? null}
-        received={receipt?.received ?? 0}
-        change={receipt?.change ?? 0}
+        changeTotal={receipt?.changeTotal ?? 0}
         onClose={() => setReceipt(null)}
       />
     </div>
