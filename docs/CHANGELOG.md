@@ -1,6 +1,13 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Login local pré-existente travava assim que o Intermediador ficava alcançável (2026-08-21)
+Achado horas depois de publicar o login único (v1.1.0), pelo próprio usuário tentando entrar num terminal real: `verify-login` devolvia 401 pros três casos (e-mail não existe centralmente, senha errada, usuário inativo), pensando em anti-enumeração. Só que `LoginUseCase` (pdv-backend) trata 401 como "credenciais realmente inválidas" e nunca cai pro fallback local nesse caso, de propósito (pra não deixar uma senha local desatualizada continuar valendo depois de trocada centralmente) — resultado real: todo usuário criado só localmente ANTES desta feature (nunca cadastrado no Intermediador) ficava permanentemente travado assim que o terminal tinha rede, mesmo com a senha local certa, porque "e-mail não existe" virava indistinguível de "senha errada confirmada".
+
+- **Corrigido**: e-mail que não existe na organização agora devolve 404 (`OrgUserNotFoundError`), não 401. O gateway do pdv-backend já tratava qualquer resposta não-401/não-ok como "não deu pra confirmar" → cai pro espelho local sozinho — **nenhuma mudança precisou ser feita no lado do terminal**, nenhuma versão nova do instalador, só o deploy do Intermediador (Railway). Terminais que já tinham atualizado pra v1.1.0 voltaram a funcionar sozinhos assim que o Intermediador foi redeployado.
+- Não vaza nada de novo: `GET /organizations/:id/users` já expõe a lista completa de e-mails pro mesmo terminal autenticado — a distinção 404-vs-401 não dá pra um terminal legítimo nenhuma informação que ele já não tivesse.
+- Testado de ponta a ponta reproduzindo o cenário exato (usuário local-only, Intermediador alcançável): antes da correção reproduzia o bug (401, login rejeitado mesmo com senha certa); depois, 404 do Intermediador + login local funcionando normalmente. Wrong password segue rejeitado corretamente.
+
 ### Login único entre terminais (2026-08-21)
 Pedido do usuário — tentou entrar num segundo terminal com o mesmo e-mail/senha de sempre e levou "credenciais inválidas", porque cada terminal sempre teve seu próprio banco de usuários local, sem nenhum ponto central. Planejado em Plan Mode antes de codar (2 agentes Explore em paralelo + 1 Plan revisando riscos), aprovado e implementado nesta sessão.
 
