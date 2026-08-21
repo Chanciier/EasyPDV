@@ -29,7 +29,16 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Mesmos dois passos de apps/pdv-backend E apps/intermediador que
+      # .github/workflows/ci.yml já usa com sucesso em todo push — build do
+      # workspace inteiro via turbo builda TODOS os pacotes (intermediador
+      # incluso, mesmo irrelevante pro instalador Windows), e intermediador
+      # tem `output` próprio de Prisma Client (schema Postgres separado, ver
+      # docs/BACKEND.md) que também precisa existir antes do `tsc`. Achado
+      # real (2026-08-21): faltou esse passo na primeira tentativa de usar
+      # `turbo run build` sem filtro.
       - run: pnpm --filter @easypdv/pdv-backend run prisma:generate
+      - run: pnpm --filter @easypdv/intermediador run prisma:generate
 
       # Build do workspace inteiro via Turborepo (mesmo comando usado o
       # resto desta sessão sem nenhum problema de ordem — `turbo run build`
