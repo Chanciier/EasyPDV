@@ -1,6 +1,12 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Cupom fiscal imprime sozinho assim que a NFC-e fica pronta (2026-08-21)
+Pedido do usuário depois de configurar a emissão de NFC-e: "agora eu gostaria que elas fossem impressa no momento da venda". A emissão em si é assíncrona (passa pelo Bling em segundo plano, via `SyncJob` — pode levar de segundos a minutos, ou falhar por config pendente da conta), então "no momento da venda" na prática vira "assim que ficar pronta, sem o operador precisar ir manualmente no Histórico" — que era o único jeito de imprimir o cupom fiscal até agora.
+
+- `useFiscalStatus` (`apps/pdv-frontend/hooks/use-sales.ts`) ganhou um modo de polling opcional (`{ pollWhilePending: true }`, `refetchInterval` a cada 3s) — só reconsulta enquanto o status ainda não é final (`issued`/`error`), pra não bater pra sempre numa venda já resolvida. Uso existente em `history-view.tsx` (sem polling) continua igual.
+- `sale-view.tsx`: depois de confirmar uma venda (com impressão automática ligada), guarda o payload já resolvido (nomes de produto, CPF) e acompanha o status fiscal dessa venda especificamente. Assim que vira "issued", dispara a impressão do cupom fiscal sozinho, reaproveitando o mesmo `buildFiscalReceipt` já usado no Histórico. Desiste depois de 3 minutos (conta sem CSC/certificado configurado pode nunca emitir) — ainda dá pra imprimir manualmente depois, quando a config for corrigida.
+
 ### Atualização automática do instalador finalmente publicando (2026-08-21)
 Pedido do usuário: instalador sempre foi compilado e enviado manualmente por chat a cada correção. Planejado antes de codar (2 agentes Explore em paralelo pesquisando arquitetura de auth — pra um pedido irmão de login único — e infraestrutura de update).
 

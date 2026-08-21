@@ -169,11 +169,22 @@ export function useConfirmSale() {
  * rede falhar. `null` é normal: nem toda venda tem NFC-e (emissão é opt-in
  * no Intermediador, ver Sprint 12).
  */
-export function useFiscalStatus(saleId: string | null) {
+export function useFiscalStatus(saleId: string | null, options?: { pollWhilePending?: boolean }) {
   return useQuery({
     queryKey: ['fiscal-status', saleId],
     queryFn: () => apiRequest<FiscalDocument | null>(`/sales/${saleId}/fiscal`),
     enabled: !!saleId,
+    // "Imprimir nota no momento da venda" (2026-08-21): a emissão da NFC-e é
+    // assíncrona (passa pelo Bling em segundo plano) — sem polling, o
+    // status só atualiza se o usuário reabrir a tela manualmente. Só reconsulta
+    // enquanto ainda não tem um resultado final (sem documento, ou "pending"),
+    // pra não continuar batendo pra sempre numa venda já resolvida.
+    refetchInterval: options?.pollWhilePending
+      ? (query) => {
+          const status = query.state.data?.status
+          return status === 'issued' || status === 'error' ? false : 3000
+        }
+      : undefined,
   })
 }
 
