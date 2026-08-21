@@ -57,7 +57,8 @@
     "publish": {
       "provider": "github",
       "owner": "Chanciier",
-      "repo": "EasyPDV"
+      "repo": "EasyPDV",
+      "releaseType": "release"
     }
   }
 }
