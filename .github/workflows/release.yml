@@ -29,13 +29,18 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # prepare-resources.js só builda pdv-backend/pdv-frontend (o que vai
-      # DENTRO do pacote) — o shell Electron em si (src/main, src/preload)
-      # tem seu próprio tsc, nunca rodado por `exec electron-builder`
-      # diretamente (esse comando não passa pelo hook "pre" que `pnpm run
-      # package` teria). Achado real no primeiro build em ambiente limpo
-      # (2026-08-21): localmente sempre "funcionava" porque dist/ do
-      # electron já existia de builds anteriores nesta máquina.
+      # @easypdv/electron E @easypdv/pdv-backend dependem de pacotes
+      # workspace (shared-types/shared-validation/shared-events) que só
+      # existem como `dist/` depois de buildados — `tsc` de qualquer um dos
+      # dois falha com "Cannot find module" sem isso rodar primeiro. Achado
+      # real no primeiro build em ambiente limpo (2026-08-21, dois achados
+      # separados na mesma causa): local sempre "funcionava" porque esses
+      # dist/ já existiam de builds anteriores nesta máquina.
+      - run: pnpm turbo run build --filter=@easypdv/electron^... --filter=@easypdv/pdv-backend^...
+
+      # Shell Electron em si (src/main, src/preload) — tem seu próprio tsc,
+      # nunca rodado por `exec electron-builder` direto (esse comando não
+      # passa pelo hook "pre" que `pnpm run package` teria).
       - run: pnpm --filter @easypdv/electron run build
 
       # prepare-resources.js builda pdv-backend/pdv-frontend e gera o
