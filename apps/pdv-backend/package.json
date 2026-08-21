@@ -30,7 +30,7 @@
     "@nestjs/platform-socket.io": "^11.2.0",
     "@nestjs/schedule": "^5.0.1",
     "@nestjs/websockets": "^11.2.0",
-    "@prisma/client": "^6.2.1",
+    "@prisma/client": "^6.19.3",
     "bcrypt": "^5.1.1",
     "nestjs-pino": "^4.2.0",
     "passport": "^0.7.0",
