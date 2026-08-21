@@ -48,3 +48,33 @@ export class OrganizationMismatchError extends DomainError {
     super("Terminal não pertence a esta organização");
   }
 }
+
+// Login único entre terminais (2026-08-21) — ver docs/DATABASE.md `OrgUser`.
+
+export class OrgUserEmailAlreadyInUseError extends DomainError {
+  readonly kind = "conflict";
+  constructor(email: string) {
+    super(`Já existe um usuário com o e-mail ${email} nesta organização`);
+  }
+}
+
+export class OrgUserNotFoundError extends DomainError {
+  readonly kind = "not_found";
+  constructor(id: string) {
+    super(`Usuário ${id} não encontrado`);
+  }
+}
+
+/**
+ * Única mensagem para e-mail inexistente, senha errada OU usuário inativo —
+ * de propósito (mitigação de risco planejada: não vazar se o e-mail existe
+ * nem por que a tentativa falhou, nem por tempo de resposta diferente entre
+ * os casos). Ver Claude/Projetos/EasyPDV/Decisões e Riscos Abertos.md no
+ * cofre Obsidian.
+ */
+export class InvalidOrgUserCredentialsError extends DomainError {
+  readonly kind = "unauthorized";
+  constructor() {
+    super("E-mail ou senha inválidos");
+  }
+}

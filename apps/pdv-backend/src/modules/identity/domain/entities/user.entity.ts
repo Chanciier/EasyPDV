@@ -8,6 +8,9 @@ export interface UserProps {
   role: UserRole;
   active: boolean;
   employeeCode: number;
+  /** Login único entre terminais (2026-08-21) — null pra usuário nunca confirmado centralmente. Ver user-verification-gateway.port.ts. */
+  orgUserId: string | null;
+  lastVerifiedCentrallyAt: Date | null;
 }
 
 /**
@@ -22,6 +25,8 @@ export class User {
   readonly role: UserRole;
   readonly active: boolean;
   readonly employeeCode: number;
+  readonly orgUserId: string | null;
+  readonly lastVerifiedCentrallyAt: Date | null;
 
   constructor(props: UserProps) {
     this.id = props.id;
@@ -31,5 +36,7 @@ export class User {
     this.role = props.role;
     this.active = props.active;
     this.employeeCode = props.employeeCode;
+    this.orgUserId = props.orgUserId;
+    this.lastVerifiedCentrallyAt = props.lastVerifiedCentrallyAt;
   }
 }

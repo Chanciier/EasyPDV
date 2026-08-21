@@ -32,6 +32,23 @@ export interface AuthTokens {
   expiresAt: string;
 }
 
+/**
+ * Usuário canônico no Intermediador (Postgres, por organização) — login único
+ * entre terminais (2026-08-21). Contrato de fio entre `OrgUsersController`
+ * (Intermediador) e `HttpUserVerificationGateway` (pdv-backend); nunca
+ * inclui passwordHash. Cada terminal continua tendo seu próprio `User`
+ * (SQLite) como espelho/cache — este tipo é só o que trafega entre os dois.
+ */
+export interface OrgUserPayload {
+  id: string;
+  organizationId: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  active: boolean;
+  employeeCode: number;
+}
+
 export interface Store {
   id: string;
   name: string;

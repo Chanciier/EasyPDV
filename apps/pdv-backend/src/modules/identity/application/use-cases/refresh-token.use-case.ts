@@ -7,6 +7,12 @@ import type { AuthTokens } from "@easypdv/shared-types";
 import { AUTH_SESSION_REPOSITORY, type AuthSessionRepositoryPort } from "../ports/auth-session-repository.port.js";
 import { PASSWORD_HASHER, type PasswordHasherPort } from "../ports/password-hasher.port.js";
 import { USER_REPOSITORY, type UserRepositoryPort } from "../ports/user-repository.port.js";
+import {
+  USER_VERIFICATION_GATEWAY,
+  type UserVerificationGatewayPort,
+} from "../ports/user-verification-gateway.port.js";
+
+const CENTRAL_RECHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 /** Refresh token rotacionado a cada uso — a sessão antiga é revogada. Ver docs/BACKEND.md. */
 @Injectable()
@@ -15,6 +21,7 @@ export class RefreshTokenUseCase {
     @Inject(AUTH_SESSION_REPOSITORY) private readonly authSessionRepository: AuthSessionRepositoryPort,
     @Inject(USER_REPOSITORY) private readonly userRepository: UserRepositoryPort,
     @Inject(PASSWORD_HASHER) private readonly passwordHasher: PasswordHasherPort,
+    @Inject(USER_VERIFICATION_GATEWAY) private readonly userVerificationGateway: UserVerificationGatewayPort,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
@@ -38,6 +45,26 @@ export class RefreshTokenUseCase {
     const user = await this.userRepository.findById(session.userId);
     if (!user || !user.active) {
       throw new InvalidRefreshTokenError();
+    }
+
+    // Login único entre terminais (2026-08-21) — um usuário desativado ou
+    // rebaixado centralmente não deve continuar ativo neste terminal só
+    // porque o refresh token dele ainda não expirou (até 30 dias). Só
+    // reconsulta o Intermediador quando a última confirmação passou de ~1h
+    // (não a cada refresh) — `null` (usuário puramente local, ou
+    // Intermediador fora do ar) segue sem bloquear, mesmo padrão de
+    // fallback do login.
+    const needsRecheck =
+      !user.lastVerifiedCentrallyAt ||
+      Date.now() - user.lastVerifiedCentrallyAt.getTime() > CENTRAL_RECHECK_INTERVAL_MS;
+    if (needsRecheck) {
+      const stillActive = await this.userVerificationGateway.checkStillActive(user.email);
+      if (stillActive === false) {
+        throw new InvalidRefreshTokenError();
+      }
+      if (stillActive === true) {
+        await this.userRepository.touchLastVerifiedCentrally(user.id);
+      }
     }
 
     await this.authSessionRepository.revoke(session.id);

@@ -8,15 +8,26 @@ não expõe sessão a terceiros.
 
 ```
 /health
-POST   /auth/login     { email, password } → { user, tokens }
-POST   /auth/refresh   { refreshToken } → tokens (rotaciona — o antigo é revogado)
+POST   /auth/login     { email, password } → { user, tokens }. Login único entre terminais (2026-08-21):
+                        confirma a senha no Intermediador PRIMEIRO (`POST /organizations/:id/users/verify-login`
+                        no Intermediador) — só cai pro `User` local (SQLite) se o Intermediador estiver
+                        genuinamente inalcançável (não quando ele confirma "senha errada"). Ver docs/DATABASE.md
+POST   /auth/refresh   { refreshToken } → tokens (rotaciona — o antigo é revogado). Reconsulta o
+                        Intermediador (`checkStillActive`) se a última confirmação central passou de ~1h —
+                        fecha o acesso de um usuário desativado centralmente sem esperar o refresh token
+                        inteiro expirar (até 30 dias)
 POST   /auth/logout    { refreshToken } → revoga a sessão
 GET    /auth/me        (Bearer token) → usuário atual
 GET    /users          (Bearer + role administrador) → lista todos, ordenado por `employeeCode` asc.
                         Sprint 16, tela "Administração" (aba Usuários)
 POST   /users          (Bearer + role administrador) → cria usuário; `employeeCode` calculado no
-                        backend (max atual + 1, ver docs/DATABASE.md), nunca enviado pelo cliente
-PATCH  /users/:id/role (Bearer + role administrador) → troca o papel
+                        backend (max atual + 1, ver docs/DATABASE.md), nunca enviado pelo cliente.
+                        Login único (2026-08-21): escreve no Intermediador PRIMEIRO (`POST
+                        /organizations/:id/users`, fonte da verdade da senha), sem fila offline —
+                        falha com erro claro se o Intermediador estiver fora, não cria usuário só local
+PATCH  /users/:id/role (Bearer + role administrador) → troca o papel. Se o usuário for central
+                        (`orgUserId` presente), edita lá primeiro também; usuário só local (pré-migração,
+                        ou o admin de fallback do bootstrap) segue editável só localmente
 
 GET    /products/search?query=          (Bearer) → busca textual por nome/SKU, só produtos ativos, até 25
                                          (sem paginação — limite conhecido do V1, ver docs/CHANGELOG.md Sprint 9)
@@ -248,6 +259,24 @@ POST   /terminals/activate                { code, terminalName? } → valida o c
                                            esta resposta) uma importação do catálogo do Bling da
                                            organização, se ela tiver integração conectada — erro (ex: sem
                                            Bling conectado) só loga, nunca falha a ativação
+
+POST   /organizations/:id/users               Login único entre terminais (2026-08-21). TerminalApiKeyGuard
+                                           + confere que o terminal pertence à MESMA organização do `:id`
+                                           (403 se não). { name, email, password, role } → cria um `OrgUser`
+                                           canônico; 409 se já existe alguém com esse e-mail NESTA organização
+                                           (e-mail único por organização, não globalmente — ver docs/DATABASE.md)
+GET    /organizations/:id/users                TerminalApiKeyGuard, mesma checagem de organização → lista,
+                                           ordenado por `employeeCode` asc. Nunca inclui `passwordHash`
+PATCH  /organizations/:id/users/:userId        TerminalApiKeyGuard, mesma checagem de organização →
+                                           { role?, active? } (pelo menos um dos dois), edita
+POST   /organizations/:id/users/verify-login   Chamado pelo `LoginUseCase` de QUALQUER terminal da
+                                           organização — TerminalApiKeyGuard + checagem de organização +
+                                           rate limit próprio (5 tentativas/min, chaveado por terminal+e-mail,
+                                           `VerifyLoginThrottlerGuard`). { email, password } → devolve o
+                                           `OrgUser` (SEM token — cada terminal emite o próprio JWT local) se
+                                           válido E ativo; 401 pros três casos (e-mail não existe, senha
+                                           errada, usuário inativo) com a MESMA mensagem/formato, de propósito
+                                           — nunca vaza qual dos três aconteceu (ver docs/DATABASE.md `OrgUser`)
 
 GET    /integrations/bling/products?since=  chamado pelo pdv-backend (botão "Sincronizar com Bling",
                                            sync automático na ativação, e o poll periódico de estoque —

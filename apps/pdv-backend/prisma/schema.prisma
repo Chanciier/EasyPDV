@@ -66,6 +66,20 @@ model User {
   // usuário ao mesmo tempo), não um lock — mesmo padrão já usado em `email`.
   employeeCode Int      @unique
 
+  // Login único entre terminais (2026-08-21) — este User local passa a ser
+  // espelho/cache do OrgUser canônico no Intermediador (Postgres), casado por
+  // e-mail. `orgUserId` é nulo pra usuário criado só localmente (ex: o admin
+  // padrão do bootstrap quando o Intermediador está fora, ou usuários locais
+  // de terminais já em produção ANTES desta migração — reconciliação manual,
+  // não automática, ver Claude/Projetos/EasyPDV/Decisões e Riscos Abertos.md
+  // no cofre Obsidian). `lastVerifiedCentrallyAt` é null até a primeira
+  // confirmação central bem-sucedida; RefreshTokenUseCase reconsulta o
+  // Intermediador quando essa marca passa de ~1h, pra fechar o acesso de um
+  // usuário desativado centralmente sem esperar o refresh token expirar
+  // inteiro (até 30 dias).
+  orgUserId               String?   @unique
+  lastVerifiedCentrallyAt DateTime?
+
   authSessions AuthSession[]
   cashSessions CashSession[]
 }

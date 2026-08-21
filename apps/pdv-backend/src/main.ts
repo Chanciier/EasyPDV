@@ -6,6 +6,8 @@ import { NestFactory } from "@nestjs/core";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module.js";
 import { PrismaService } from "./prisma/prisma.service.js";
+import { USER_VERIFICATION_GATEWAY } from "./modules/identity/application/ports/user-verification-gateway.port.js";
+import type { UserVerificationGatewayPort } from "./modules/identity/application/ports/user-verification-gateway.port.js";
 
 /**
  * Aplica migrations pendentes contra o DATABASE_URL atual antes de subir o
@@ -41,10 +43,27 @@ function runMigrations(): void {
  * SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD com o mesmo default do seed de dev —
  * troca de senha no primeiro login ainda não existe, risco aberto conhecido
  * (ver Claude/Projetos/EasyPDV/Decisões e Riscos Abertos.md no cofre Obsidian).
+ *
+ * Login único entre terminais (2026-08-21): antes de criar esse admin de
+ * fallback com senha padrão conhecida, pergunta ao Intermediador (via
+ * `userVerificationGateway`) se esta organização já tem um administrador
+ * central — se sim, pula a criação local (o próximo login já resolve
+ * central e espelha localmente, ver LoginUseCase). Na PRÁTICA isso quase
+ * nunca dispara num terminal genuinamente novo (a ativação, que é o que dá
+ * a apiKey necessária pra perguntar, só acontece DEPOIS deste boot — ver
+ * ActivateTerminalUseCase), mas cobre um caso real: tabela `User` zerada
+ * manualmente num terminal que já tinha StoreIdentity (restauração de
+ * backup antigo, debug). `hasCentralAdmin()` nunca lança — `false` em
+ * qualquer caso ambíguo (sem StoreIdentity, rede fora), preservando o
+ * comportamento de hoje como fallback seguro.
  */
-async function ensureAdminUser(prisma: PrismaService): Promise<void> {
+async function ensureAdminUser(prisma: PrismaService, userVerificationGateway: UserVerificationGatewayPort): Promise<void> {
   const existing = await prisma.user.count();
   if (existing > 0) return;
+
+  if (await userVerificationGateway.hasCentralAdmin()) {
+    return;
+  }
 
   const email = process.env.SEED_ADMIN_EMAIL ?? "admin@easypdv.local";
   const password = process.env.SEED_ADMIN_PASSWORD ?? "troque-esta-senha";
@@ -103,7 +122,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
   const prisma = app.get(PrismaService);
-  await ensureAdminUser(prisma);
+  const userVerificationGateway = app.get<UserVerificationGatewayPort>(USER_VERIFICATION_GATEWAY);
+  await ensureAdminUser(prisma, userVerificationGateway);
   await ensureDefaultWarehouse(prisma);
   await ensureDefaultCashRegister(prisma);
   // O server só escuta em 127.0.0.1 — a fronteira de segurança real é essa,

@@ -1,7 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
 import { User } from "../../domain/entities/user.entity.js";
-import type { CreateUserData, UserRepositoryPort } from "../../application/ports/user-repository.port.js";
+import type {
+  CreateUserData,
+  MirrorUserData,
+  UserRepositoryPort,
+} from "../../application/ports/user-repository.port.js";
 import { toDomainUser } from "../mappers/user.mapper.js";
 
 @Injectable()
@@ -41,5 +45,28 @@ export class PrismaUserRepository implements UserRepositoryPort {
   async getMaxEmployeeCode(): Promise<number> {
     const result = await this.prisma.user.aggregate({ _max: { employeeCode: true } });
     return result._max.employeeCode ?? 0;
+  }
+
+  async upsertCentralMirror(email: string, data: MirrorUserData): Promise<User> {
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    const shared = {
+      name: data.name,
+      passwordHash: data.passwordHash,
+      role: data.role,
+      active: data.active,
+      orgUserId: data.orgUserId,
+      lastVerifiedCentrallyAt: new Date(),
+    };
+    if (existing) {
+      const record = await this.prisma.user.update({ where: { id: existing.id }, data: shared });
+      return toDomainUser(record);
+    }
+    const employeeCode = (await this.getMaxEmployeeCode()) + 1;
+    const record = await this.prisma.user.create({ data: { ...shared, email, employeeCode } });
+    return toDomainUser(record);
+  }
+
+  async touchLastVerifiedCentrally(id: string): Promise<void> {
+    await this.prisma.user.update({ where: { id }, data: { lastVerifiedCentrallyAt: new Date() } });
   }
 }

@@ -27,6 +27,47 @@ model Organization {
   erpIntegrations  ErpIntegration[]
   erpSyncMappings  ErpSyncMapping[]
   fiscalDocuments  FiscalDocument[]
+  orgUsers         OrgUser[]
+}
+
+// Mesmos valores de UserRole em apps/pdv-backend/prisma/schema.prisma (enum
+// próprio aqui — schemas/bancos diferentes, sem tipo compartilhado possível
+// entre SQLite e Postgres — mas os NOMES precisam ficar em sincronia, porque
+// o role trafega entre os dois via OrgUserPayload/verify-login, ver
+// packages/shared-validation `userRoleSchema`).
+enum UserRole {
+  operador
+  supervisor
+  gerente
+  administrador
+  proprietario
+  auditor
+  tecnico
+}
+
+// Login único entre terminais (2026-08-21) — usuário CANÔNICO por
+// organização. Cada terminal (SQLite, User local) continua tendo seu próprio
+// espelho/cache, casado por e-mail; este model aqui é a fonte da verdade da
+// senha. `@@unique([organizationId, email])` (não email global): duas
+// organizações diferentes podem ter administradores com o mesmo e-mail sem
+// conflito, cada uma é um cliente EasyPDV independente. `employeeCode`
+// sequencial por organização (mesmo padrão do User local, matrícula exibida
+// em telas/relatórios, não é mecanismo de login).
+model OrgUser {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  email          String
+  passwordHash   String
+  role           UserRole
+  active         Boolean      @default(true)
+  employeeCode   Int
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
 }
 
 model Store {
