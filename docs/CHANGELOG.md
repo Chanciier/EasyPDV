@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### NFC-e rejeitada (762) — correção que evitava pedido duplicado no Bling vazava pro corpo fiscal (2026-08-21)
+Usuário fazendo vendas de teste reais direto no app relatou rejeições sequenciais do Bling ao emitir NFC-e: 717 (indicador de presença — corrigido na Natureza de Operação, painel do Bling), 209 (IE do emitente inválida — dado cadastral do usuário, fora do código, encaminhado pra conferência via SINTEGRA), e por fim **762** ("NFC-e ou NF-e com DANFE Simplificado Tipo 2 com dados de compras (Empenho, Pedido, Contrato)") — essa última, ao contrário das duas primeiras, era bug real do código, não pendência cadastral.
+
+- **Causa**: `numeroPedidoCompra` (`bling-api.client.ts`, `createSalesOrder`) recebia o `saleId` local desde 2026-08-19, especificamente pra evitar que o Bling rejeitasse `POST /pedidos/vendas` por "informações idênticas a última venda salva" em vendas legítimas mas repetitivas (mesmo produto barato, "Consumidor Final", dinheiro, mesmo dia). Só que esse campo é copiado pelo Bling pro grupo fiscal estruturado "dados de compra" (Empenho/Pedido/Contrato) da NFC-e — e a NFC-e simplificada (DANFE Simplificado Tipo 2, formato de venda de balcão) rejeita ter esse grupo preenchido. Ou seja: a correção de uma rejeição (duplicidade) causava outra (762) assim que a emissão de NFC-e foi ligada de verdade.
+- **Corrigido**: trocado `numeroPedidoCompra` por `observacoesInternas` (confirmado no schema de `POST /pedidos/vendas` via `AlexandreBellas/bling-erp-api-js`, cliente de referência já usado nesta sessão) — nota interna do pedido, não aparece no DANFE nem em nenhum campo fiscal estruturado, resolve a mesma duplicidade sem repetir o problema.
+- Achado e corrigido sem precisar tocar em cadastro do Bling — diferente de 717/209, que eram configuração/dado real da conta do usuário.
+- `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes.
+
 ### Cupom fiscal imprime sozinho assim que a NFC-e fica pronta (2026-08-21)
 Pedido do usuário depois de configurar a emissão de NFC-e: "agora eu gostaria que elas fossem impressa no momento da venda". A emissão em si é assíncrona (passa pelo Bling em segundo plano, via `SyncJob` — pode levar de segundos a minutos, ou falhar por config pendente da conta), então "no momento da venda" na prática vira "assim que ficar pronta, sem o operador precisar ir manualmente no Histórico" — que era o único jeito de imprimir o cupom fiscal até agora.
 

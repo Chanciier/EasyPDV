@@ -84,14 +84,23 @@ export interface CreateSalesOrderInput {
   dueDate: string;
   items: CreateSalesOrderItem[];
   /**
-   * `saleId` local — vai em `numeroPedidoCompra` (achado real, 2026-08-19):
-   * o Bling rejeita `POST /pedidos/vendas` com 400 ("Informações idênticas
-   * a última venda salva, altere alguma informação caso deseje prosseguir")
-   * quando um pedido novo bate contato+itens+valor+forma de pagamento+data
-   * de um pedido recente — cenário real de loja pequena (mesmo produto
-   * barato, "Consumidor Final", dinheiro, mesmo dia), não só teste. Um
-   * valor único por pedido nesse campo (que já existe pra guardar referência
-   * externa) evita o falso-positivo de duplicata sem inventar nenhum dado.
+   * `saleId` local — vai em `observacoesInternas` (achado real, 2026-08-19,
+   * CORRIGIDO em 2026-08-21): o Bling rejeita `POST /pedidos/vendas` com 400
+   * ("Informações idênticas a última venda salva, altere alguma informação
+   * caso deseje prosseguir") quando um pedido novo bate contato+itens+valor+
+   * forma de pagamento+data de um pedido recente — cenário real de loja
+   * pequena (mesmo produto barato, "Consumidor Final", dinheiro, mesmo dia),
+   * não só teste. Um valor único por pedido evita o falso-positivo de
+   * duplicata sem inventar nenhum dado.
+   *
+   * Esse valor foi originalmente colocado em `numeroPedidoCompra` — só que
+   * esse campo é copiado pelo Bling pro grupo fiscal "dados de compra"
+   * (Empenho/Pedido/Contrato) da NFC-e, e a NFC-e simplificada (DANFE
+   * Simplificado Tipo 2, usada em venda de balcão) REJEITA ter esse grupo
+   * preenchido — rejeição SEFAZ 762, achado real testando emissão de NFC-e
+   * de verdade (2026-08-21). `observacoesInternas` é só uma nota interna do
+   * pedido (não aparece no DANFE, não é campo fiscal estruturado) — resolve
+   * a duplicidade sem repetir o problema.
    */
   saleId: string;
 }
@@ -289,7 +298,7 @@ export class BlingApiClient {
   async createSalesOrder(accessToken: string, input: CreateSalesOrderInput): Promise<CreateSalesOrderResult> {
     const body = {
       data: input.dueDate,
-      numeroPedidoCompra: input.saleId,
+      observacoesInternas: `Venda PDV ${input.saleId}`,
       contato: { id: input.contatoId },
       // `desconto` só entra quando existe de fato — mandar `{ valor: 0 }` num
       // pedido sem desconto é ruído desnecessário no cadastro do lojista.
