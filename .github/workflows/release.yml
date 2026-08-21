@@ -29,7 +29,16 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # prepare-resources.js já builda pdv-backend/pdv-frontend e gera o
+      # prepare-resources.js só builda pdv-backend/pdv-frontend (o que vai
+      # DENTRO do pacote) — o shell Electron em si (src/main, src/preload)
+      # tem seu próprio tsc, nunca rodado por `exec electron-builder`
+      # diretamente (esse comando não passa pelo hook "pre" que `pnpm run
+      # package` teria). Achado real no primeiro build em ambiente limpo
+      # (2026-08-21): localmente sempre "funcionava" porque dist/ do
+      # electron já existia de builds anteriores nesta máquina.
+      - run: pnpm --filter @easypdv/electron run build
+
+      # prepare-resources.js builda pdv-backend/pdv-frontend e gera o
       # Prisma Client — precisa rodar num runner Windows pra pegar o engine
       # nativo certo (mesma disciplina já usada nos testes manuais locais).
       - run: pnpm --filter @easypdv/electron run prepackage
