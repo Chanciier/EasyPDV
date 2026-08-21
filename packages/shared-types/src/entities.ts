@@ -3,6 +3,7 @@ import type {
   CashSessionStatus,
   FiscalDocumentStatus,
   FiscalDocumentType,
+  PaymentCardBrand,
   PaymentCardType,
   PaymentMethod,
   PaymentStatus,
@@ -188,6 +189,9 @@ export interface Payment {
   // Só preenchido quando method="cartao" (V1 sem TEF real — o operador
   // declara se a maquininha rodou como crédito/débito e em quantas parcelas).
   cardType: PaymentCardType | null;
+  // Bandeira do cartão (2026-08-21) — só preenchido junto de cardType, bate
+  // com as formas de pagamento reais configuradas no Bling.
+  cardBrand: PaymentCardBrand | null;
   installments: number | null;
   status: PaymentStatus;
   authorizationCode: string | null;
@@ -293,6 +297,7 @@ export interface SaleSyncPayloadPayment {
   method: PaymentMethod;
   amount: number;
   cardType: PaymentCardType | null;
+  cardBrand: PaymentCardBrand | null;
   installments: number | null;
 }
 

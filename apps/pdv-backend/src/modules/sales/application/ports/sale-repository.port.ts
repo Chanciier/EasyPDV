@@ -1,4 +1,4 @@
-import type { PaymentCardType, PaymentMethod, SaleStatus } from "@easypdv/shared-types";
+import type { PaymentCardBrand, PaymentCardType, PaymentMethod, SaleStatus } from "@easypdv/shared-types";
 import type { Sale } from "../../domain/entities/sale.entity.js";
 
 export interface StartSaleData {
@@ -19,6 +19,7 @@ export interface RegisterPaymentData {
   method: PaymentMethod;
   amount: number;
   cardType: PaymentCardType | null;
+  cardBrand: PaymentCardBrand | null;
   installments: number | null;
   authorizationCode: string | null;
 }

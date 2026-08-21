@@ -34,15 +34,22 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   dinheiro: 'Dinheiro',
   cartao: 'Cartão',
   pix: 'PIX',
+  vale_troca: 'Vale-Troca',
   outro: 'Outro',
 }
 
-/** Pagamento dividido (2026-08-21) — usado no cupom/recibo pra identificar cada perna (ex: "Cartão (Crédito 3x)"). */
+const BRAND_LABELS: Record<string, string> = {
+  mastercard: 'Mastercard',
+  visa: 'Visa',
+}
+
+/** Pagamento dividido + bandeira (2026-08-21) — usado no cupom/recibo pra identificar cada perna (ex: "Crédito (Mastercard) 3x"). */
 function paymentLegLabel(payment: Payment): string {
   if (!payment.cardType) return PAYMENT_LABELS[payment.method]
   const tipo = payment.cardType === 'credito' ? 'Crédito' : 'Débito'
+  const bandeira = payment.cardBrand ? BRAND_LABELS[payment.cardBrand] : null
   const parcelas = payment.installments && payment.installments > 1 ? ` ${payment.installments}x` : ''
-  return `${PAYMENT_LABELS[payment.method]} (${tipo}${parcelas})`
+  return bandeira ? `${tipo} (${bandeira})${parcelas}` : `${tipo}${parcelas}`
 }
 
 export function SaleView() {

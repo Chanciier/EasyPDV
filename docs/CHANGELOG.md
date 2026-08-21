@@ -1,6 +1,16 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Vale-Troca + bandeira do cartão na tela de pagamento (2026-08-21)
+Pedido direto do usuário, com print das formas de pagamento reais cadastradas no Bling: "Crédito (Mastercard)", "Crédito (Visa)", "Débito (Mastercard)", "Débito (Visa)", "Dinheiro", "Pix", "Vale-Troca". A tela de pagamento precisava bater exatamente com isso.
+
+- **Novo método `vale_troca`** (`PaymentMethod`) e **nova bandeira `PaymentCardBrand`** (`mastercard` \| `visa`, novo campo `Payment.cardBrand`) — aditivo em SQLite, migração nova.
+- **Tela de pagamento redesenhada**: Crédito e Débito viram botões de primeiro nível (não mais um "Cartão" genérico com sub-escolha) — depois de escolher um dos dois, a bandeira é obrigatória antes de dar pra adicionar a perna. 5 botões no total: Dinheiro, Crédito, Débito, Pix, Vale-Troca. "Outro" segue existindo no backend (fallback), só não aparece mais na tela — as 5 formas cobrem tudo que a loja usa de verdade.
+- **Resolução no Bling, achado real testando contra a conta do usuário**: Bling não tem campo estruturado pra bandeira — "Crédito (Mastercard)" e "Crédito (Visa)" são só nomes diferentes de forma de pagamento com o MESMO `tipoPagamento` (3), impossível distinguir só pelo tipo. `resolvePaymentMethodId` agora tenta bater pelo NOME EXATO da forma de pagamento primeiro (confirmado contra a conta real via `GET /formas-pagamentos`: essas 7 formas existem com esses nomes exatos), só cai pro fallback por `tipoPagamento` se o lojista tiver renomeado. `tipoPagamento` 21 pra "Vale-Troca" também confirmado contra a conta real (Bling não documenta um código dedicado — reaproveita o mesmo tipo genérico de "Crediário").
+- Recibo/cupom e Histórico passam a mostrar a bandeira junto do tipo (ex: "Crédito (Mastercard) 3x").
+- Testado de ponta a ponta via API real: pagamento com bandeira registrado e persistido corretamente, payload de sync levando `cardBrand` até o fim, validação rejeitando bandeira fora de pagamento em cartão, vale-troca registrado normalmente. Lógica de resolução no Bling conferida por rastreamento de código contra os 11 formas de pagamento reais da conta (7 relevantes, todas ativas) — sem criar pedido de teste na conta real do usuário.
+- `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes.
+
 ### Pagamento dividido (2026-08-21)
 Pedido do usuário — "para um PDV funcional, falta alguma coisa?" — pagamento parte em dinheiro, parte no cartão, comum no varejo brasileiro, sempre ficou de fora do V1. Planejado em Plan Mode antes de codar (2 agentes Explore + 1 Plan revisando o desenho).
 

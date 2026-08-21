@@ -92,6 +92,7 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
         method: data.method,
         amount: data.amount,
         cardType: data.cardType,
+        cardBrand: data.cardBrand,
         installments: data.installments,
         authorizationCode: data.authorizationCode,
       },
@@ -170,6 +171,7 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
         method: payment.method,
         amount: payment.amount,
         cardType: payment.cardType,
+        cardBrand: payment.cardBrand,
         installments: payment.installments,
       })),
     };

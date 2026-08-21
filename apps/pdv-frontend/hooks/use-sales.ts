@@ -1,6 +1,7 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   FiscalDocument,
+  PaymentCardBrand,
   PaymentCardType,
   PaymentMethod,
   Product,
@@ -111,6 +112,7 @@ export function useRegisterPayment() {
       method: PaymentMethod
       amount: number
       cardType?: PaymentCardType | null
+      cardBrand?: PaymentCardBrand | null
       installments?: number | null
     }) =>
       apiRequest<Sale>(`/sales/${input.saleId}/payments`, {
@@ -119,6 +121,7 @@ export function useRegisterPayment() {
           method: input.method,
           amount: input.amount,
           cardType: input.cardType ?? undefined,
+          cardBrand: input.cardBrand ?? undefined,
           installments: input.installments ?? undefined,
         },
       }),

@@ -21,6 +21,7 @@ export const PaymentMethod = {
   DINHEIRO: "dinheiro",
   CARTAO: "cartao",
   PIX: "pix",
+  VALE_TROCA: "vale_troca",
   OUTRO: "outro",
 } as const;
 export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod];
@@ -32,6 +33,15 @@ export const PaymentCardType = {
   DEBITO: "debito",
 } as const;
 export type PaymentCardType = (typeof PaymentCardType)[keyof typeof PaymentCardType];
+
+// Bandeira do cartão (2026-08-21) — só Mastercard/Visa (as únicas configuradas
+// na conta Bling real do usuário, confirmado via API). Só se aplica quando
+// method="cartao", junto de PaymentCardType.
+export const PaymentCardBrand = {
+  MASTERCARD: "mastercard",
+  VISA: "visa",
+} as const;
+export type PaymentCardBrand = (typeof PaymentCardBrand)[keyof typeof PaymentCardBrand];
 
 export const PaymentStatus = {
   APROVADO: "aprovado",

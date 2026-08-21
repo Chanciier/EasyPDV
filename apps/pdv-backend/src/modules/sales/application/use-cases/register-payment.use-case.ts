@@ -62,6 +62,7 @@ export class RegisterPaymentUseCase {
       method: input.method,
       amount: input.amount,
       cardType: input.cardType ?? null,
+      cardBrand: input.cardBrand ?? null,
       installments: input.installments ?? null,
       authorizationCode: input.authorizationCode ?? null,
     });

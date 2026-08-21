@@ -1,4 +1,4 @@
-import type { PaymentCardType, PaymentMethod, PaymentStatus } from "@easypdv/shared-types";
+import type { PaymentCardBrand, PaymentCardType, PaymentMethod, PaymentStatus } from "@easypdv/shared-types";
 
 export interface PaymentProps {
   id: string;
@@ -6,6 +6,7 @@ export interface PaymentProps {
   method: PaymentMethod;
   amount: number;
   cardType: PaymentCardType | null;
+  cardBrand: PaymentCardBrand | null;
   installments: number | null;
   status: PaymentStatus;
   authorizationCode: string | null;
@@ -18,6 +19,7 @@ export class Payment {
   readonly method: PaymentMethod;
   readonly amount: number;
   readonly cardType: PaymentCardType | null;
+  readonly cardBrand: PaymentCardBrand | null;
   readonly installments: number | null;
   readonly status: PaymentStatus;
   readonly authorizationCode: string | null;
@@ -29,6 +31,7 @@ export class Payment {
     this.method = props.method;
     this.amount = props.amount;
     this.cardType = props.cardType;
+    this.cardBrand = props.cardBrand;
     this.installments = props.installments;
     this.status = props.status;
     this.authorizationCode = props.authorizationCode;

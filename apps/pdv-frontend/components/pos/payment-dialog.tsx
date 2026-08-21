@@ -1,31 +1,58 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Banknote, CreditCard, QrCode, HelpCircle, Trash2 } from 'lucide-react'
-import type { Payment, PaymentCardType, PaymentMethod, Sale } from '@easypdv/shared-types'
+import { Banknote, CreditCard, Gift, QrCode, Trash2, Wallet } from 'lucide-react'
+import type { Payment, PaymentCardBrand, PaymentCardType, PaymentMethod, Sale } from '@easypdv/shared-types'
 import { formatCpf, isValidCpf, onlyDigits } from '@easypdv/shared-validation'
 import { Modal } from './ui/modal'
 import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
 import { useRegisterPayment, useRemovePayment } from '@/hooks/use-sales'
 
-const METHODS: { key: PaymentMethod; label: string; icon: typeof Banknote; num: string }[] = [
+/**
+ * Bandeira do cartão (2026-08-21) — pedido direto do usuário pra bater com
+ * as formas de pagamento reais da loja no Bling ("Crédito (Mastercard)",
+ * "Crédito (Visa)", etc — confirmado via API contra a conta real). Crédito e
+ * Débito viram botões de primeiro nível (não mais um "Cartão" genérico com
+ * sub-escolha) — depois de escolher um dos dois, a bandeira é obrigatória
+ * antes de dar pra adicionar a perna. "Outro" continua existindo no backend
+ * (fallback), só não aparece mais aqui — as 5 formas abaixo cobrem tudo que
+ * a loja realmente usa.
+ */
+type MethodKey = 'dinheiro' | 'credito' | 'debito' | 'pix' | 'vale_troca'
+
+const METHODS: { key: MethodKey; label: string; icon: typeof Banknote; num: string }[] = [
   { key: 'dinheiro', label: 'Dinheiro', icon: Banknote, num: '1' },
-  { key: 'cartao', label: 'Cartão', icon: CreditCard, num: '2' },
-  { key: 'pix', label: 'PIX', icon: QrCode, num: '3' },
-  { key: 'outro', label: 'Outro', icon: HelpCircle, num: '4' },
+  { key: 'credito', label: 'Crédito', icon: CreditCard, num: '2' },
+  { key: 'debito', label: 'Débito', icon: Wallet, num: '3' },
+  { key: 'pix', label: 'PIX', icon: QrCode, num: '4' },
+  { key: 'vale_troca', label: 'Vale-Troca', icon: Gift, num: '5' },
 ]
 
-const CARD_TYPES: { key: PaymentCardType; label: string }[] = [
-  { key: 'credito', label: 'Crédito' },
-  { key: 'debito', label: 'Débito' },
+const BRANDS: { key: PaymentCardBrand; label: string }[] = [
+  { key: 'mastercard', label: 'Mastercard' },
+  { key: 'visa', label: 'Visa' },
 ]
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   dinheiro: 'Dinheiro',
   cartao: 'Cartão',
   pix: 'PIX',
+  vale_troca: 'Vale-Troca',
   outro: 'Outro',
+}
+
+const BRAND_LABELS: Record<PaymentCardBrand, string> = {
+  mastercard: 'Mastercard',
+  visa: 'Visa',
+}
+
+function paymentDisplayLabel(payment: Payment): string {
+  if (!payment.cardType) return PAYMENT_LABELS[payment.method]
+  const tipo = payment.cardType === 'credito' ? 'Crédito' : 'Débito'
+  const bandeira = payment.cardBrand ? BRAND_LABELS[payment.cardBrand] : null
+  const parcelas = payment.installments && payment.installments > 1 ? ` ${payment.installments}x` : ''
+  return bandeira ? `${tipo} (${bandeira})${parcelas}` : `${tipo}${parcelas}`
 }
 
 function describeError(e: unknown, fallback: string) {
@@ -71,14 +98,18 @@ export function PaymentDialog({
   const registerPayment = useRegisterPayment()
   const removePayment = useRemovePayment()
 
-  const [method, setMethod] = useState<PaymentMethod>('dinheiro')
+  const [selectedKey, setSelectedKey] = useState<MethodKey>('dinheiro')
+  const [cardBrand, setCardBrand] = useState<PaymentCardBrand | null>(null)
   const [amount, setAmount] = useState('')
   const [received, setReceived] = useState('')
-  const [cardType, setCardType] = useState<PaymentCardType>('credito')
   const [installments, setInstallments] = useState(1)
   const [cpf, setCpf] = useState('')
   const [addError, setAddError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const isCard = selectedKey === 'credito' || selectedKey === 'debito'
+  const method: PaymentMethod = isCard ? 'cartao' : selectedKey
+  const cardType: PaymentCardType | null = selectedKey === 'credito' ? 'credito' : selectedKey === 'debito' ? 'debito' : null
 
   const total = sale?.totalAmount ?? 0
   const approvedPayments = useMemo(() => (sale?.payments ?? []).filter((p) => p.status === 'aprovado'), [sale?.payments])
@@ -88,13 +119,19 @@ export function PaymentDialog({
 
   useEffect(() => {
     if (open) {
-      setMethod('dinheiro')
-      setCardType('credito')
+      setSelectedKey('dinheiro')
+      setCardBrand(null)
       setInstallments(1)
       setCpf('')
       setAddError(null)
     }
   }, [open])
+
+  // Trocar a forma de pagamento sempre limpa a bandeira escolhida — evita
+  // levar "Mastercard" de um Crédito pra um Débito sem querer.
+  useEffect(() => {
+    setCardBrand(null)
+  }, [selectedKey])
 
   // Reseta os campos da perna atual sempre que o restante mudar (perna
   // adicionada ou removida) — o valor sugerido acompanha o que ainda falta.
@@ -104,8 +141,7 @@ export function PaymentDialog({
     if (open && remaining > 0) setTimeout(() => inputRef.current?.focus(), 50)
   }, [remaining, open])
 
-  const isCash = method === 'dinheiro'
-  const isCard = method === 'cartao'
+  const isCash = selectedKey === 'dinheiro'
   const amountNum = Number(amount.replace(',', '.')) || 0
   const receivedNum = Number(received.replace(',', '.')) || 0
   const appliedAmount = Math.round((isCash ? Math.min(receivedNum, remaining) : amountNum) * 100) / 100
@@ -116,6 +152,7 @@ export function PaymentDialog({
   const canAddLeg =
     !fullyPaid &&
     !registerPayment.isPending &&
+    (!isCard || cardBrand !== null) &&
     appliedAmount > 0 &&
     appliedAmount <= remaining + 0.001 &&
     (isCash ? receivedNum > 0 : amountNum > 0 && amountNum <= remaining + 0.001)
@@ -132,6 +169,7 @@ export function PaymentDialog({
         method,
         amount: appliedAmount,
         cardType: isCard ? cardType : null,
+        cardBrand: isCard ? cardBrand : null,
         installments: isCard ? installments : null,
       })
       const newPayment = updated.payments.find((p) => !sale.payments.some((existing) => existing.id === p.id))
@@ -163,7 +201,7 @@ export function PaymentDialog({
     const onKey = (e: KeyboardEvent) => {
       const found = METHODS.find((m) => m.num === e.key)
       if (found && document.activeElement?.tagName !== 'INPUT') {
-        setMethod(found.key)
+        setSelectedKey(found.key)
       }
       if (e.key === 'Enter') {
         e.preventDefault()
@@ -174,7 +212,7 @@ export function PaymentDialog({
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, method, amount, received, fullyPaid, canAddLeg, canConfirm, cardType, installments])
+  }, [open, selectedKey, cardBrand, amount, received, fullyPaid, canAddLeg, canConfirm, installments])
 
   const quickValues = [remaining, 20, 50, 100, 200].filter((v, i, a) => v > 0 && a.indexOf(v) === i)
 
@@ -230,10 +268,7 @@ export function PaymentDialog({
             <p className="text-sm font-medium">Pagamentos registrados</p>
             {approvedPayments.map((p) => (
               <div key={p.id} className="flex items-center justify-between rounded-lg bg-muted px-3 py-2 text-sm">
-                <span>
-                  {PAYMENT_LABELS[p.method]}
-                  {p.cardType ? ` (${p.cardType === 'credito' ? 'crédito' : 'débito'}${p.installments && p.installments > 1 ? ` ${p.installments}x` : ''})` : ''}
-                </span>
+                <span>{paymentDisplayLabel(p)}</span>
                 <span className="flex items-center gap-3">
                   <span className="font-mono font-medium">{formatBRL(p.amount)}</span>
                   <button
@@ -274,14 +309,14 @@ export function PaymentDialog({
           <>
             <div>
               <p className="mb-2 text-sm font-medium">Forma de pagamento</p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
                 {METHODS.map((m) => {
                   const Icon = m.icon
-                  const active = method === m.key
+                  const active = selectedKey === m.key
                   return (
                     <button
                       key={m.key}
-                      onClick={() => setMethod(m.key)}
+                      onClick={() => setSelectedKey(m.key)}
                       disabled={registerPayment.isPending}
                       className={`flex flex-col items-center gap-1.5 rounded-lg border-2 px-2 py-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                         active
@@ -301,23 +336,26 @@ export function PaymentDialog({
             {isCard && (
               <div className="space-y-3">
                 <div>
-                  <p className="mb-1.5 text-sm font-medium">Tipo</p>
+                  <p className="mb-1.5 text-sm font-medium">Bandeira</p>
                   <div className="grid grid-cols-2 gap-2">
-                    {CARD_TYPES.map((c) => (
+                    {BRANDS.map((b) => (
                       <button
-                        key={c.key}
-                        onClick={() => setCardType(c.key)}
+                        key={b.key}
+                        onClick={() => setCardBrand(b.key)}
                         disabled={registerPayment.isPending}
                         className={`rounded-lg border-2 px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                          cardType === c.key
+                          cardBrand === b.key
                             ? 'border-primary bg-primary/15 text-foreground'
                             : 'border-border bg-card text-muted-foreground hover:border-primary/50'
                         }`}
                       >
-                        {c.label}
+                        {b.label}
                       </button>
                     ))}
                   </div>
+                  {cardBrand === null && (
+                    <p className="mt-1 text-xs text-muted-foreground">Escolha a bandeira pra continuar.</p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="card-amount" className="mb-1.5 block text-sm font-medium">
@@ -376,7 +414,7 @@ export function PaymentDialog({
               </div>
             )}
 
-            {!isCash && !isCard && (
+            {(selectedKey === 'pix' || selectedKey === 'vale_troca') && (
               <div>
                 <label htmlFor="other-amount" className="mb-1.5 block text-sm font-medium">
                   Valor desta perna

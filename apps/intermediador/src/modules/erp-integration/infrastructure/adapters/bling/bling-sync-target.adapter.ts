@@ -63,8 +63,39 @@ const PREFERRED_TIPO_PAGAMENTO: Record<string, number[]> = {
   cartao_debito: [4],
   // "cartao" sem detalhe: crédito é o caso mais comum no balcão.
   cartao: [3, 4],
+  // 21 confirmado empiricamente contra a conta real do usuário (2026-08-21,
+  // GET /formas-pagamentos): é o mesmo tipoPagamento genérico usado por
+  // "Crediário" — Bling não documenta um código dedicado pra vale-troca.
+  // Só um fallback (o nome exato "Vale-Troca" já resolve certo antes disso
+  // rodar, ver expectedBlingDescricao) — numa conta sem essa forma cadastrada
+  // com esse nome exato, pode escolher errado se houver mais de uma forma
+  // com tipoPagamento 21.
+  vale_troca: [21],
   outro: [99],
 };
+
+/**
+ * Bandeira do cartão (2026-08-21) — Bling não tem campo estruturado pra
+ * bandeira: "Crédito (Mastercard)" e "Crédito (Visa)" são só NOMES diferentes
+ * de forma de pagamento com o MESMO tipoPagamento (3) — impossível distinguir
+ * só pelo tipo. Nomes exatos confirmados contra a conta Bling real do usuário
+ * (GET /formas-pagamentos, 2026-08-21): "Dinheiro", "Pix", "Vale-Troca",
+ * "Crédito (Mastercard)", "Crédito (Visa)", "Débito (Mastercard)", "Débito
+ * (Visa)". Se o lojista renomear essas formas no painel, o nome exato para de
+ * bater e cai pro fallback por tipoPagamento (menos preciso, mas não trava a
+ * venda) — ver resolvePaymentMethodFromAccount.
+ */
+function expectedBlingDescricao(method: string, cardType?: string | null, cardBrand?: string | null): string | null {
+  if (method === "dinheiro") return "Dinheiro";
+  if (method === "pix") return "Pix";
+  if (method === "vale_troca") return "Vale-Troca";
+  if (method === "cartao" && cardType && cardBrand) {
+    const tipo = cardType === "credito" ? "Crédito" : cardType === "debito" ? "Débito" : null;
+    const bandeira = cardBrand === "mastercard" ? "Mastercard" : cardBrand === "visa" ? "Visa" : null;
+    if (tipo && bandeira) return `${tipo} (${bandeira})`;
+  }
+  return null;
+}
 
 function computeOrderDiscount(items: { quantidade: number; valor: number }[], totalAmount: number): number {
   const subtotal = items.reduce((sum, item) => sum + item.valor * item.quantidade, 0);
@@ -411,10 +442,18 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     // (antes só usava payload.payments[0], ignorando o resto). Sem nenhuma
     // perna (payload antigo/incompleto), cai num pagamento "outro" cobrindo
     // o total — mesmo fallback de sempre.
-    const paymentsToResolve = payload.payments?.length ? payload.payments : [{ method: "outro" as const, amount: payload.totalAmount, cardType: null }];
+    const paymentsToResolve = payload.payments?.length
+      ? payload.payments
+      : [{ method: "outro" as const, amount: payload.totalAmount, cardType: null, cardBrand: null }];
     const parcelas = [];
     for (const payment of paymentsToResolve) {
-      const formaPagamentoId = await this.resolvePaymentMethodId(accessToken, organizationId, payment.method, payment.cardType);
+      const formaPagamentoId = await this.resolvePaymentMethodId(
+        accessToken,
+        organizationId,
+        payment.method,
+        payment.cardType,
+        payment.cardBrand,
+      );
       parcelas.push({ valor: payment.amount, formaPagamentoId });
     }
 
@@ -619,15 +658,16 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     organizationId: string,
     method: string,
     cardType?: string | null,
+    cardBrand?: string | null,
   ): Promise<number> {
-    const key = cardType ? `${method}_${cardType}` : method;
+    const key = [method, cardType, cardBrand].filter(Boolean).join("_");
 
     const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "payment_method", key);
     if (cached) {
       return Number(cached.externalId);
     }
 
-    const resolved = await this.resolvePaymentMethodFromAccount(accessToken, key, method);
+    const resolved = await this.resolvePaymentMethodFromAccount(accessToken, key, method, cardType, cardBrand);
     if (resolved !== null) {
       await this.erpSyncMappingRepository.upsert({
         organizationId,
@@ -647,6 +687,8 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     accessToken: string,
     key: string,
     method: string,
+    cardType?: string | null,
+    cardBrand?: string | null,
   ): Promise<number | null> {
     let methods;
     try {
@@ -660,6 +702,16 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     const active = methods.filter((m) => m.situacao === undefined || m.situacao === 1);
     if (active.length === 0) {
       return null;
+    }
+
+    // Nome exato primeiro — é a ÚNICA forma de distinguir bandeira (Bling não
+    // tem campo estruturado pra isso, ver expectedBlingDescricao acima).
+    const expectedName = expectedBlingDescricao(method, cardType, cardBrand);
+    if (expectedName) {
+      const exact = active.find((m) => m.descricao === expectedName);
+      if (exact) {
+        return exact.id;
+      }
     }
 
     for (const tipo of PREFERRED_TIPO_PAGAMENTO[key] ?? PREFERRED_TIPO_PAGAMENTO[method] ?? []) {

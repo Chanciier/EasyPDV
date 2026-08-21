@@ -359,12 +359,23 @@ enum PaymentMethod {
   dinheiro
   cartao
   pix
+  vale_troca
   outro
 }
 
 enum PaymentCardType {
   credito
   debito
+}
+
+// Bandeira do cartão (2026-08-21) — pedido direto do usuário pra bater com
+// as formas de pagamento configuradas de verdade no Bling ("Crédito
+// (Mastercard)", "Crédito (Visa)", etc, confirmado via GET /formas-pagamentos
+// na conta real). Só Mastercard/Visa por ora — são as únicas cadastradas;
+// adicionar outra bandeira aqui exige código novo, não é dinâmico ainda.
+enum PaymentCardBrand {
+  mastercard
+  visa
 }
 
 enum PaymentStatus {
@@ -385,6 +396,7 @@ model Payment {
   method            PaymentMethod
   amount            Float
   cardType          PaymentCardType?
+  cardBrand         PaymentCardBrand?
   installments      Int?
   status            PaymentStatus    @default(aprovado)
   authorizationCode String?

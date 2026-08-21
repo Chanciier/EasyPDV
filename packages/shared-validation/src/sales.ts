@@ -23,15 +23,22 @@ export const addSaleItemSchema = z.object({
 // entrada simples pro frontend (um objeto só, campos condicionalmente vazios).
 export const registerPaymentSchema = z
   .object({
-    method: z.enum(["dinheiro", "cartao", "pix", "outro"]),
+    method: z.enum(["dinheiro", "cartao", "pix", "vale_troca", "outro"]),
     amount: z.number().positive(),
     cardType: z.enum(["credito", "debito"]).optional(),
+    // Bandeira do cartão (2026-08-21) — bate com as formas de pagamento reais
+    // configuradas no Bling ("Crédito (Mastercard)", "Crédito (Visa)", etc).
+    cardBrand: z.enum(["mastercard", "visa"]).optional(),
     installments: z.number().int().positive().optional(),
     authorizationCode: z.string().optional(),
   })
   .refine((data) => data.method === "cartao" || data.cardType === undefined, {
     message: "cardType só é válido quando method é 'cartao'",
     path: ["cardType"],
+  })
+  .refine((data) => data.method === "cartao" || data.cardBrand === undefined, {
+    message: "cardBrand só é válido quando method é 'cartao'",
+    path: ["cardBrand"],
   })
   .refine((data) => data.method === "cartao" || data.installments === undefined, {
     message: "installments só é válido quando method é 'cartao'",

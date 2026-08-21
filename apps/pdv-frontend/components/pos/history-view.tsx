@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { Search, Receipt, TrendingUp, Hash, CheckCircle2, Clock3, AlertCircle, Ban, ExternalLink } from 'lucide-react'
-import type { FiscalDocument, PaymentMethod, Sale, UserRole } from '@easypdv/shared-types'
+import type { FiscalDocument, Payment, PaymentMethod, Sale, UserRole } from '@easypdv/shared-types'
 import { formatCpf } from '@easypdv/shared-validation'
 import { formatBRL, normalize } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
@@ -65,7 +65,21 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   dinheiro: 'Dinheiro',
   cartao: 'Cartão',
   pix: 'PIX',
+  vale_troca: 'Vale-Troca',
   outro: 'Outro',
+}
+
+const BRAND_LABELS: Record<string, string> = {
+  mastercard: 'Mastercard',
+  visa: 'Visa',
+}
+
+/** Bandeira do cartão (2026-08-21) — mesmo formato de payment-dialog.tsx/sale-view.tsx. */
+function paymentLabel(payment: Payment): string {
+  if (!payment.cardType) return PAYMENT_LABELS[payment.method]
+  const tipo = payment.cardType === 'credito' ? 'Crédito' : 'Débito'
+  const bandeira = payment.cardBrand ? BRAND_LABELS[payment.cardBrand] : null
+  return bandeira ? `${tipo} (${bandeira})` : tipo
 }
 
 export function HistoryView() {
@@ -122,7 +136,7 @@ export function HistoryView() {
       totalAmount: detail.totalAmount,
       payments: detail.payments
         .filter((p) => p.status === 'aprovado')
-        .map((p) => ({ label: PAYMENT_LABELS[p.method], amount: p.amount })),
+        .map((p) => ({ label: paymentLabel(p), amount: p.amount })),
       fiscal: { documentNumber, accessKey, qrCodeUrl },
       customerDocument: detailCustomer?.document ? formatCpf(detailCustomer.document) : undefined,
     })
@@ -317,7 +331,7 @@ export function HistoryView() {
             </div>
             {detail.payments.map((p) => (
               <div key={p.id} className="flex justify-between text-muted-foreground">
-                <span>{PAYMENT_LABELS[p.method]}</span>
+                <span>{paymentLabel(p)}</span>
                 <span>{formatBRL(p.amount)}</span>
               </div>
             ))}

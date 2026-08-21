@@ -29,6 +29,7 @@ export function toDomainPayment(record: PrismaPayment): Payment {
     method: record.method,
     amount: record.amount,
     cardType: record.cardType,
+    cardBrand: record.cardBrand,
     installments: record.installments,
     status: record.status,
     authorizationCode: record.authorizationCode,

@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { CheckCircle2 } from 'lucide-react'
-import type { Sale, PaymentMethod } from '@easypdv/shared-types'
+import type { Payment, PaymentMethod, Sale } from '@easypdv/shared-types'
 import { Modal } from './ui/modal'
 import { formatBRL } from '@/lib/pos-data'
 
@@ -10,7 +10,21 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   dinheiro: 'Dinheiro',
   cartao: 'Cartão',
   pix: 'PIX',
+  vale_troca: 'Vale-Troca',
   outro: 'Outro',
+}
+
+const BRAND_LABELS: Record<string, string> = {
+  mastercard: 'Mastercard',
+  visa: 'Visa',
+}
+
+/** Bandeira do cartão (2026-08-21) — mesmo formato de payment-dialog.tsx/sale-view.tsx. */
+function paymentLabel(payment: Payment): string {
+  if (!payment.cardType) return PAYMENT_LABELS[payment.method]
+  const tipo = payment.cardType === 'credito' ? 'Crédito' : 'Débito'
+  const bandeira = payment.cardBrand ? BRAND_LABELS[payment.cardBrand] : null
+  return bandeira ? `${tipo} (${bandeira})` : tipo
 }
 
 /**
@@ -92,10 +106,7 @@ export function ReceiptDialog({
               .filter((p) => p.status === 'aprovado')
               .map((p) => (
                 <div key={p.id} className="mt-1 flex justify-between text-muted-foreground">
-                  <span>
-                    {PAYMENT_LABELS[p.method]}
-                    {p.cardType ? ` (${p.cardType === 'credito' ? 'Crédito' : 'Débito'})` : ''}
-                  </span>
+                  <span>{paymentLabel(p)}</span>
                   <span>{formatBRL(p.amount)}</span>
                 </div>
               ))}
