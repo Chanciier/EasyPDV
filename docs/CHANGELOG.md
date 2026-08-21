@@ -1,6 +1,15 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Atualização automática do instalador finalmente publicando (2026-08-21)
+Pedido do usuário: instalador sempre foi compilado e enviado manualmente por chat a cada correção. Planejado antes de codar (2 agentes Explore em paralelo pesquisando arquitetura de auth — pra um pedido irmão de login único — e infraestrutura de update).
+
+- **Achado que reduziu o escopo pra quase zero**: `apps/electron/src/main/auto-update.ts` já existia desde a Sprint 10 (`electron-updater`, checagem no boot + a cada 4h, espera `CashSession` fechar antes de instalar) e `build.publish` (GitHub Releases, `Chanciier/EasyPDV`) já estava configurado no `package.json` — nada disso precisou ser escrito. O gap real: `version` travada em `"0.0.0"` (não comparável por semver) e **nenhum release jamais publicado**, então `checkForUpdates()` sempre achava vazio.
+- Corrigido com: bump pra `1.0.0` (produto já em uso real) + novo `.github/workflows/release.yml`, dispara em push de tag `v*`, roda em `windows-latest` (engine nativo do Prisma certo pro alvo real), `electron-builder --publish always` autenticado só com o `GITHUB_TOKEN` padrão do Actions — repositório é público (`Chanciier/EasyPDV`), sem segredo novo pra configurar.
+- **Por que não Railway** (sugestão original do usuário): Railway hospeda o Intermediador (serviço Linux) — não compila nem roda um app Windows/Electron. GitHub Actions com runner `windows-latest` é o equivalente correto, e reaproveita 100% da configuração `publish: github` que já existia.
+- Fluxo de lançamento novo: testar local como sempre (typecheck/lint/build + boot real) → `git tag vX.Y.Z && git push --tags` → CI builda e publica sozinho → terminais já instalados recebem sozinhos, sem reenvio manual do `.exe`.
+- **Fora de escopo, aceito por ora**: assinatura de código (instalador sem certificado continua disparando o aviso do SmartScreen do Windows).
+
 ### Pedido "Atendido" no Bling + NFC-e sempre emitida + CPF na nota (2026-08-20)
 Pedido direto do usuário: pedidos de venda ficavam parados em "Em aberto" no Bling pra sempre; NFC-e era opt-in (desligada); e não existia caminho pra capturar CPF do cliente. Planejado em Plan Mode (2 agentes Explore + 1 Plan em paralelo) antes de codar, com uma etapa de pesquisa empírica contra o Bling real do usuário antes de automatizar qualquer coisa arriscada.
 

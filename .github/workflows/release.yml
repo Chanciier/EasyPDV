@@ -1,0 +1,39 @@
+name: Release
+
+# Dispara em push de tag "v*" (ex.: v1.0.1) — cria/atualiza o release no
+# GitHub com o instalador Windows, que os terminais já instalados (via
+# apps/electron/src/main/auto-update.ts, checagem a cada 4h/no boot)
+# encontram e aplicam sozinhos. workflow_dispatch existe só pra rodar de
+# novo sem precisar empurrar outra tag (debug/teste).
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # prepare-resources.js já builda pdv-backend/pdv-frontend e gera o
+      # Prisma Client — precisa rodar num runner Windows pra pegar o engine
+      # nativo certo (mesma disciplina já usada nos testes manuais locais).
+      - run: pnpm --filter @easypdv/electron run prepackage
+
+      - run: pnpm --filter @easypdv/electron exec electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
