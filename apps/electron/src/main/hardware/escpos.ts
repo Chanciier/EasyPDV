@@ -47,8 +47,30 @@ function stripAccents(value: string): string {
     .join("");
 }
 
+/**
+ * `toLocaleString("pt-BR", {style:"currency",...})` (formatBRL) insere um
+ * espaço não separável (U+00A0) depois de "R$", não um espaço ASCII comum —
+ * achado em campo (2026-08-25): esse byte (0xA0) cru na impressora vira "á"
+ * na code page CP850 (padrão em térmicas brasileiras), imprimindo "R$á429,99"
+ * em vez de "R$ 429,99". `Buffer.from(str, "ascii")` só usa o byte baixo de
+ * cada char, não troca por "?" nem falha — silenciosamente manda o 0xA0 cru.
+ */
+const UNICODE_SPACE_CODEPOINTS = new Set([
+  0x00a0, // non-breaking space
+  0x2007, // figure space
+  0x202f, // narrow no-break space
+  0x2060, // word joiner
+  0xfeff, // zero-width no-break space (BOM)
+]);
+
+function normalizeSpaces(value: string): string {
+  return Array.from(value)
+    .map((char) => (UNICODE_SPACE_CODEPOINTS.has(char.codePointAt(0) ?? 0) ? " " : char))
+    .join("");
+}
+
 export function text(line: string): Buffer {
-  return Buffer.from(`${stripAccents(line)}\n`, "ascii");
+  return Buffer.from(`${stripAccents(normalizeSpaces(line))}\n`, "ascii");
 }
 
 export function separator(width = 42, char = "-"): Buffer {
