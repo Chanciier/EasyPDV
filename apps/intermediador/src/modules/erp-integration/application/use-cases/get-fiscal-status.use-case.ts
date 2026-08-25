@@ -1,20 +1,21 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import type { FiscalStatusPayload } from "@easypdv/shared-types";
-import {
-  FISCAL_DOCUMENT_REPOSITORY,
-  type FiscalDocumentRepositoryPort,
-} from "../ports/fiscal-document-repository.port.js";
 import { FiscalDocumentNotFoundError } from "../../domain/errors.js";
+import { BlingSyncTargetAdapter } from "../../infrastructure/adapters/bling/bling-sync-target.adapter.js";
 
-/** Consultado pelo PDV local (GET /fiscal/sale/:saleId) pra espelhar o status fiscal no seu próprio FiscalDocument (SQLite). */
+/**
+ * Consultado pelo PDV local (GET /fiscal/sale/:saleId, em polling) pra
+ * espelhar o status fiscal no seu próprio FiscalDocument (SQLite). Reconsulta
+ * o Bling primeiro via `refreshFiscalStatus` (só faz chamada nova se ainda
+ * estiver "pending" — ver comentário lá) pra não devolver pro PDV um status
+ * preso no que foi visto uma única vez no momento do sync.
+ */
 @Injectable()
 export class GetFiscalStatusUseCase {
-  constructor(
-    @Inject(FISCAL_DOCUMENT_REPOSITORY) private readonly fiscalDocumentRepository: FiscalDocumentRepositoryPort,
-  ) {}
+  constructor(private readonly blingSyncTargetAdapter: BlingSyncTargetAdapter) {}
 
   async execute(saleId: string): Promise<FiscalStatusPayload> {
-    const doc = await this.fiscalDocumentRepository.findBySale(saleId);
+    const doc = await this.blingSyncTargetAdapter.refreshFiscalStatus(saleId);
     if (!doc) {
       throw new FiscalDocumentNotFoundError(saleId);
     }

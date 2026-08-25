@@ -497,6 +497,42 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * Decisões e Riscos Abertos; erro fica visível via GET /fiscal/sale/:id,
    * sem retry automático nesta sprint.
    */
+  /**
+   * Reconsulta a NFC-e no Bling quando o status local ainda está "pending" —
+   * `ensureFiscalDocument` só checa UMA vez, logo depois de `sendNfce`
+   * (fire-and-forget: transmite pra SEFAZ mas não espera a autorização
+   * sair). Sem isso, `GET /fiscal/sale/:saleId` (consultado pelo PDV em
+   * polling, ver GetFiscalStatusUseCase) ficava devolvendo pra sempre o
+   * mesmo "pending" desatualizado, mesmo com a NFC-e já autorizada de
+   * verdade no Bling segundos/minutos depois — bug real de produção
+   * (2026-08-25): "nota autorizada, porém não impressa" (a impressão
+   * automática do PDV nunca via o status virar "issued"). Se já resolveu
+   * (issued/error/cancelled) ou não existe, não faz nenhuma chamada nova —
+   * só "pending" vale a pena reconsultar. Falha aqui nunca propaga: pior
+   * caso é continuar mostrando o status antigo até a próxima tentativa.
+   */
+  async refreshFiscalStatus(saleId: string): Promise<FiscalDocument | null> {
+    const doc = await this.fiscalDocumentRepository.findBySale(saleId);
+    if (!doc || doc.status !== "pending") {
+      return doc;
+    }
+
+    try {
+      const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+      if (!integration) {
+        return doc;
+      }
+      const accessToken = await this.tokenProvider.getValidAccessToken(integration);
+      const details = await this.blingApiClient.findNfce(accessToken, Number(doc.externalId));
+      await this.updateFiscalDocumentFromBling(doc, details);
+      return this.fiscalDocumentRepository.findBySale(saleId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Não foi possível reconsultar status da NFC-e (venda ${saleId}) no Bling: ${message}`);
+      return doc;
+    }
+  }
+
   private async ensureFiscalDocument(
     accessToken: string,
     organizationId: string,
