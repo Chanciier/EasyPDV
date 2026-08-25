@@ -7,6 +7,7 @@ import {
   Package,
   Receipt,
   Users,
+  Award,
   ScanBarcode,
   Lock,
   Unlock,
@@ -30,6 +31,7 @@ import { CashView } from './cash-view'
 import { ProductsView } from './products-view'
 import { HistoryView } from './history-view'
 import { CustomersView } from './customers-view'
+import { ClubeView } from './clube-view'
 import { AuditView } from './audit-view'
 import { ReportsView } from './reports-view'
 import { AdminView } from './admin-view'
@@ -43,6 +45,7 @@ const NAV = [
   { key: 'produtos', label: 'Produtos', icon: Package, hint: 'F7' },
   { key: 'historico', label: 'Histórico', icon: Receipt, hint: 'F8' },
   { key: 'clientes', label: 'Clientes', icon: Users, hint: 'F9' },
+  { key: 'clube', label: 'Clube', icon: Award, hint: '' },
 ] as const
 
 const AUDIT_NAV = { key: 'auditoria', label: 'Auditoria', icon: ShieldCheck, hint: 'F2' } as const
@@ -138,15 +141,17 @@ export function POSShell() {
               >
                 <Icon className="size-4.5 shrink-0" />
                 <span className="flex-1 text-left">{item.label}</span>
-                <kbd
-                  className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${
-                    active
-                      ? 'bg-sidebar-primary-foreground/15 text-sidebar-primary-foreground'
-                      : 'bg-sidebar-accent text-sidebar-foreground/60'
-                  }`}
-                >
-                  {item.hint}
-                </kbd>
+                {item.hint && (
+                  <kbd
+                    className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${
+                      active
+                        ? 'bg-sidebar-primary-foreground/15 text-sidebar-primary-foreground'
+                        : 'bg-sidebar-accent text-sidebar-foreground/60'
+                    }`}
+                  >
+                    {item.hint}
+                  </kbd>
+                )}
               </button>
             )
           })}
@@ -222,6 +227,7 @@ export function POSShell() {
           {view === 'produtos' && <ProductsView />}
           {view === 'historico' && <HistoryView />}
           {view === 'clientes' && <CustomersView />}
+          {view === 'clube' && <ClubeView />}
           {view === 'relatorios' && canSeeReports && <ReportsView />}
           {view === 'auditoria' && canSeeAudit && <AuditView />}
           {view === 'administracao' && canSeeAdmin && <AdminView />}

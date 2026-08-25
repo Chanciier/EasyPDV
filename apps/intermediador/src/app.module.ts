@@ -5,6 +5,7 @@ import { APP_FILTER } from "@nestjs/core";
 import { ScheduleModule } from "@nestjs/schedule";
 import { LoggerModule } from "nestjs-pino";
 import { DomainExceptionFilter } from "./common/filters/domain-exception.filter.js";
+import { ClubModule } from "./modules/club/club.module.js";
 import { ErpIntegrationModule } from "./modules/erp-integration/erp-integration.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { OrganizationsModule } from "./modules/organizations/organizations.module.js";
@@ -30,6 +31,7 @@ import { PrismaModule } from "./prisma/prisma.module.js";
     HealthModule,
     OrganizationsModule,
     ErpIntegrationModule,
+    ClubModule,
     SyncModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],

@@ -231,6 +231,13 @@ export interface Customer {
   email: string | null;
 }
 
+/** Clube Saldão — vem sempre do Bling via Intermediador, nunca do `Customer` local (fontes de verdade separadas de propósito). */
+export interface ClubMember {
+  document: string;
+  name: string;
+  validUntil: string | null;
+}
+
 // Outbox local (PDV, SQLite) — fila de sincronização com o Intermediador.
 export interface SyncOutboxEntry {
   id: string;

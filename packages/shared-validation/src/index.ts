@@ -1,6 +1,7 @@
 export * from "./auth.js";
 export * from "./cash.js";
 export * from "./catalog.js";
+export * from "./club.js";
 export * from "./customers.js";
 export * from "./document.js";
 export * from "./inventory.js";

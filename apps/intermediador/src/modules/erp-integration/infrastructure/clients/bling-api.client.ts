@@ -20,6 +20,16 @@ export interface BlingContact {
   nome: string;
   /** CPF/CNPJ do contato — confirmado contra a API real (2026-08-19), campo `numeroDocumento` (não `documento`/`cpf`, que eram só candidatos). */
   numeroDocumento?: string;
+  /** Só vem em `GET /contatos/{id}` (detalhe) — a listagem/busca NÃO traz esse campo. Array — um contato pode ter vários tipos simultâneos (ex.: "Cliente" + "Clube Saldão"). */
+  tiposContato?: { id: number; descricao: string }[];
+  /** Campos abaixo só vêm no detalhe (`GET /contatos/{id}`) — necessários pra reconstruir o corpo de um `PUT /contatos/{id}` sem perder dado (ver `updateContact`). */
+  tipo?: "F" | "J";
+  situacao?: string;
+}
+
+export interface BlingContactType {
+  id: number;
+  descricao: string;
 }
 
 /**
@@ -258,6 +268,17 @@ export class BlingApiClient {
     });
   }
 
+  /**
+   * `?idTipoContato=` filtra de verdade no servidor (confirmado ao vivo,
+   * 2026-08-25) — cuidado: `?tipoContato=` (sem "id" no nome do parâmetro)
+   * NÃO filtra, devolve a lista inteira sem aplicar nada. Usado pra listar
+   * os membros do Clube Saldão (contatos com esse tipo).
+   */
+  async listContactsByTipo(accessToken: string, tipoContatoId: number): Promise<BlingContact[]> {
+    const result = await this.request<BlingListEnvelope<BlingContact>>(accessToken, "GET", `/contatos?idTipoContato=${tipoContatoId}`);
+    return result.data ?? [];
+  }
+
   async findContactByName(accessToken: string, nome: string): Promise<BlingContact | null> {
     const result = await this.request<BlingListEnvelope<BlingContact>>(accessToken, "GET", `/contatos?pesquisa=${encodeURIComponent(nome)}`);
     return result.data?.find((contact) => contact.nome === nome) ?? result.data?.[0] ?? null;
@@ -288,6 +309,40 @@ export class BlingApiClient {
       throw new Error(`Bling não retornou o contato criado: ${JSON.stringify(result)}`);
     }
     return result.data;
+  }
+
+  /** `GET /contatos/{id}` — detalhe completo, único jeito de ler `tiposContato` (a listagem/busca não traz esse campo). Usado antes de `updateContact` pra montar o corpo do PUT sem perder dado. */
+  async getContactById(accessToken: string, id: number): Promise<BlingContact> {
+    const result = await this.request<BlingItemEnvelope<BlingContact>>(accessToken, "GET", `/contatos/${id}`);
+    if (!result.data) {
+      throw new Error(`Bling não retornou o contato ${id}: ${JSON.stringify(result)}`);
+    }
+    return result.data;
+  }
+
+  /** `GET /contatos/tipos` — lista os tipos de contato cadastrados na conta (ex.: "Cliente", "Fornecedor", "Clube Saldão"). Ids são específicos da conta — nunca hardcoded, sempre resolvido por nome e cacheado (ver `resolveClubTipoContatoId` em BlingSyncTargetAdapter). */
+  async listContactTypes(accessToken: string): Promise<BlingContactType[]> {
+    const result = await this.request<BlingListEnvelope<BlingContactType>>(accessToken, "GET", "/contatos/tipos");
+    return result.data ?? [];
+  }
+
+  /**
+   * `PUT /contatos/{id}` — substituição de recurso, EXIGE `nome`+`tipo`+`situacao`
+   * no corpo (confirmado ao vivo, 2026-08-25: sem `tipo` o Bling rejeita com 400
+   * "O tipo da pessoa é um campo obrigatório") mas NÃO apaga os demais campos
+   * do contato que não forem enviados (endereço, dados adicionais etc. ficam
+   * intactos) — testado contra um contato real, incluindo mesclar/remover
+   * `tiposContato` preservando outros tipos que o contato já tinha. Por isso
+   * o chamador só precisa buscar o contato atual (`getContactById`) pra pegar
+   * `nome`/`tipo`/`tiposContato` corretos antes de montar o PUT — não precisa
+   * reenviar o objeto inteiro. Devolve 204 sem corpo.
+   */
+  async updateContact(
+    accessToken: string,
+    id: number,
+    body: { nome: string; tipo: "F" | "J"; tiposContato: { id: number }[]; numeroDocumento?: string },
+  ): Promise<void> {
+    await this.request<void>(accessToken, "PUT", `/contatos/${id}`, { ...body, situacao: "A" });
   }
 
   /** `GET /situacoes/modulos/{idModulo}` — lista as situações configuradas na conta pro módulo de Pedidos de Venda. */

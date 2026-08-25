@@ -25,6 +25,7 @@ type View =
   | 'produtos'
   | 'historico'
   | 'clientes'
+  | 'clube'
   | 'auditoria'
   | 'relatorios'
   | 'administracao'

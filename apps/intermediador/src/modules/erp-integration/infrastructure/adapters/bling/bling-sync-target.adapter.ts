@@ -1,6 +1,12 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { SaleSyncPayload, SaleVoidSyncPayload } from "@easypdv/shared-types";
+import {
+  CLUB_MEMBERSHIP_REPOSITORY,
+  type ClubMembershipRepositoryPort,
+} from "../../../../club/application/ports/club-membership-repository.port.js";
+import { ClubMemberNotFoundError, ClubTipoContatoNotFoundError } from "../../../../club/domain/errors.js";
+import type { ClubMemberSummary } from "../../../../club/domain/entities/club-member-summary.js";
 import type { SyncTargetInput, SyncTargetPort } from "../../../../sync/application/ports/sync-target.port.js";
 import type { ErpProviderCode } from "../../../domain/entities/erp-integration.entity.js";
 import { ErpIntegrationNotFoundError } from "../../../domain/errors.js";
@@ -154,6 +160,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     @Inject(ERP_INTEGRATION_REPOSITORY) private readonly erpIntegrationRepository: ErpIntegrationRepositoryPort,
     @Inject(ERP_SYNC_MAPPING_REPOSITORY) private readonly erpSyncMappingRepository: ErpSyncMappingRepositoryPort,
     @Inject(FISCAL_DOCUMENT_REPOSITORY) private readonly fiscalDocumentRepository: FiscalDocumentRepositoryPort,
+    @Inject(CLUB_MEMBERSHIP_REPOSITORY) private readonly clubMembershipRepository: ClubMembershipRepositoryPort,
     private readonly tokenProvider: BlingTokenProviderService,
     private readonly blingApiClient: BlingApiClient,
     private readonly configService: ConfigService,
@@ -320,6 +327,137 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       externalId: String(atendido.id),
     });
     return atendido.id;
+  }
+
+  /**
+   * Resolve o id do tipo de contato "Clube Saldão" nesta conta — NUNCA
+   * hardcoded (é específico da conta, mesmo padrão de `resolveAtendidoSituacaoId`
+   * acima). Confirmado ao vivo, 2026-08-25: id `14584712737` só nesta conta.
+   */
+  private async resolveClubTipoContatoId(accessToken: string, organizationId: string): Promise<number> {
+    const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "contact_type", "clube_saldao");
+    if (cached) {
+      return Number(cached.externalId);
+    }
+
+    const tipos = await this.blingApiClient.listContactTypes(accessToken);
+    const clube = tipos.find((t) => t.descricao === "Clube Saldão");
+    if (!clube) {
+      throw new ClubTipoContatoNotFoundError();
+    }
+
+    await this.erpSyncMappingRepository.upsert({
+      organizationId,
+      provider: PROVIDER,
+      localEntityType: "contact_type",
+      localEntityId: "clube_saldao",
+      externalId: String(clube.id),
+    });
+    return clube.id;
+  }
+
+  /**
+   * Checagem usada na hora da venda (chamador trata falha como "fail-open",
+   * nunca bloqueia a venda) — só lê o cache local (`ClubMembership`), nunca
+   * chama o Bling: o cache já é a fonte da verdade de validade, e o rate
+   * limit do Bling (3 req/s) não combina com "checar em toda venda com CPF".
+   */
+  async checkClubMembership(organizationId: string, document: string): Promise<boolean> {
+    const membership = await this.clubMembershipRepository.findByCpf(organizationId, PROVIDER, document);
+    return !!membership && membership.isValid;
+  }
+
+  /**
+   * Lista ao vivo do Bling (fonte da verdade de "é do clube", requisito do
+   * usuário — "só serão exibidos como clube aqueles que estão com esse tipo
+   * de contato") — sem cache local pra listagem em si, só junta a validade
+   * (`ClubMembership`) por CPF depois de ler os contatos.
+   */
+  async listClubMembers(organizationId: string): Promise<ClubMemberSummary[]> {
+    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+    if (!integration) {
+      throw new ErpIntegrationNotFoundError(organizationId);
+    }
+    const accessToken = await this.tokenProvider.getValidAccessToken(integration);
+    const clubTipoId = await this.resolveClubTipoContatoId(accessToken, organizationId);
+    const contacts = await this.blingApiClient.listContactsByTipo(accessToken, clubTipoId);
+
+    const summaries: ClubMemberSummary[] = [];
+    for (const contact of contacts) {
+      if (!contact.numeroDocumento) continue; // clube exige CPF - contato sem documento não é rastreável aqui
+      const membership = await this.clubMembershipRepository.findByCpf(organizationId, PROVIDER, contact.numeroDocumento);
+      summaries.push({
+        document: contact.numeroDocumento,
+        name: contact.nome,
+        validUntil: membership ? membership.validUntil.toISOString() : null,
+      });
+    }
+    return summaries;
+  }
+
+  /**
+   * Adiciona alguém ao clube: reaproveita `resolveContactByCpf` (mesmo cache
+   * por CPF do fluxo "CPF na nota", evita duplicar contato/corrida — ver
+   * docblock daquele método) pra achar ou criar o contato, depois sempre
+   * atualiza o nome pro informado e mescla a tag "Clube Saldão" em cima do
+   * `tiposContato` atual (nunca sobrescreve outros tipos que já tinha).
+   */
+  async addClubMember(organizationId: string, name: string, document: string, validUntil: Date): Promise<ClubMemberSummary> {
+    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+    if (!integration) {
+      throw new ErpIntegrationNotFoundError(organizationId);
+    }
+    const accessToken = await this.tokenProvider.getValidAccessToken(integration);
+    const clubTipoId = await this.resolveClubTipoContatoId(accessToken, organizationId);
+    const contactId = await this.resolveContactByCpf(accessToken, organizationId, document, name);
+
+    const contact = await this.blingApiClient.getContactById(accessToken, contactId);
+    const currentTipoIds = (contact.tiposContato ?? []).map((t) => ({ id: t.id }));
+    const hasClubTag = currentTipoIds.some((t) => t.id === clubTipoId);
+    await this.blingApiClient.updateContact(accessToken, contactId, {
+      nome: name,
+      tipo: contact.tipo ?? "F",
+      tiposContato: hasClubTag ? currentTipoIds : [...currentTipoIds, { id: clubTipoId }],
+      numeroDocumento: document,
+    });
+
+    const membership = await this.clubMembershipRepository.upsert({
+      organizationId,
+      provider: PROVIDER,
+      customerCpf: document,
+      validUntil,
+    });
+    return { document, name, validUntil: membership.validUntil.toISOString() };
+  }
+
+  /**
+   * Remove do clube: tira só a tag "Clube Saldão" de `tiposContato` (mantém
+   * as demais que o contato tiver) e apaga a linha local de validade. É o
+   * único caminho pra cancelar OU renovar (validade não é editável — ver
+   * "Planejamento - Clube Saldão.md" seção 5.4/5.5 no cofre Obsidian).
+   */
+  async removeClubMember(organizationId: string, document: string): Promise<void> {
+    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+    if (!integration) {
+      throw new ErpIntegrationNotFoundError(organizationId);
+    }
+    const accessToken = await this.tokenProvider.getValidAccessToken(integration);
+    const clubTipoId = await this.resolveClubTipoContatoId(accessToken, organizationId);
+    const contact = await this.blingApiClient.findContactByDocument(accessToken, document);
+    if (!contact) {
+      throw new ClubMemberNotFoundError(document);
+    }
+
+    const full = await this.blingApiClient.getContactById(accessToken, contact.id);
+    const remainingTipoIds = (full.tiposContato ?? []).filter((t) => t.id !== clubTipoId).map((t) => ({ id: t.id }));
+    await this.blingApiClient.updateContact(accessToken, contact.id, {
+      nome: full.nome,
+      tipo: full.tipo ?? "F",
+      tiposContato: remainingTipoIds,
+      numeroDocumento: document,
+    });
+
+    await this.clubMembershipRepository.delete(organizationId, PROVIDER, document);
   }
 
   /**

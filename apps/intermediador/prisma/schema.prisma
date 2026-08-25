@@ -28,6 +28,7 @@ model Organization {
   erpSyncMappings  ErpSyncMapping[]
   fiscalDocuments  FiscalDocument[]
   orgUsers         OrgUser[]
+  clubMemberships  ClubMembership[]
 }
 
 // Mesmos valores de UserRole em apps/pdv-backend/prisma/schema.prisma (enum
@@ -217,6 +218,26 @@ model FiscalDocument {
 
   @@unique([organizationId, provider, saleId])
   @@index([saleId])
+}
+
+// Cache local de validade do Clube Saldão — a lista de membros em si sempre
+// vem ao vivo do Bling (contato com o tipo de contato "Clube Saldão", fonte
+// da verdade), essa tabela só existe pra checar elegibilidade rápido na hora
+// da venda sem depender do Bling (rate limit 3 req/s) nem guardar a validade
+// lá (Bling não tem campo nativo pra isso). Ver Planejamento - Clube Saldão.md
+// no cofre Obsidian.
+model ClubMembership {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  provider       ErpProvider  @default(bling)
+  customerCpf    String
+  validUntil     DateTime
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, provider, customerCpf])
+  @@index([organizationId, validUntil])
 }
 
 enum SyncStatus {

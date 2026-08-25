@@ -6,6 +6,7 @@ import { LoggerModule } from "nestjs-pino";
 import { DomainExceptionFilter } from "./common/filters/domain-exception.filter.js";
 import { AuditModule } from "./modules/audit/audit.module.js";
 import { CatalogModule } from "./modules/catalog/catalog.module.js";
+import { ClubModule } from "./modules/club/club.module.js";
 import { CustomersModule } from "./modules/customers/customers.module.js";
 import { FiscalModule } from "./modules/fiscal/fiscal.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
@@ -40,6 +41,7 @@ import { PrismaModule } from "./prisma/prisma.module.js";
     ReportingModule,
     RealtimeModule,
     CustomersModule,
+    ClubModule,
     // Ver docs/MODULES.md para a lista completa de módulos.
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],

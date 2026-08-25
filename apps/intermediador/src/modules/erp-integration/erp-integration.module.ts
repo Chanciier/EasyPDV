@@ -10,9 +10,11 @@ import { BlingTokenProviderService } from "./infrastructure/clients/bling-token-
 import { PrismaErpIntegrationRepository } from "./infrastructure/repositories/prisma-erp-integration.repository.js";
 import { PrismaErpSyncMappingRepository } from "./infrastructure/repositories/prisma-erp-sync-mapping.repository.js";
 import { PrismaFiscalDocumentRepository } from "./infrastructure/repositories/prisma-fiscal-document.repository.js";
+import { PrismaClubMembershipRepository } from "../club/infrastructure/repositories/prisma-club-membership.repository.js";
 import { ERP_INTEGRATION_REPOSITORY } from "./application/ports/erp-integration-repository.port.js";
 import { ERP_SYNC_MAPPING_REPOSITORY } from "./application/ports/erp-sync-mapping-repository.port.js";
 import { FISCAL_DOCUMENT_REPOSITORY } from "./application/ports/fiscal-document-repository.port.js";
+import { CLUB_MEMBERSHIP_REPOSITORY } from "../club/application/ports/club-membership-repository.port.js";
 import { ConnectBlingUseCase } from "./application/use-cases/connect-bling.use-case.js";
 import { HandleBlingCallbackUseCase } from "./application/use-cases/handle-bling-callback.use-case.js";
 import { GetBlingConnectionStatusUseCase } from "./application/use-cases/get-bling-connection-status.use-case.js";
@@ -40,6 +42,7 @@ import { ListBlingProductsUseCase } from "./application/use-cases/list-bling-pro
     { provide: ERP_INTEGRATION_REPOSITORY, useClass: PrismaErpIntegrationRepository },
     { provide: ERP_SYNC_MAPPING_REPOSITORY, useClass: PrismaErpSyncMappingRepository },
     { provide: FISCAL_DOCUMENT_REPOSITORY, useClass: PrismaFiscalDocumentRepository },
+    { provide: CLUB_MEMBERSHIP_REPOSITORY, useClass: PrismaClubMembershipRepository },
   ],
   exports: [BlingSyncTargetAdapter],
 })
