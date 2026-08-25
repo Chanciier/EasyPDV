@@ -498,22 +498,27 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * sem retry automático nesta sprint.
    */
   /**
-   * Reconsulta a NFC-e no Bling quando o status local ainda está "pending" —
-   * `ensureFiscalDocument` só checa UMA vez, logo depois de `sendNfce`
-   * (fire-and-forget: transmite pra SEFAZ mas não espera a autorização
-   * sair). Sem isso, `GET /fiscal/sale/:saleId` (consultado pelo PDV em
-   * polling, ver GetFiscalStatusUseCase) ficava devolvendo pra sempre o
-   * mesmo "pending" desatualizado, mesmo com a NFC-e já autorizada de
-   * verdade no Bling segundos/minutos depois — bug real de produção
-   * (2026-08-25): "nota autorizada, porém não impressa" (a impressão
-   * automática do PDV nunca via o status virar "issued"). Se já resolveu
-   * (issued/error/cancelled) ou não existe, não faz nenhuma chamada nova —
-   * só "pending" vale a pena reconsultar. Falha aqui nunca propaga: pior
-   * caso é continuar mostrando o status antigo até a próxima tentativa.
+   * Reconsulta a NFC-e no Bling quando o status local ainda está "pending",
+   * OU quando já está "issued" mas sem `qrCodeUrl` (documento incompleto —
+   * ver bug do link de XML corrigido em `BlingApiClient.fetchQrCodeUrl`,
+   * 2026-08-25: notas emitidas ANTES dessa correção ficaram "issued" pra
+   * sempre com qrCodeUrl null, porque `ensureFiscalDocument` só roda uma vez
+   * por venda; sem reconsultar essas também, ficariam travadas mesmo com o
+   * bug de extração já corrigido). `ensureFiscalDocument` só checa UMA vez,
+   * logo depois de `sendNfce` (fire-and-forget: transmite pra SEFAZ mas não
+   * espera a autorização sair). Sem isso, `GET /fiscal/sale/:saleId`
+   * (consultado pelo PDV em polling, ver GetFiscalStatusUseCase) ficava
+   * devolvendo pra sempre o mesmo status desatualizado/incompleto — bug real
+   * de produção (2026-08-25): "nota autorizada, porém não impressa" (o guard
+   * do PDV exige documentNumber+accessKey+qrCodeUrl todos presentes antes de
+   * imprimir). "error"/"cancelled" nunca reconsulta — já é final. Falha aqui
+   * nunca propaga: pior caso é continuar mostrando o status antigo até a
+   * próxima tentativa.
    */
   async refreshFiscalStatus(saleId: string): Promise<FiscalDocument | null> {
     const doc = await this.fiscalDocumentRepository.findBySale(saleId);
-    if (!doc || doc.status !== "pending") {
+    const needsRefresh = doc && (doc.status === "pending" || (doc.status === "issued" && !doc.qrCodeUrl));
+    if (!doc || !needsRefresh) {
       return doc;
     }
 

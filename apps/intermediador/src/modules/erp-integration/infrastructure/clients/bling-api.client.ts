@@ -372,10 +372,17 @@ export class BlingApiClient {
    * Sprint 14: só `chaveAcesso`/`xml`/`linkDanfe`/`linkPDF`) — mas o XML
    * autorizado que o Bling devolve já traz a tag `<infNFeSupl><qrCode>`
    * (padrão nacional NFC-e, o próprio conteúdo pronto pra virar QR code,
-   * gerado pela SEFAZ na autorização). Extraído daqui em vez de reconstruído
-   * na mão a partir de UF+chave — cada estado tem seu próprio host de
-   * consulta, montar errado geraria um QR code que não abre a nota certa
-   * num cupom fiscal de verdade.
+   * gerado pela SEFAZ na autorização).
+   *
+   * CORRIGIDO (2026-08-25, achado contra uma NFC-e real autorizada): o campo
+   * `xml` de `GET /nfce/{id}` **não é o XML** — é uma URL pra baixá-lo
+   * (`https://www.bling.com.br/relatorios/nfe.xml.php?chaveAcesso=...&signature=...`,
+   * ~180 caracteres). Tentar extrair `<qrCode>` direto dessa string sempre
+   * falhava silenciosamente (nunca continha a tag), deixando `qrCodeUrl` null
+   * mesmo com a nota já autorizada — o PDV nunca imprimia a via fiscal porque
+   * seu guard exige documentNumber+accessKey+qrCodeUrl todos presentes. Agora
+   * baixa esse link (autenticado pela própria assinatura na URL, sem precisar
+   * do token do Bling) e extrai a tag do XML de verdade.
    */
   async findNfce(accessToken: string, nfceId: number): Promise<NfceDetails> {
     const result = await this.request<
@@ -386,8 +393,27 @@ export class BlingApiClient {
       numero: result.data?.numero ?? null,
       chaveAcesso: result.data?.chaveAcesso ?? null,
       linkDanfe: result.data?.linkDanfe ?? null,
-      qrCodeUrl: extractQrCodeUrl(result.data?.xml),
+      qrCodeUrl: await this.fetchQrCodeUrl(result.data?.xml),
     };
+  }
+
+  private async fetchQrCodeUrl(xmlLink: string | undefined): Promise<string | null> {
+    if (!xmlLink) {
+      return null;
+    }
+    try {
+      const response = await fetch(xmlLink);
+      if (!response.ok) {
+        this.logger.warn(`Download do XML da NFC-e falhou (HTTP ${response.status}): ${xmlLink}`);
+        return null;
+      }
+      const xml = await response.text();
+      return extractQrCodeUrl(xml);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Não foi possível baixar o XML da NFC-e pra extrair o QR code: ${message}`);
+      return null;
+    }
   }
 
   private async request<T>(accessToken: string, method: string, path: string, body?: unknown, attempt = 1): Promise<T> {
