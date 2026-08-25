@@ -1,6 +1,19 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Impressão fiscal — três bugs reais encontrados e corrigidos em cadeia (2026-08-25)
+Usuário reportou "nota autorizada, porém não impressa" num terminal novo (App-Tech POS-80C). Investigação achou três causas independentes, cada uma corrigida e verificada contra dados reais antes de seguir pra próxima:
+
+- **Listagem de impressoras dependia de `Get-Printer` (CIM/WMI)** — quebra com `CimJob_BrokenCimSession` em máquinas com o provedor CIM de impressão corrompido (bug do Windows, independente do Spooler estar rodando), deixando o dropdown de impressora sempre vazio, sem erro visível. Trocado por `System.Drawing.Printing.PrinterSettings.InstalledPrinters` (winspool), que não depende de CIM. v1.4.1.
+- **`toLocaleString('pt-BR', {style:'currency'})` insere espaço não separável (U+00A0)** depois de "R$", não espaço ASCII — o byte cru (0xA0) virava "á" na code page CP850 da térmica, saindo "R$á429,99" no cupom. `text()` (escpos.ts) agora normaliza esse e outros espaços Unicode "invisíveis" pra espaço comum antes de virar bytes. v1.4.2.
+- **Impressão fiscal automática parava de escutar ao trocar de aba**: o polling que espera a NFC-e ficar "issued" morava em `useState`/`useEffect` dentro de `SaleView` — navegar pra Histórico/Clientes/etc. antes da nota terminar de emitir desmontava a tela e matava o polling silenciosamente. Movido pra um store fora do componente (`lib/fiscal-print-store.ts`) + um watcher sem UI (`fiscal-print-watcher.tsx`) montado direto em `pos-shell.tsx`, fora do switch de views — sobrevive a qualquer troca de aba. v1.4.3.
+- **Intermediador só checava o status da NFC-e no Bling UMA vez**, logo após transmitir pra SEFAZ (fire-and-forget) — se a autorização não saía naquele instante exato, o status ficava preso em "pending" pra sempre, mesmo a nota saindo autorizada de verdade segundos depois. `GetFiscalStatusUseCase` agora reconsulta o Bling de verdade (`BlingSyncTargetAdapter.refreshFiscalStatus`) quando o status local ainda é "pending". Só Intermediador, sem instalador novo.
+- **Campo `xml` de `GET /nfce/{id}` no Bling não é o XML — é um link pra baixá-lo** (`.../relatorios/nfe.xml.php?chaveAcesso=...&signature=...`). O código tentava extrair a tag `<qrCode>` direto desse link (~180 caracteres) e nunca achava, deixando `qrCodeUrl` sempre null mesmo com a nota "issued" — o guard do PDV exige documentNumber+accessKey+qrCodeUrl juntos antes de imprimir. `findNfce` agora baixa o link antes de extrair (confirmado ao vivo: XML real de 6.8KB com a tag certinha). `refreshFiscalStatus` também reconsulta documentos já "issued" sem `qrCodeUrl`, destravando notas presas antes da correção — 4 vendas reais da conta do usuário corrigidas manualmente no banco como parte da verificação, todas com QR válido depois.
+- Verificado com venda de teste real de ponta a ponta pelo usuário: QR code chegou certinho no cupom.
+
+### Ícone do app + iniciar com o Windows (2026-08-21)
+Logo da loja (Saldão da Reversa) como ícone do instalador/exe/janela (`build/icon.ico`). App se registra pra abrir sozinho com o Windows (`setLoginItemSettings`) — evita caixa fora do ar depois de reinício/queda de energia até alguém abrir manualmente. v1.4.0.
+
 ### Vale-Troca + bandeira do cartão na tela de pagamento (2026-08-21)
 Pedido direto do usuário, com print das formas de pagamento reais cadastradas no Bling: "Crédito (Mastercard)", "Crédito (Visa)", "Débito (Mastercard)", "Débito (Visa)", "Dinheiro", "Pix", "Vale-Troca". A tela de pagamento precisava bater exatamente com isso.
 
