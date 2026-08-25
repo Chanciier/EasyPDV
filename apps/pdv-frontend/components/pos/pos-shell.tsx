@@ -35,6 +35,7 @@ import { ReportsView } from './reports-view'
 import { AdminView } from './admin-view'
 import { ShortcutsBar } from './shortcuts-bar'
 import { SettingsDialog } from './settings-dialog'
+import { FiscalPrintWatcher } from './fiscal-print-watcher'
 
 const NAV = [
   { key: 'venda', label: 'Venda', icon: ShoppingCart, hint: 'F1' },
@@ -214,6 +215,7 @@ export function POSShell() {
           </div>
         </header>
 
+        <FiscalPrintWatcher />
         <main className="min-h-0 flex-1 overflow-hidden">
           {view === 'venda' && <SaleView />}
           {view === 'caixa' && <CashView />}

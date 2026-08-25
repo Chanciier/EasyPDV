@@ -6,6 +6,7 @@ import type { Customer, Payment, PaymentMethod, Product, ReceiptPrintPayload, Sa
 import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
 import { useCartStore } from '@/lib/cart-store'
+import { useFiscalPrintStore } from '@/lib/fiscal-print-store'
 import { useCurrentCashSession } from '@/hooks/use-cash'
 import { useCustomerSearch } from '@/hooks/use-customers'
 import { useHardwareSettings, useOpenDrawer, usePrintReceipt } from '@/hooks/use-hardware'
@@ -16,7 +17,6 @@ import {
   useAttachCustomer,
   useCancelSale,
   useConfirmSale,
-  useFiscalStatus,
   useProductPrices,
   useProductSearch,
   useProducts,
@@ -95,13 +95,9 @@ export function SaleView() {
   // "Imprimir nota no momento da venda" (2026-08-21) — a NFC-e emite em
   // segundo plano (passa pelo Bling de forma assíncrona), então "no
   // momento da venda" na prática é "assim que ficar pronta, sem precisar
-  // ir no Histórico". `basePayload` guarda os dados já resolvidos na hora
-  // da confirmação (nome de produto, cliente) — não depende de nada que o
-  // carrinho ainda tenha quando a nota finalmente ficar pronta.
-  const [pendingFiscalPrint, setPendingFiscalPrint] = useState<{
-    saleId: string
-    basePayload: Omit<ReceiptPrintPayload, 'fiscal'>
-  } | null>(null)
+  // ir no Histórico". O acompanhamento em si mora fora desta tela (ver
+  // lib/fiscal-print-store.ts) — precisa sobreviver à troca de aba.
+  const setPendingFiscalPrint = useFiscalPrintStore((s) => s.setPending)
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedTerm(term), 250)
@@ -110,33 +106,6 @@ export function SaleView() {
 
   const { data: searchResults = [] } = useProductSearch(debouncedTerm)
   const { data: customerResults = [] } = useCustomerSearch(customerQuery)
-  const { data: pendingFiscalStatus } = useFiscalStatus(pendingFiscalPrint?.saleId ?? null, { pollWhilePending: true })
-
-  // Assim que a NFC-e ficar "issued", imprime sozinho — sem precisar ir no
-  // Histórico. "error" (ex: NCM/CSC faltando na conta Bling) desiste da
-  // espera automática; ainda dá pra imprimir manualmente depois, quando a
-  // configuração for corrigida e a nota reemitida.
-  useEffect(() => {
-    if (!pendingFiscalPrint || !pendingFiscalStatus) return
-    if (pendingFiscalStatus.status === 'issued') {
-      const { documentNumber, accessKey, qrCodeUrl } = pendingFiscalStatus
-      if (documentNumber && accessKey && qrCodeUrl) {
-        printReceipt.mutate({ ...pendingFiscalPrint.basePayload, fiscal: { documentNumber, accessKey, qrCodeUrl } })
-      }
-      setPendingFiscalPrint(null)
-    } else if (pendingFiscalStatus.status === 'error') {
-      setPendingFiscalPrint(null)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingFiscalStatus])
-
-  // Desiste depois de alguns minutos (conta sem certificado/CSC configurado
-  // pode nunca emitir) — não trava o polling pra sempre.
-  useEffect(() => {
-    if (!pendingFiscalPrint) return
-    const timeout = setTimeout(() => setPendingFiscalPrint(null), 3 * 60 * 1000)
-    return () => clearTimeout(timeout)
-  }, [pendingFiscalPrint])
 
   const matches = useMemo(() => searchResults.slice(0, 6), [searchResults])
   const priceQueries = useProductPrices(matches.map((p) => p.id))
@@ -410,7 +379,8 @@ export function SaleView() {
         printReceipt.mutate(printBasePayload)
         // "Imprimir nota no momento da venda" — acompanha a NFC-e dessa
         // venda em segundo plano e imprime sozinho assim que ela ficar
-        // pronta (ver useEffect de pendingFiscalStatus acima).
+        // pronta, mesmo que o operador saia desta tela antes disso (ver
+        // components/pos/fiscal-print-watcher.tsx).
         setPendingFiscalPrint({ saleId: confirmed.id, basePayload: printBasePayload })
       }
       if (approvedPayments.some((p) => p.method === 'dinheiro') && hardwareSettings?.autoOpenDrawerOnCash) {
