@@ -1,5 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { DiscountExceedsSaleTotalError, SaleNotEditableError, SaleNotFoundError } from "../../domain/errors.js";
+import {
+  DiscountExceedsSaleTotalError,
+  ManualDiscountBlockedByClubError,
+  SaleNotEditableError,
+  SaleNotFoundError,
+} from "../../domain/errors.js";
 import type { Sale } from "../../domain/entities/sale.entity.js";
 import { SALE_REPOSITORY, type SaleRepositoryPort } from "../ports/sale-repository.port.js";
 import {
@@ -22,12 +27,15 @@ export class ApplySaleDiscountUseCase {
     if (!sale.canBeModified) {
       throw new SaleNotEditableError(saleId);
     }
+    if (sale.discountSource === "club") {
+      throw new ManualDiscountBlockedByClubError(saleId);
+    }
     const subtotal = sale.totalAmount + sale.discountAmount;
     if (discountAmount > subtotal) {
       throw new DiscountExceedsSaleTotalError(saleId, discountAmount, subtotal);
     }
     const previousTotal = sale.totalAmount;
-    const updated = await this.saleRepository.applyDiscount(saleId, discountAmount);
+    const updated = await this.saleRepository.applyDiscount(saleId, discountAmount, discountAmount > 0 ? "manual" : null);
     await this.auditLogRepository.record({
       userId: actorUserId,
       action: "sale.discount_applied",

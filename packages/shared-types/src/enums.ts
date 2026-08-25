@@ -48,6 +48,13 @@ export const PaymentStatus = {
   PENDENTE: "pendente",
   RECUSADO: "recusado",
 } as const;
+
+/** Clube Saldão (2026-08-25) — desconto manual (operador) vs. automático de clube (30%), mutuamente exclusivos na mesma venda. */
+export const SaleDiscountSource = {
+  MANUAL: "manual",
+  CLUB: "club",
+} as const;
+export type SaleDiscountSource = (typeof SaleDiscountSource)[keyof typeof SaleDiscountSource];
 export type PaymentStatus = (typeof PaymentStatus)[keyof typeof PaymentStatus];
 
 export const CashSessionStatus = {

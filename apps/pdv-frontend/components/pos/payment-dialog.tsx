@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Banknote, CreditCard, Gift, QrCode, Trash2, Wallet } from 'lucide-react'
 import type { Payment, PaymentCardBrand, PaymentCardType, PaymentMethod, Sale } from '@easypdv/shared-types'
-import { formatCpf, isValidCpf, onlyDigits } from '@easypdv/shared-validation'
 import { Modal } from './ui/modal'
 import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
@@ -78,22 +77,20 @@ export function PaymentDialog({
   sale,
   submitting = false,
   error = null,
-  showCpfField = false,
   onClose,
   onPaymentRegistered,
   onConfirm,
 }: {
   open: boolean
   sale: Sale | null | undefined
-  /** Submitting/error aqui são só da confirmação FINAL (anexar CPF + confirmar venda) — cada perna de pagamento tem seu próprio estado, gerenciado internamente. */
+  /** Submitting/error aqui são só da confirmação FINAL (confirmar venda) — cada perna de pagamento tem seu próprio estado, gerenciado internamente. */
   submitting?: boolean
   error?: string | null
-  /** Só mostra o campo "CPF na nota" se a venda ainda não tem cliente anexado (evita conflito com o seletor de cliente de antes dos itens). */
-  showCpfField?: boolean
   onClose: () => void
   /** Disparado logo após cada perna ser registrada com sucesso — `received` é o valor recebido em dinheiro (não persistido), usado só pra montar o cupom/recibo depois. */
   onPaymentRegistered?: (payment: Payment, received: number) => void
-  onConfirm: (cpf: string | null) => void
+  /** CPF (2026-08-25) já foi anexado no início da venda, antes do pagamento — ver CpfGateDialog em sale-view.tsx. */
+  onConfirm: () => void
 }) {
   const registerPayment = useRegisterPayment()
   const removePayment = useRemovePayment()
@@ -103,7 +100,6 @@ export function PaymentDialog({
   const [amount, setAmount] = useState('')
   const [received, setReceived] = useState('')
   const [installments, setInstallments] = useState(1)
-  const [cpf, setCpf] = useState('')
   const [addError, setAddError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -122,7 +118,6 @@ export function PaymentDialog({
       setSelectedKey('dinheiro')
       setCardBrand(null)
       setInstallments(1)
-      setCpf('')
       setAddError(null)
     }
   }, [open])
@@ -146,8 +141,6 @@ export function PaymentDialog({
   const receivedNum = Number(received.replace(',', '.')) || 0
   const appliedAmount = Math.round((isCash ? Math.min(receivedNum, remaining) : amountNum) * 100) / 100
   const change = isCash ? Math.max(0, Math.round((receivedNum - remaining) * 100) / 100) : 0
-  const cpfDigits = onlyDigits(cpf)
-  const cpfIsValid = cpfDigits.length === 0 || isValidCpf(cpfDigits)
 
   const canAddLeg =
     !fullyPaid &&
@@ -157,7 +150,7 @@ export function PaymentDialog({
     appliedAmount <= remaining + 0.001 &&
     (isCash ? receivedNum > 0 : amountNum > 0 && amountNum <= remaining + 0.001)
 
-  const canConfirm = fullyPaid && !submitting && cpfIsValid
+  const canConfirm = fullyPaid && !submitting
 
   async function addLeg() {
     if (!sale || !canAddLeg) return
@@ -193,7 +186,7 @@ export function PaymentDialog({
 
   function confirm() {
     if (!canConfirm) return
-    onConfirm(cpfDigits.length > 0 ? cpfDigits : null)
+    onConfirm()
   }
 
   useEffect(() => {
@@ -282,26 +275,6 @@ export function PaymentDialog({
                 </span>
               </div>
             ))}
-          </div>
-        )}
-
-        {showCpfField && (
-          <div>
-            <label htmlFor="cpf-na-nota" className="mb-1.5 block text-sm font-medium">
-              CPF na nota <span className="font-normal text-muted-foreground">(opcional)</span>
-            </label>
-            <input
-              id="cpf-na-nota"
-              value={cpf}
-              onChange={(e) => setCpf(formatCpf(onlyDigits(e.target.value).slice(0, 11)))}
-              disabled={submitting}
-              placeholder="000.000.000-00"
-              inputMode="numeric"
-              className={`w-full rounded-lg border bg-background px-4 py-2.5 font-mono text-sm outline-none focus:ring-2 focus:ring-ring/40 disabled:opacity-50 ${
-                cpfIsValid ? 'border-input focus:border-primary' : 'border-destructive focus:border-destructive'
-              }`}
-            />
-            {!cpfIsValid && <p className="mt-1 text-xs text-destructive">CPF inválido.</p>}
           </div>
         )}
 

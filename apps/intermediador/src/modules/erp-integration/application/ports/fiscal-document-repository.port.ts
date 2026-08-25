@@ -1,4 +1,4 @@
-import type { FiscalDocument, FiscalDocumentStatusCode } from "../../domain/entities/fiscal-document.entity.js";
+import type { FiscalDocument, FiscalDocumentStatusCode, FiscalDocumentTypeCode } from "../../domain/entities/fiscal-document.entity.js";
 import type { ErpProviderCode } from "../../domain/entities/erp-integration.entity.js";
 
 export interface CreateFiscalDocumentData {
@@ -6,6 +6,8 @@ export interface CreateFiscalDocumentData {
   provider: ErpProviderCode;
   saleId: string;
   externalId: string;
+  /** Default `nfce` (mesmo default do schema) se omitido — só o comprovante não fiscal (venda sem CPF) passa isso explicitamente. */
+  type?: FiscalDocumentTypeCode;
 }
 
 export interface UpdateFiscalDocumentData {

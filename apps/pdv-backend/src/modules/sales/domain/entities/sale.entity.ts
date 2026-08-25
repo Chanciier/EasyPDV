@@ -1,4 +1,4 @@
-import type { SaleStatus } from "@easypdv/shared-types";
+import type { SaleDiscountSource, SaleStatus } from "@easypdv/shared-types";
 import type { Payment } from "./payment.entity.js";
 
 export interface SaleItemProps {
@@ -36,6 +36,7 @@ export interface SaleProps {
   status: SaleStatus;
   totalAmount: number;
   discountAmount: number;
+  discountSource: SaleDiscountSource | null;
   createdAt: Date;
   confirmedAt: Date | null;
   items: SaleItem[];
@@ -50,6 +51,7 @@ export class Sale {
   readonly status: SaleStatus;
   readonly totalAmount: number;
   readonly discountAmount: number;
+  readonly discountSource: SaleDiscountSource | null;
   readonly createdAt: Date;
   readonly confirmedAt: Date | null;
   readonly items: SaleItem[];
@@ -63,6 +65,7 @@ export class Sale {
     this.status = props.status;
     this.totalAmount = props.totalAmount;
     this.discountAmount = props.discountAmount;
+    this.discountSource = props.discountSource;
     this.createdAt = props.createdAt;
     this.confirmedAt = props.confirmedAt;
     this.items = props.items;

@@ -196,8 +196,19 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     // semântica de resolveSalesOrder.
     await this.pushStockMovements(accessToken, organizationId, payload);
 
-    if (this.isNfceAutoEmitEnabled()) {
+    // CPF no início da venda (2026-08-25) — reverte a decisão anterior de
+    // NFC-e sempre emitida: agora só emite NFC-e de verdade (SEFAZ) quando o
+    // cliente informou CPF. Sem CPF, grava um comprovante NÃO fiscal local
+    // (recordNonFiscalReceipt), sem nenhuma chamada ao Bling/SEFAZ. Decisão
+    // deliberada e confirmada com o usuário depois de eu levantar o risco
+    // fiscal explicitamente — ver Planejamento - Clube Saldão.md seção 5.1
+    // no cofre Obsidian. BLING_NFCE_AUTO_EMIT continua valendo como trava de
+    // conta (AND, não substituída) — desliga a emissão real mesmo com CPF
+    // se a conta ainda não estiver pronta pra fiscal de verdade.
+    if (this.isNfceAutoEmitEnabled() && payload.customerDocument) {
       await this.ensureFiscalDocument(accessToken, organizationId, payload.saleId, orderExternalId);
+    } else if (!payload.customerDocument) {
+      await this.recordNonFiscalReceipt(organizationId, payload.saleId);
     }
 
     // Depois da NFC-e de propósito (2026-08-19): sem confirmação de que
@@ -709,6 +720,29 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
         await this.fiscalDocumentRepository.update(existing.id, { status: "error", errorMessage: message });
       }
     }
+  }
+
+  /**
+   * Venda sem CPF (2026-08-25) — grava um `FiscalDocument` local
+   * `type: "comprovante_nao_fiscal"`, sem NENHUMA chamada ao Bling/SEFAZ.
+   * `externalId: saleId` é só um placeholder estável (não existe id real do
+   * Bling pra esse tipo — nunca usado como chave de busca no Bling). Sempre
+   * "issued" na hora: diferente da NFC-e, não tem nenhuma etapa assíncrona
+   * de autorização esperando resultado externo.
+   */
+  private async recordNonFiscalReceipt(organizationId: string, saleId: string): Promise<void> {
+    const existing = await this.fiscalDocumentRepository.findBySale(saleId);
+    if (existing) {
+      return;
+    }
+    const doc = await this.fiscalDocumentRepository.create({
+      organizationId,
+      provider: PROVIDER,
+      saleId,
+      externalId: saleId,
+      type: "comprovante_nao_fiscal",
+    });
+    await this.fiscalDocumentRepository.update(doc.id, { status: "issued", issuedAt: new Date() });
   }
 
   private async updateFiscalDocumentFromBling(

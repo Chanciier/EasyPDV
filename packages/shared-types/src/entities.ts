@@ -7,6 +7,7 @@ import type {
   PaymentCardType,
   PaymentMethod,
   PaymentStatus,
+  SaleDiscountSource,
   SaleStatus,
   StockMovementType,
   SyncStatus,
@@ -162,6 +163,7 @@ export interface Sale {
   status: SaleStatus;
   totalAmount: number;
   discountAmount: number;
+  discountSource: SaleDiscountSource | null;
   createdAt: string;
   confirmedAt: string | null;
   // O backend sempre devolve a venda com itens/pagamentos embutidos

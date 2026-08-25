@@ -1,18 +1,19 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, Plus, Minus, Trash2, ShoppingCart, Lock, User } from 'lucide-react'
-import type { Customer, Payment, PaymentMethod, Product, ReceiptPrintPayload, Sale, SaleItem } from '@easypdv/shared-types'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Lock } from 'lucide-react'
+import type { Payment, PaymentMethod, Product, ReceiptPrintPayload, Sale, SaleItem } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
 import { useCartStore } from '@/lib/cart-store'
 import { useFiscalPrintStore } from '@/lib/fiscal-print-store'
 import { useCurrentCashSession } from '@/hooks/use-cash'
-import { useCustomerSearch } from '@/hooks/use-customers'
+import { useCustomer } from '@/hooks/use-customers'
 import { useHardwareSettings, useOpenDrawer, usePrintReceipt } from '@/hooks/use-hardware'
 import {
   findProductByBarcode,
   useAddSaleItem,
+  useApplyClubDiscount,
   useApplySaleDiscount,
   useAttachCustomer,
   useCancelSale,
@@ -25,6 +26,7 @@ import {
   useStartSale,
 } from '@/hooks/use-sales'
 import { formatCpf } from '@easypdv/shared-validation'
+import { CpfGateDialog } from './cpf-gate-dialog'
 import { PaymentDialog } from './payment-dialog'
 import { ReceiptDialog } from './receipt-dialog'
 
@@ -58,12 +60,14 @@ export function SaleView() {
 
   const { saleId, selectedProductId, setSaleId, setSelectedProductId, reset } = useCartStore()
   const { data: sale } = useSale(saleId)
+  const { data: saleCustomer } = useCustomer(sale?.customerId ?? null)
 
   const startSale = useStartSale()
   const addItem = useAddSaleItem()
   const removeItemMut = useRemoveSaleItem()
   const confirmSale = useConfirmSale()
   const attachCustomer = useAttachCustomer()
+  const applyClubDiscount = useApplyClubDiscount()
   const cancelSale = useCancelSale()
   const applyDiscount = useApplySaleDiscount()
   const { data: hardwareSettings } = useHardwareSettings()
@@ -88,9 +92,13 @@ export function SaleView() {
   const [discountOpen, setDiscountOpen] = useState(false)
   const [discountValue, setDiscountValue] = useState('')
   const [discountError, setDiscountError] = useState<string | null>(null)
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
-  const [customerOpen, setCustomerOpen] = useState(false)
-  const [customerQuery, setCustomerQuery] = useState('')
+  // CPF no início da venda (2026-08-25) — ver CpfGateDialog. `gateSubmitting`/
+  // `gateError` cobrem só o passo de iniciar a venda em si; falha ao anexar
+  // CPF/checar clube DEPOIS da venda já criada nunca bloqueia (mostrado no
+  // banner de erro normal da tela, a venda já existe e pode seguir).
+  const [gateSubmitting, setGateSubmitting] = useState(false)
+  const [gateError, setGateError] = useState<string | null>(null)
+  const [clubNotice, setClubNotice] = useState<'member' | 'non-member' | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   // "Imprimir nota no momento da venda" (2026-08-21) — a NFC-e emite em
   // segundo plano (passa pelo Bling de forma assíncrona), então "no
@@ -105,7 +113,6 @@ export function SaleView() {
   }, [term])
 
   const { data: searchResults = [] } = useProductSearch(debouncedTerm)
-  const { data: customerResults = [] } = useCustomerSearch(customerQuery)
 
   const matches = useMemo(() => searchResults.slice(0, 6), [searchResults])
   const priceQueries = useProductPrices(matches.map((p) => p.id))
@@ -154,17 +161,53 @@ export function SaleView() {
     }
   }
 
-  async function ensureSale(): Promise<Sale> {
-    if (sale) return sale
-    if (!cashSession || cashSession.status !== 'open') {
-      throw new Error('Abra o caixa antes de iniciar uma venda.')
+  /**
+   * A venda em si só existe depois do CpfGateDialog resolver (ver render
+   * abaixo — a busca/carrinho só ficam visíveis quando `sale` já existe),
+   * então isso é só uma checagem defensiva, não cria mais a venda de forma
+   * lazy no primeiro item como antes (2026-08-25).
+   */
+  function ensureSale(): Sale {
+    if (!sale) {
+      throw new Error('Inicie a venda informando o CPF (ou "sem CPF") antes de adicionar itens.')
     }
-    const newSale = await startSale.mutateAsync({
-      cashSessionId: cashSession.id,
-      customerId: selectedCustomer?.id,
-    })
-    setSaleId(newSale.id)
-    return newSale
+    return sale
+  }
+
+  /**
+   * CPF no início da venda (2026-08-25, reverte a captura no fechamento do
+   * pagamento) — chamado pelo CpfGateDialog. Cria a venda, e se um CPF foi
+   * informado, anexa o cliente e checa/aplica o desconto de clube na hora,
+   * ANTES de qualquer item entrar no carrinho — resolve de vez o caso de
+   * borda de "pagamento já registrado quando descobre que é clube".
+   */
+  async function startSaleWithDocument(document: string | null) {
+    if (!cashSession || cashSession.status !== 'open') {
+      setGateError('Abra o caixa antes de iniciar uma venda.')
+      return
+    }
+    setGateSubmitting(true)
+    setGateError(null)
+    setClubNotice(null)
+    try {
+      const newSale = await startSale.mutateAsync({ cashSessionId: cashSession.id })
+      setSaleId(newSale.id)
+      if (document) {
+        try {
+          await attachCustomer.mutateAsync({ saleId: newSale.id, document })
+          const withDiscount = await applyClubDiscount.mutateAsync({ saleId: newSale.id })
+          setClubNotice(withDiscount.discountSource === 'club' ? 'member' : 'non-member')
+        } catch (e) {
+          // CPF/clube nunca bloqueia a venda em si — ela já foi criada e
+          // pode seguir normalmente, só avisa via banner de erro comum.
+          setError(describeError(e, 'Não foi possível vincular o CPF a essa venda.'))
+        }
+      }
+    } catch (e) {
+      setGateError(describeError(e, 'Erro ao iniciar a venda.'))
+    } finally {
+      setGateSubmitting(false)
+    }
   }
 
   async function changeQty(currentSaleId: string, item: SaleItem, newQty: number) {
@@ -201,7 +244,7 @@ export function SaleView() {
     setError(null)
     setAdding(true)
     try {
-      const currentSale = await ensureSale()
+      const currentSale = ensureSale()
       const existing = currentSale.items.find((i) => i.productId === product.id)
       if (existing) {
         await changeQty(currentSale.id, existing, existing.quantity + 1)
@@ -288,7 +331,7 @@ export function SaleView() {
       if (typing) return
 
       if (e.key === 'Escape') {
-        if (sale) cancelSale.mutate(sale.id, { onSuccess: () => { reset(); setSelectedCustomer(null) } })
+        if (sale) cancelSale.mutate(sale.id, { onSuccess: () => { reset(); setClubNotice(null) } })
       } else if (e.key === '+' || e.key === '=') {
         const item = sale?.items.find((i) => i.productId === selectedProductId)
         if (item && sale) changeQty(sale.id, item, item.quantity + 1)
@@ -328,18 +371,16 @@ export function SaleView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sale, selectedProductId, paymentOpen, receipt])
 
-  /** Pagamento dividido (2026-08-21) — pagamento(s) já foram registrados individualmente por PaymentDialog antes de chegar aqui; esta função só anexa o CPF (se houver) e confirma a venda. */
-  const handleConfirmPayment = async (cpf: string | null) => {
+  /**
+   * Pagamento dividido (2026-08-21) — pagamento(s) já foram registrados
+   * individualmente por PaymentDialog antes de chegar aqui. CPF (2026-08-25)
+   * já foi anexado no início da venda pelo CpfGateDialog — aqui só confirma.
+   */
+  const handleConfirmPayment = async () => {
     if (!sale) return
     setPaymentSubmitting(true)
     setPaymentError(null)
     try {
-      // Antes da confirmação, de propósito: o payload de sync que vira NFC-e
-      // no Bling é montado em confirm() a partir do customerId já gravado na
-      // venda — precisa estar lá ANTES de confirmar.
-      if (cpf) {
-        await attachCustomer.mutateAsync({ saleId: sale.id, document: cpf })
-      }
       const confirmed = await confirmSale.mutateAsync(sale.id)
       setPaymentOpen(false)
 
@@ -348,11 +389,7 @@ export function SaleView() {
         const received = receivedByPaymentId[p.id] ?? p.amount
         return sum + Math.max(0, received - p.amount)
       }, 0)
-      const customerDocument = cpf
-        ? formatCpf(cpf)
-        : selectedCustomer?.document
-          ? formatCpf(selectedCustomer.document)
-          : undefined
+      const customerDocument = saleCustomer?.document ? formatCpf(saleCustomer.document) : undefined
       setReceipt({ sale: confirmed, changeTotal })
 
       const printBasePayload: Omit<ReceiptPrintPayload, 'fiscal'> = {
@@ -389,7 +426,7 @@ export function SaleView() {
 
       reset()
       setTerm('')
-      setSelectedCustomer(null)
+      setClubNotice(null)
       setReceivedByPaymentId({})
     } catch (e) {
       setPaymentError(describeError(e, 'Erro ao confirmar pagamento.'))
@@ -417,66 +454,27 @@ export function SaleView() {
           </div>
         )}
 
-        {/* Cliente da venda */}
-        <div className="relative mb-2">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setCustomerQuery('')
-                setCustomerOpen((o) => !o)
-              }}
-              className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
-            >
-              <User className="size-3.5" />
-              {selectedCustomer ? selectedCustomer.name : 'Consumidor Final'}
+        {clubNotice && (
+          <div
+            className={`mb-3 flex items-center justify-between gap-2 rounded-lg px-4 py-2.5 text-sm ${
+              clubNotice === 'member' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+            }`}
+          >
+            <span>
+              {clubNotice === 'member'
+                ? 'Cliente do Clube Saldão — 30% de desconto aplicado.'
+                : 'Cliente não pertence ao Clube Saldão.'}
+            </span>
+            <button onClick={() => setClubNotice(null)} className="text-xs underline">
+              Ok
             </button>
-            {selectedCustomer && (
-              <button
-                onClick={() => setSelectedCustomer(null)}
-                className="text-xs text-muted-foreground hover:text-destructive"
-              >
-                Remover
-              </button>
-            )}
           </div>
-          {customerOpen && (
-            <div className="absolute left-0 top-9 z-20 w-72 rounded-xl border border-border bg-popover p-2 shadow-xl">
-              <input
-                autoFocus
-                value={customerQuery}
-                onChange={(e) => setCustomerQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    e.stopPropagation()
-                    setCustomerOpen(false)
-                  }
-                }}
-                placeholder="Buscar cliente por nome ou documento"
-                className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-primary"
-              />
-              <ul className="mt-2 max-h-48 overflow-y-auto">
-                {customerResults.length === 0 ? (
-                  <li className="px-2 py-1.5 text-xs text-muted-foreground">Nenhum cliente encontrado.</li>
-                ) : (
-                  customerResults.map((c) => (
-                    <li key={c.id}>
-                      <button
-                        onClick={() => {
-                          setSelectedCustomer(c)
-                          setCustomerOpen(false)
-                        }}
-                        className="w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
-                      >
-                        {c.name}
-                      </button>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
-          )}
-        </div>
+        )}
 
+        {cashOpen && !sale ? (
+          <CpfGateDialog submitting={gateSubmitting} error={gateError} onSubmit={startSaleWithDocument} />
+        ) : (
+          <>
         {/* Busca */}
         <div className="relative">
           <div className="flex items-center gap-2 rounded-xl border-2 border-primary/40 bg-card px-3 shadow-sm focus-within:border-primary">
@@ -604,13 +602,20 @@ export function SaleView() {
             )}
           </div>
         </div>
+          </>
+        )}
       </section>
 
       {/* Coluna direita: totais */}
       <aside className="flex w-80 shrink-0 flex-col gap-4 border-l border-border bg-card/50 p-4">
         {sale && items.length > 0 && (
           <div className="mt-auto rounded-xl bg-card p-3 shadow-sm ring-1 ring-border">
-            {discountOpen ? (
+            {sale.discountSource === 'club' ? (
+              <div className="flex w-full items-center justify-between text-sm">
+                <span className="text-muted-foreground">Desconto Clube Saldão</span>
+                <span className="font-mono font-medium text-primary">- {formatBRL(sale.discountAmount)}</span>
+              </div>
+            ) : discountOpen ? (
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-muted-foreground">Desconto (R$)</label>
                 <div className="flex gap-2">
@@ -694,7 +699,6 @@ export function SaleView() {
         sale={sale}
         submitting={paymentSubmitting}
         error={paymentError}
-        showCpfField={!sale?.customerId}
         onClose={() => {
           if (!paymentSubmitting) {
             setPaymentOpen(false)

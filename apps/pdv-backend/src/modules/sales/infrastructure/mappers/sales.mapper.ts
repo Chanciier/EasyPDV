@@ -48,6 +48,7 @@ export function toDomainSale(record: PrismaSaleWithRelations): Sale {
     status: record.status,
     totalAmount: record.totalAmount,
     discountAmount: record.discountAmount,
+    discountSource: record.discountSource,
     createdAt: record.createdAt,
     confirmedAt: record.confirmedAt,
     items: record.items.map(

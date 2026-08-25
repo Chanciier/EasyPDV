@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { SaleStatus, SaleSyncPayload, SaleVoidSyncPayload } from "@easypdv/shared-types";
+import type { SaleDiscountSource, SaleStatus, SaleSyncPayload, SaleVoidSyncPayload } from "@easypdv/shared-types";
 import { Sale } from "../../domain/entities/sale.entity.js";
 import { InsufficientStockError, SaleWarehouseNotResolvableError } from "../../domain/errors.js";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
@@ -66,8 +66,8 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     return this.recalculateTotal(saleId);
   }
 
-  async applyDiscount(saleId: string, discountAmount: number): Promise<Sale> {
-    await this.prisma.sale.update({ where: { id: saleId }, data: { discountAmount } });
+  async applyDiscount(saleId: string, discountAmount: number, source: SaleDiscountSource | null): Promise<Sale> {
+    await this.prisma.sale.update({ where: { id: saleId }, data: { discountAmount, discountSource: source } });
     return this.recalculateTotal(saleId);
   }
 

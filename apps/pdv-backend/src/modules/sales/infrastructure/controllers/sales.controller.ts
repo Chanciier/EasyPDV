@@ -30,6 +30,7 @@ import { RegisterPaymentUseCase } from "../../application/use-cases/register-pay
 import { RemovePaymentUseCase } from "../../application/use-cases/remove-payment.use-case.js";
 import { ConfirmSaleUseCase } from "../../application/use-cases/confirm-sale.use-case.js";
 import { ApplySaleDiscountUseCase } from "../../application/use-cases/apply-sale-discount.use-case.js";
+import { ApplyClubDiscountUseCase } from "../../application/use-cases/apply-club-discount.use-case.js";
 import { VoidConfirmedSaleUseCase } from "../../application/use-cases/void-confirmed-sale.use-case.js";
 import { AttachCustomerToSaleUseCase } from "../../application/use-cases/attach-customer-to-sale.use-case.js";
 
@@ -47,6 +48,7 @@ export class SalesController {
     private readonly removePaymentUseCase: RemovePaymentUseCase,
     private readonly confirmSaleUseCase: ConfirmSaleUseCase,
     private readonly applySaleDiscountUseCase: ApplySaleDiscountUseCase,
+    private readonly applyClubDiscountUseCase: ApplyClubDiscountUseCase,
     private readonly voidConfirmedSaleUseCase: VoidConfirmedSaleUseCase,
     private readonly attachCustomerToSaleUseCase: AttachCustomerToSaleUseCase,
     private readonly realtimeGateway: RealtimeGateway,
@@ -98,6 +100,11 @@ export class SalesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.applySaleDiscountUseCase.execute(id, body.discountAmount, user.userId);
+  }
+
+  @Patch(":id/club-discount")
+  applyClubDiscount(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.applyClubDiscountUseCase.execute(id, user.userId);
   }
 
   @Patch(":id/customer")

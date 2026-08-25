@@ -85,6 +85,28 @@ export class DiscountExceedsSaleTotalError extends DomainError {
   }
 }
 
+/** Clube Saldão (2026-08-25) — desconto manual e de clube são mutuamente exclusivos na mesma venda. */
+export class ManualDiscountBlockedByClubError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(id: string) {
+    super(`Venda ${id} já tem desconto de clube aplicado — remova o cliente do clube antes de aplicar um desconto manual`);
+  }
+}
+
+export class ClubDiscountBlockedByManualError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(id: string) {
+    super(`Venda ${id} já tem um desconto manual aplicado — remova-o antes do desconto de clube`);
+  }
+}
+
+export class SaleHasNoCustomerError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(id: string) {
+    super(`Venda ${id} não tem cliente anexado — não é possível checar clube`);
+  }
+}
+
 export class SaleNotVoidableError extends DomainError {
   readonly kind: DomainErrorKind = "conflict";
   constructor(id: string) {

@@ -1,4 +1,4 @@
-import type { PaymentCardBrand, PaymentCardType, PaymentMethod, SaleStatus } from "@easypdv/shared-types";
+import type { PaymentCardBrand, PaymentCardType, PaymentMethod, SaleDiscountSource, SaleStatus } from "@easypdv/shared-types";
 import type { Sale } from "../../domain/entities/sale.entity.js";
 
 export interface StartSaleData {
@@ -32,8 +32,13 @@ export interface SaleRepositoryPort {
   addItem(data: AddSaleItemData): Promise<Sale>;
   removeItem(saleId: string, itemId: string): Promise<Sale>;
   cancel(id: string): Promise<Sale>;
-  /** Desconto fixo (R$) no total da venda — recalcula totalAmount = max(0, subtotal - discountAmount). */
-  applyDiscount(saleId: string, discountAmount: number): Promise<Sale>;
+  /**
+   * Desconto fixo (R$) no total da venda — recalcula totalAmount = max(0,
+   * subtotal - discountAmount). `source` distingue manual (operador) de
+   * clube (automático, 30%, recalculado a cada mudança no carrinho — ver
+   * ApplyClubDiscountUseCase) — os dois são mutuamente exclusivos.
+   */
+  applyDiscount(saleId: string, discountAmount: number, source: SaleDiscountSource | null): Promise<Sale>;
   /** "CPF na nota" (2026-08-19) — anexa/troca o cliente de uma venda já iniciada (o seletor da tela de Venda só seta isso no início; o pagamento pode chegar depois). */
   attachCustomer(saleId: string, customerId: string): Promise<Sale>;
   registerPayment(data: RegisterPaymentData): Promise<Sale>;

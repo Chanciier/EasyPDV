@@ -151,7 +151,23 @@ export function useApplySaleDiscount() {
   })
 }
 
-/** "CPF na nota" (2026-08-19) — anexa/troca o cliente de uma venda em andamento, chamado no fechamento do pagamento. */
+/**
+ * Clube Saldão (2026-08-25) — aplica os 30% se o cliente já anexado à venda
+ * for membro; se não for, devolve a venda sem nenhuma mudança (checagem
+ * silenciosa, nunca lança erro por "não é membro" — ver
+ * ApplyClubDiscountUseCase no backend). O chamador compara
+ * `discountSource` antes/depois pra saber se aplicou ou não.
+ */
+export function useApplyClubDiscount() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { saleId: string }) =>
+      apiRequest<Sale>(`/sales/${input.saleId}/club-discount`, { method: 'PATCH' }),
+    onSuccess: (sale) => queryClient.setQueryData(['sale', sale.id], sale),
+  })
+}
+
+/** "CPF na nota" — anexa/troca o cliente de uma venda em andamento. Chamado logo no início da venda (2026-08-25) — ver CpfGateDialog em sale-view.tsx. */
 export function useAttachCustomer() {
   const queryClient = useQueryClient()
   return useMutation({

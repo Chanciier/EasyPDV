@@ -300,6 +300,12 @@ enum SaleStatus {
   cancelled
 }
 
+// Mesmos valores de packages/shared-types/src/enums.ts SaleDiscountSource.
+enum SaleDiscountSource {
+  manual
+  club
+}
+
 // Cliente da venda — antes da Sprint 15 era só um mock no frontend, sem
 // nenhuma linha de verdade. onDelete: SetNull em Sale.customer: excluir um
 // cliente não pode apagar/travar o histórico de vendas dele — a venda só
@@ -332,6 +338,10 @@ model Sale {
   status         SaleStatus  @default(draft)
   totalAmount    Float       @default(0)
   discountAmount Float       @default(0)
+  // Clube Saldão (2026-08-25) — distingue desconto manual (operador digitou
+  // um valor) de desconto automático de clube (30%, recalculado a cada
+  // mudança no carrinho), mutuamente exclusivos. `null` = sem desconto.
+  discountSource SaleDiscountSource?
   createdAt      DateTime    @default(now())
   confirmedAt    DateTime?
 
