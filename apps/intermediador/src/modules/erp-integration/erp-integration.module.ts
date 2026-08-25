@@ -44,6 +44,11 @@ import { ListBlingProductsUseCase } from "./application/use-cases/list-bling-pro
     { provide: FISCAL_DOCUMENT_REPOSITORY, useClass: PrismaFiscalDocumentRepository },
     { provide: CLUB_MEMBERSHIP_REPOSITORY, useClass: PrismaClubMembershipRepository },
   ],
-  exports: [BlingSyncTargetAdapter],
+  // CLUB_MEMBERSHIP_REPOSITORY também exportado: ClubModule importa este
+  // módulo pra pegar o BlingSyncTargetAdapter, mas ClubExpirationCleanupWorker
+  // (que vive em ClubModule) também precisa resolver esse provider direto —
+  // bug real de boot corrigido (2026-08-25): sem isso o Nest derruba a
+  // aplicação inteira na subida com UnknownDependenciesException.
+  exports: [BlingSyncTargetAdapter, CLUB_MEMBERSHIP_REPOSITORY],
 })
 export class ErpIntegrationModule {}
