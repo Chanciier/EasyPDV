@@ -1,6 +1,6 @@
 {
   "name": "@easypdv/electron",
-  "version": "1.4.3",
+  "version": "1.5.0",
   "private": true,
   "description": "Shell desktop do PDV — empacota o export estático de pdv-frontend + o processo local de pdv-backend num único instalador Windows.",
   "main": "dist/main/index.js",
