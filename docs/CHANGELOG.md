@@ -1,6 +1,16 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Clube Saldão — programa de fidelidade (2026-08-25)
+Clientes marcados no Bling com o tipo de contato "Clube Saldão" (já existente na conta, id resolvido em runtime e cacheado — nunca hardcoded) recebem 30% de desconto em toda venda. Planejado e implementado em fases, cada uma testada isoladamente antes da próxima:
+
+- **Gestão do clube** (Intermediador + pdv-backend + PDV): nova tabela `ClubMembership` no Postgres do Intermediador (cache local de validade — a listagem em si sempre consulta o Bling ao vivo, fonte da verdade). Novos métodos no Bling: `listContactTypes`, `getContactById`, `updateContact`, `listContactsByTipo` — confirmados ao vivo contra a conta real: `GET /contatos?idTipoContato={id}` filtra de verdade (`?tipoContato=`, sem "id", NÃO filtra — pegadinha real da API), `PUT /contatos/{id}` exige nome+tipo+situação mas preserva os demais campos, mesclar/remover `tiposContato` funciona sem apagar outros tipos que o contato já tinha. Job `@Cron` diário limpa localmente associações vencidas (primeiro uso de `@Cron` no projeto). Nova aba "Clube" no PDV (listar, adicionar, remover — validade não é editável, remover é o único caminho de cancelamento/renovação).
+- **CPF no início da venda** (reverte duas decisões fiscais que estavam travadas no projeto, confirmado com o usuário depois de eu levantar o risco explicitamente): CPF passa a ser pedido logo ao abrir a venda (pop-up obrigatório, com "continuar sem CPF"), não mais no fechamento do pagamento. Sem CPF, a venda emite só um comprovante não fiscal (`FiscalDocument.type: comprovante_nao_fiscal`, sem nenhuma chamada ao Bling/SEFAZ — esse tipo já existia no enum desde sempre, nunca tinha sido usado). Com CPF, sempre emite NFC-e — com os 30% de desconto já embutidos nela se o cliente for do clube.
+- **Desconto automático**: novo campo `Sale.discountSource` (`manual` | `club`), mutuamente exclusivos — tentar aplicar um em cima do outro é rejeitado (409) nos dois sentidos. Recalculado do zero a cada item adicionado/removido enquanto ativo, pra manter os 30% corretos conforme o carrinho muda.
+- Testado de ponta a ponta via API real contra o Intermediador de produção e o Bling real (terminal descartável, limpo depois; vendas de teste sempre canceladas, nunca confirmadas — nada foi pro Bling): cálculo do desconto, recálculo em add/remove item, exclusão mútua nos dois sentidos, CPF não-membro ignorado sem erro, ciclo completo adicionar/checar/remover do clube.
+- Dois bugs reais de boot achados e corrigidos no processo, antes de rodar em produção: `ClubExpirationCleanupWorker` não resolvia sua dependência (`CLUB_MEMBERSHIP_REPOSITORY` só era exportado dentro do módulo errado); depois, `ClubModule` importando `ProvisioningModule` fechava um ciclo `Sales→Club→Provisioning→Sales` que derrubava o pdv-backend inteiro no boot.
+- `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes. v1.5.0 do instalador.
+
 ### Impressão fiscal — três bugs reais encontrados e corrigidos em cadeia (2026-08-25)
 Usuário reportou "nota autorizada, porém não impressa" num terminal novo (App-Tech POS-80C). Investigação achou três causas independentes, cada uma corrigida e verificada contra dados reais antes de seguir pra próxima:
 
