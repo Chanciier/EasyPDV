@@ -9,7 +9,7 @@ import { ClubMemberNotFoundError, ClubTipoContatoNotFoundError } from "../../../
 import type { ClubMemberSummary } from "../../../../club/domain/entities/club-member-summary.js";
 import type { SyncTargetInput, SyncTargetPort } from "../../../../sync/application/ports/sync-target.port.js";
 import type { ErpProviderCode } from "../../../domain/entities/erp-integration.entity.js";
-import { ErpIntegrationNotFoundError } from "../../../domain/errors.js";
+import { ErpIntegrationNotFoundError, SaleNotSyncedError } from "../../../domain/errors.js";
 import {
   ERP_INTEGRATION_REPOSITORY,
   type ErpIntegrationRepositoryPort,
@@ -685,6 +685,53 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       this.logger.warn(`Não foi possível reconsultar status da NFC-e (venda ${saleId}) no Bling: ${message}`);
       return doc;
     }
+  }
+
+  /**
+   * Emissão manual de NFC-e (Histórico, 2026-08-26) pra venda que foi
+   * confirmada SEM CPF — por padrão essas vendas só geram um comprovante
+   * local (`recordNonFiscalReceipt`), sem chamada nenhuma ao Bling/SEFAZ.
+   * Pedido explícito do operador: às vezes o cliente quer a nota fiscal
+   * mesmo sem informar CPF (NFC-e pra "Consumidor Final" é normal e válida
+   * no Brasil — CPF nela é sempre opcional). O pedido de venda já existe no
+   * Bling (criado por `resolveSalesOrder` de qualquer forma, independente de
+   * CPF) — só falta a etapa de gerar+enviar a NFC-e em cima dele.
+   *
+   * Reaproveita `ensureFiscalDocument` (mesmo código do caminho automático),
+   * mas ela só cria um documento novo quando `findBySale` não acha nada — o
+   * comprovante não fiscal já ocupa essa vaga (mesma unique constraint
+   * `[organizationId, provider, saleId]`), então precisa sumir primeiro.
+   * Se já existir uma NFC-e de verdade (emissão manual chamada duas vezes,
+   * ou uma corrida com o fluxo automático), não mexe em nada — devolve a
+   * que já existe.
+   */
+  async issueFiscalReceiptManually(organizationId: string, saleId: string): Promise<FiscalDocument> {
+    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+    if (!integration) {
+      throw new ErpIntegrationNotFoundError(organizationId);
+    }
+
+    const mapping = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "sale", saleId);
+    if (!mapping) {
+      throw new SaleNotSyncedError(saleId);
+    }
+
+    const existing = await this.fiscalDocumentRepository.findBySale(saleId);
+    if (existing && existing.type !== "comprovante_nao_fiscal") {
+      return existing;
+    }
+    if (existing) {
+      await this.fiscalDocumentRepository.delete(existing.id);
+    }
+
+    const accessToken = await this.tokenProvider.getValidAccessToken(integration);
+    await this.ensureFiscalDocument(accessToken, organizationId, saleId, mapping.externalId);
+
+    const doc = await this.fiscalDocumentRepository.findBySale(saleId);
+    if (!doc) {
+      throw new Error(`ensureFiscalDocument não criou um FiscalDocument pra venda ${saleId}`);
+    }
+    return doc;
   }
 
   private async ensureFiscalDocument(

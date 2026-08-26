@@ -217,6 +217,25 @@ export function useFiscalStatus(saleId: string | null, options?: { pollWhilePend
   })
 }
 
+/**
+ * Emissão manual de NFC-e pra venda sem CPF (Histórico, 2026-08-26) — ação
+ * explícita do operador, só faz sentido pra vendas cujo FiscalDocument é
+ * "comprovante_nao_fiscal" (a NFC-e sai pra "Consumidor Final", sem CPF —
+ * válida normalmente, CPF na nota é sempre opcional). Pode voltar "pending"
+ * (SEFAZ é assíncrono) — quem chama continua usando useFiscalStatus com
+ * pollWhilePending pra acompanhar até "issued"/"error".
+ */
+export function useIssueFiscalReceipt() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (saleId: string) =>
+      apiRequest<FiscalDocument | null>(`/sales/${saleId}/fiscal/issue`, { method: 'POST' }),
+    onSuccess: (doc, saleId) => {
+      queryClient.setQueryData(['fiscal-status', saleId], doc)
+    },
+  })
+}
+
 export function useCancelSale() {
   const queryClient = useQueryClient()
   return useMutation({

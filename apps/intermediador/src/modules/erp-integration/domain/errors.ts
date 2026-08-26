@@ -13,3 +13,11 @@ export class FiscalDocumentNotFoundError extends DomainError {
     super(`Nenhum documento fiscal encontrado pra venda ${saleId}`);
   }
 }
+
+/** Emissão manual de NFC-e (Histórico, venda sem CPF) pedida antes do pedido de venda existir no Bling — não deveria acontecer pra uma venda já confirmada, mas o SyncJob original pode ainda estar em retry. */
+export class SaleNotSyncedError extends DomainError {
+  readonly kind = "conflict";
+  constructor(saleId: string) {
+    super(`Venda ${saleId} ainda não sincronizou com o Bling — não é possível emitir NFC-e ainda`);
+  }
+}

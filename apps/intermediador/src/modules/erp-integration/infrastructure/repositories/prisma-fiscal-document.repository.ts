@@ -26,4 +26,8 @@ export class PrismaFiscalDocumentRepository implements FiscalDocumentRepositoryP
     const record = await this.prisma.fiscalDocument.update({ where: { id }, data });
     return toDomainFiscalDocument(record);
   }
+
+  async delete(id: string): Promise<void> {
+    await this.prisma.fiscalDocument.delete({ where: { id } });
+  }
 }

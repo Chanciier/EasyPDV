@@ -7,10 +7,11 @@ import { formatCpf } from '@easypdv/shared-validation'
 import { formatBRL, normalize } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/lib/auth-store'
-import { useFiscalStatus, useProducts, useSalesList, useVoidSale } from '@/hooks/use-sales'
+import { useFiscalStatus, useIssueFiscalReceipt, useProducts, useSalesList, useVoidSale } from '@/hooks/use-sales'
 import { useDashboardReport } from '@/hooks/use-reports'
 import { useCustomer } from '@/hooks/use-customers'
 import { usePrintReceipt } from '@/hooks/use-hardware'
+import { useFiscalPrintStore } from '@/lib/fiscal-print-store'
 import { Modal } from './ui/modal'
 import { StatCard } from './ui/stat-card'
 
@@ -27,7 +28,10 @@ const FISCAL_STATUS_META: Record<
 }
 
 function FiscalStatusBadge({ saleId }: { saleId: string }) {
-  const { data: fiscal } = useFiscalStatus(saleId)
+  // pollWhilePending: emissão manual (botão "Emitir cupom fiscal" abaixo)
+  // pode deixar o status "pending" por alguns segundos (SEFAZ é assíncrono)
+  // — sem isso a badge ficava presa até o operador fechar e reabrir o modal.
+  const { data: fiscal } = useFiscalStatus(saleId, { pollWhilePending: true })
   if (!fiscal) return null
 
   // Venda sem CPF (2026-08-25): nunca vira NFC-e de verdade, só um
@@ -106,7 +110,13 @@ export function HistoryView() {
   const [voidOpen, setVoidOpen] = useState(false)
   const [voidReason, setVoidReason] = useState('')
   const [voidError, setVoidError] = useState<string | null>(null)
-  const { data: detailFiscal } = useFiscalStatus(detail?.id ?? null)
+  const issueFiscalReceipt = useIssueFiscalReceipt()
+  const setPendingFiscalPrint = useFiscalPrintStore((s) => s.setPending)
+  // pollWhilePending: emitir manualmente (handleIssueFiscal abaixo) deixa o
+  // status "pending" por alguns segundos (SEFAZ é assíncrono) até virar
+  // "issued"/"error" — sem isso a tela ficava presa no status antigo até o
+  // operador fechar e reabrir o modal.
+  const { data: detailFiscal } = useFiscalStatus(detail?.id ?? null, { pollWhilePending: true })
   const { data: detailCustomer } = useCustomer(detail?.customerId ?? null)
 
   function openDetail(sale: Sale) {
@@ -142,28 +152,49 @@ export function HistoryView() {
    * imprimia nada, sem erro visível. `fiscal` já é opcional no payload
    * (ver `ReceiptPrintPayload`) exatamente pra cobrir esse caso.
    */
-  function handlePrint() {
-    if (!detail || detailFiscal?.status !== 'issued') return
-    const basePayload = {
-      saleId: detail.id,
-      confirmedAt: detail.confirmedAt ?? new Date().toISOString(),
-      items: detail.items.map((item) => ({
+  function buildPrintBasePayload(sale: Sale) {
+    return {
+      saleId: sale.id,
+      confirmedAt: sale.confirmedAt ?? new Date().toISOString(),
+      items: sale.items.map((item) => ({
         name: detailProductNames[item.productId] ?? item.productId,
         quantity: item.quantity,
         totalAmount: item.totalAmount,
       })),
-      totalAmount: detail.totalAmount,
-      payments: detail.payments
+      totalAmount: sale.totalAmount,
+      payments: sale.payments
         .filter((p) => p.status === 'aprovado')
         .map((p) => ({ label: paymentLabel(p), amount: p.amount })),
       customerDocument: detailCustomer?.document ? formatCpf(detailCustomer.document) : undefined,
     }
+  }
+
+  function handlePrint() {
+    if (!detail || detailFiscal?.status !== 'issued') return
+    const basePayload = buildPrintBasePayload(detail)
     const { documentNumber, accessKey, qrCodeUrl } = detailFiscal
     printReceipt.mutate(
       documentNumber && accessKey && qrCodeUrl
         ? { ...basePayload, fiscal: { documentNumber, accessKey, qrCodeUrl } }
         : basePayload,
     )
+  }
+
+  /**
+   * Emissão manual de NFC-e (2026-08-26) — venda sem CPF só gera um
+   * comprovante local por padrão (ver docblock de handlePrint acima). O
+   * pedido de venda já existe no Bling (criado no sync original,
+   * independente de CPF) — só falta gerar+enviar a NFC-e em cima dele, pra
+   * "Consumidor Final" (CPF na nota sempre foi opcional). Registra a
+   * impressão pendente no MESMO mecanismo já usado na hora da venda
+   * (fiscal-print-store.ts) — o FiscalPrintWatcher, sempre montado em
+   * pos-shell.tsx, imprime sozinho assim que a NFC-e sair, mesmo se o
+   * operador fechar este modal ou trocar de aba antes disso.
+   */
+  function handleIssueFiscal() {
+    if (!detail) return
+    setPendingFiscalPrint({ saleId: detail.id, basePayload: buildPrintBasePayload(detail) })
+    issueFiscalReceipt.mutate(detail.id)
   }
 
   const filtered = useMemo(() => {
@@ -308,6 +339,16 @@ export function HistoryView() {
                   Cancelar venda
                 </button>
               )}
+              {detailFiscal?.type === 'comprovante_nao_fiscal' && (
+                <button
+                  onClick={handleIssueFiscal}
+                  disabled={issueFiscalReceipt.isPending}
+                  title="Emite uma NFC-e de verdade pra Consumidor Final, sem CPF"
+                  className="rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {issueFiscalReceipt.isPending ? 'Emitindo…' : 'Emitir cupom fiscal'}
+                </button>
+              )}
               {detailFiscal?.status === 'issued' && (
                 <button
                   onClick={handlePrint}
@@ -337,6 +378,13 @@ export function HistoryView() {
             {voidError && (
               <div className="rounded-lg bg-destructive/10 px-3 py-2 font-sans text-xs text-destructive">
                 {voidError}
+              </div>
+            )}
+            {issueFiscalReceipt.isError && (
+              <div className="rounded-lg bg-destructive/10 px-3 py-2 font-sans text-xs text-destructive">
+                {issueFiscalReceipt.error instanceof ApiError
+                  ? issueFiscalReceipt.error.code
+                  : 'Erro ao emitir NFC-e. Tente de novo em alguns instantes.'}
               </div>
             )}
             <div className="border-t border-dashed border-border" />

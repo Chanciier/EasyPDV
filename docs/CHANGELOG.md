@@ -1,6 +1,15 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Emissão manual de NFC-e sem CPF, pelo Histórico (2026-08-26)
+Pedido do usuário depois de ver a correção anterior: venda sem CPF só gera comprovante local por padrão (decisão do Clube Saldão), mas às vezes o cliente quer a nota fiscal mesmo assim — CPF numa NFC-e é sempre opcional, pode sair pra "Consumidor Final". Só sob demanda (não muda o comportamento automático); só vale pra vendas novas a partir desta versão, não retroativo.
+
+- **Novo botão "Emitir cupom fiscal"** no Histórico, visível só pra vendas cujo documento fiscal ainda é o comprovante local (`type: comprovante_nao_fiscal`). Dispara a emissão de verdade no Bling/SEFAZ, reaproveitando o pedido de venda que já existe lá (criado no sync original, independente de CPF) — só faltava gerar+enviar a NFC-e em cima dele.
+- **Intermediador**: novo método `BlingSyncTargetAdapter.issueFiscalReceiptManually`, novo `POST /fiscal/sale/:saleId/issue` (guardado por `TerminalApiKeyGuard`, mesmo padrão de sempre). Reaproveita o `ensureFiscalDocument` já existente e testado (mesmo código do caminho automático) — só precisa apagar o comprovante local primeiro (`@@unique([organizationId, provider, saleId])` não permite os dois ao mesmo tempo).
+- **pdv-backend**: novo `POST /sales/:id/fiscal/issue`, espelha o padrão de `GetFiscalStatusUseCase`/`HttpFiscalGateway`.
+- **pdv-frontend**: badge do Histórico ganha polling (`pollWhilePending`) pra acompanhar a emissão em tempo real; registra a impressão pendente no mesmo `fiscal-print-store` já usado na hora da venda, então o `FiscalPrintWatcher` (sempre montado) imprime sozinho assim que a NFC-e sair, mesmo se o operador fechar o modal antes.
+- `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes. Emissão em si não foi testada contra o Bling/SEFAZ real (ao contrário do resto do Clube Saldão, aqui não dá pra testar e desfazer — uma NFC-e emitida é um documento fiscal de verdade) — o código reaproveita 100% os mesmos caminhos já usados e comprovados pela emissão automática (venda com CPF), só troca a forma de disparar.
+
 ### Atalhos de teclado + reimpressão de cupom sem CPF (2026-08-26)
 Pedido do usuário depois de testar o Clube Saldão em produção: revisar os atalhos do PDV pra não haver conflito, e permitir reimprimir o cupom de vendas sem CPF pelo Histórico.
 

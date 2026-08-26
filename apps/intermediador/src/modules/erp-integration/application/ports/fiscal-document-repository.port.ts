@@ -25,6 +25,8 @@ export interface FiscalDocumentRepositoryPort {
   findBySale(saleId: string): Promise<FiscalDocument | null>;
   create(data: CreateFiscalDocumentData): Promise<FiscalDocument>;
   update(id: string, data: UpdateFiscalDocumentData): Promise<FiscalDocument>;
+  /** Usado só pra emissão manual de NFC-e sobre uma venda que já tem um comprovante não fiscal (placeholder) — precisa sumir antes de criar o documento real, por causa do `@@unique([organizationId, provider, saleId])`. */
+  delete(id: string): Promise<void>;
 }
 
 export const FISCAL_DOCUMENT_REPOSITORY = Symbol("FISCAL_DOCUMENT_REPOSITORY");

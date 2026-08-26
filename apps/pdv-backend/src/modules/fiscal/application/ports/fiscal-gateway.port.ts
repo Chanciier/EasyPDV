@@ -8,6 +8,8 @@ import type { FiscalStatusPayload } from "@easypdv/shared-types";
  */
 export interface FiscalGatewayPort {
   fetchStatus(saleId: string): Promise<FiscalStatusPayload | null>;
+  /** Emissão manual de NFC-e (Histórico, venda sem CPF) — `null` só quando o terminal não tem identidade local (mesmo caso de fetchStatus). Erros de rede/Intermediador propagam (ação explícita do operador, não deve falhar em silêncio). */
+  issueManually(saleId: string): Promise<FiscalStatusPayload | null>;
 }
 
 export const FISCAL_GATEWAY = Symbol("FISCAL_GATEWAY");

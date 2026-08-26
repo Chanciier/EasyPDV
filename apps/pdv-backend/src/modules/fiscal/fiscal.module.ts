@@ -6,12 +6,14 @@ import { PrismaFiscalDocumentRepository } from "./infrastructure/repositories/pr
 import { FISCAL_DOCUMENT_REPOSITORY } from "./application/ports/fiscal-document-repository.port.js";
 import { FISCAL_GATEWAY } from "./application/ports/fiscal-gateway.port.js";
 import { GetFiscalStatusUseCase } from "./application/use-cases/get-fiscal-status.use-case.js";
+import { IssueFiscalReceiptManuallyUseCase } from "./application/use-cases/issue-fiscal-receipt-manually.use-case.js";
 
 @Module({
   imports: [ProvisioningModule],
   controllers: [FiscalController],
   providers: [
     GetFiscalStatusUseCase,
+    IssueFiscalReceiptManuallyUseCase,
     { provide: FISCAL_DOCUMENT_REPOSITORY, useClass: PrismaFiscalDocumentRepository },
     { provide: FISCAL_GATEWAY, useClass: HttpFiscalGateway },
   ],
