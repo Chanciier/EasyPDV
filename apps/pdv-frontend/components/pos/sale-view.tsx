@@ -303,8 +303,14 @@ export function SaleView() {
         }
       }
     } else if (e.key === 'Escape') {
-      e.stopPropagation()
-      setTerm('')
+      // Só consome o Escape se tiver texto pra limpar — campo já vazio deixa
+      // borbulhar pro handler global (reinicia a venda, ver useEffect de
+      // atalhos abaixo). Sem essa checagem, Esc nunca reiniciava a venda
+      // enquanto o cursor estivesse na busca (autoFocus — o caso comum).
+      if (term) {
+        e.stopPropagation()
+        setTerm('')
+      }
     }
   }
 
@@ -475,6 +481,23 @@ export function SaleView() {
           <CpfGateDialog submitting={gateSubmitting} error={gateError} onSubmit={startSaleWithDocument} />
         ) : (
           <>
+        {sale && (
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              {saleCustomer?.document ? `CPF: ${formatCpf(saleCustomer.document)}` : 'Venda sem CPF'}
+            </span>
+            <button
+              onClick={() =>
+                cancelSale.mutate(sale.id, { onSuccess: () => { reset(); setClubNotice(null) } })
+              }
+              disabled={cancelSale.isPending}
+              className="text-xs text-muted-foreground underline decoration-dotted transition-colors hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Reiniciar venda (Esc)
+            </button>
+          </div>
+        )}
+
         {/* Busca */}
         <div className="relative">
           <div className="flex items-center gap-2 rounded-xl border-2 border-primary/40 bg-card px-3 shadow-sm focus-within:border-primary">

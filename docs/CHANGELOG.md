@@ -1,6 +1,13 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Reiniciar venda após CPF — correção de UX (2026-08-26)
+Usuário testou o Clube Saldão em produção e reportou: depois de informar (ou pular) o CPF no início da venda, não tinha como voltar pro início sem finalizar ou fechar o app.
+
+- **Botão visível "Reiniciar venda (Esc)"** numa nova barra de status (mostra o CPF vinculado à venda ou "Venda sem CPF"), sempre presente assim que a venda é criada — reusa o mesmo `cancelSale` já existente.
+- **Bug relacionado corrigido**: a tecla Esc já cancelava a venda via um handler global, mas o campo de busca de produto (`autoFocus`, foco padrão) sempre consumia o Esc primeiro (`stopPropagation`) mesmo com o campo vazio, então o handler global nunca disparava no caso comum. Agora o campo só consome o Esc quando há texto pra limpar.
+- `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes. v1.5.1 do instalador.
+
 ### Clube Saldão — programa de fidelidade (2026-08-25)
 Clientes marcados no Bling com o tipo de contato "Clube Saldão" (já existente na conta, id resolvido em runtime e cacheado — nunca hardcoded) recebem 30% de desconto em toda venda. Planejado e implementado em fases, cada uma testada isoladamente antes da próxima:
 
