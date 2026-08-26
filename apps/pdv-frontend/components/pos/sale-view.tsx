@@ -334,11 +334,19 @@ export function SaleView() {
         if (sale && sale.items.length > 0) setPaymentOpen(true)
         return
       }
+      if (e.key === 'Escape') {
+        // Precisa rodar antes do gate de `typing` (igual F2/F4 acima) — a
+        // busca fica com foco quase o tempo todo (autoFocus + refoco após
+        // adicionar item), então "só reage quando não tiver input focado"
+        // deixava esse atalho praticamente morto. Campos que já tratam Esc
+        // localmente (busca com texto, valor de desconto) chamam
+        // stopPropagation antes do evento chegar aqui, então não conflitam.
+        if (sale) cancelSale.mutate(sale.id, { onSuccess: () => { reset(); setClubNotice(null) } })
+        return
+      }
       if (typing) return
 
-      if (e.key === 'Escape') {
-        if (sale) cancelSale.mutate(sale.id, { onSuccess: () => { reset(); setClubNotice(null) } })
-      } else if (e.key === '+' || e.key === '=') {
+      if (e.key === '+' || e.key === '=') {
         const item = sale?.items.find((i) => i.productId === selectedProductId)
         if (item && sale) changeQty(sale.id, item, item.quantity + 1)
       } else if (e.key === '-') {

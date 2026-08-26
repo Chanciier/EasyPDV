@@ -57,6 +57,15 @@ const REPORTS_ROLES: UserRole[] = ['administrador', 'gerente', 'proprietario']
 const ADMIN_NAV = { key: 'administracao', label: 'Administração', icon: UserCog, hint: 'F3' } as const
 const ADMIN_ROLES: UserRole[] = ['administrador']
 
+// F2/F3 já têm significado próprio dentro de algumas telas (ver
+// shortcuts-bar.tsx: Venda/Caixa/Produtos/Clientes usam F2, Caixa também usa
+// F3). Sem essa exclusão, um operador com acesso a Auditoria/Administração
+// apertando F2 pra buscar um produto no meio de uma venda era jogado pra
+// Auditoria no lugar — os dois handlers de window disparavam juntos pro
+// mesmo keydown, e o de navegação sempre "vencia" por rodar depois.
+const F2_LOCAL_VIEWS = new Set(['venda', 'caixa', 'produtos', 'clientes'])
+const F3_LOCAL_VIEWS = new Set(['caixa'])
+
 export function POSShell() {
   useRealtime()
   const { view, setView } = usePOS()
@@ -95,8 +104,8 @@ export function POSShell() {
         F8: 'historico',
         F9: 'clientes',
         ...(canSeeReports ? { F5: 'relatorios' } : {}),
-        ...(canSeeAudit ? { F2: 'auditoria' } : {}),
-        ...(canSeeAdmin ? { F3: 'administracao' } : {}),
+        ...(canSeeAudit && !F2_LOCAL_VIEWS.has(view) ? { F2: 'auditoria' } : {}),
+        ...(canSeeAdmin && !F3_LOCAL_VIEWS.has(view) ? { F3: 'administracao' } : {}),
       }
       const target = map[e.key]
       if (target) {
@@ -106,7 +115,7 @@ export function POSShell() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setView, canSeeAudit, canSeeReports, canSeeAdmin])
+  }, [setView, canSeeAudit, canSeeReports, canSeeAdmin, view])
 
   const cashOpen = cashSession?.status === 'open'
 

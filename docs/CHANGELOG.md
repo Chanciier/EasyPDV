@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Atalhos de teclado + reimpressão de cupom sem CPF (2026-08-26)
+Pedido do usuário depois de testar o Clube Saldão em produção: revisar os atalhos do PDV pra não haver conflito, e permitir reimprimir o cupom de vendas sem CPF pelo Histórico.
+
+- **Esc pra reiniciar a venda, de verdade agora**: o fix da v1.5.1 (abaixo) só resolvia parte do problema — o handler global de Esc ficava depois de um `if (typing) return` que sempre barrava o evento enquanto o campo de busca estivesse com foco (o estado padrão, por causa do `autoFocus`), então o atalho continuava não disparando no caso comum. Esc agora é tratado antes desse gate, no mesmo lugar que F2/F4 já eram — o botão "Reiniciar venda (Esc)" e a tecla em si passam a ter o mesmo comportamento.
+- **Conflito real de atalho corrigido**: F2 e F3 tinham dois significados ao mesmo tempo pra operadores com acesso a Auditoria/Administração — atalho global de navegação (`pos-shell.tsx`, sem checar a tela atual) E ação local da tela (Buscar produto/Suprimento/Novo produto/Novo cliente em Venda/Caixa/Produtos/Clientes, Sangria em Caixa) — os dois handlers de `window` disparavam juntos pro mesmo keydown, e o de navegação sempre "vencia" por rodar depois. Agora o atalho global de F2/F3 é desativado nas telas que já usam essas teclas localmente.
+- **Reimpressão de cupom sem CPF**: vendas sem CPF geram um `FiscalDocument` local (`type: comprovante_nao_fiscal`, `status: issued`, sem `documentNumber`/`accessKey`/`qrCodeUrl` — não passam pelo Bling/SEFAZ). O botão "Imprimir cupom fiscal" no Histórico já aparecia pra essas vendas (status "issued"), mas exigia os três campos fiscais e simplesmente não fazia nada quando clicado — sem erro visível. Confirmado contra dados reais de produção: duas vendas de hoje já estavam presas nesse estado. `handlePrint` agora omite o bloco `fiscal` do payload quando os campos não existem (já era suportado pelo tipo `ReceiptPrintPayload.fiscal?`, só não usado nesse caminho) — o botão vira "Imprimir cupom" pra esse caso, e a badge de status mostra "Comprovante não fiscal (venda sem CPF)" em vez de "NFC-e emitida", pra não parecer que uma nota fiscal de verdade existe.
+- `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes.
+
 ### Reiniciar venda após CPF — correção de UX (2026-08-26)
 Usuário testou o Clube Saldão em produção e reportou: depois de informar (ou pular) o CPF no início da venda, não tinha como voltar pro início sem finalizar ou fechar o app.
 

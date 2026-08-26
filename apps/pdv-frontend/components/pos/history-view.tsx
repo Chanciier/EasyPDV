@@ -30,6 +30,18 @@ function FiscalStatusBadge({ saleId }: { saleId: string }) {
   const { data: fiscal } = useFiscalStatus(saleId)
   if (!fiscal) return null
 
+  // Venda sem CPF (2026-08-25): nunca vira NFC-e de verdade, só um
+  // comprovante local marcado "issued" na hora (sem SEFAZ). Rótulo próprio
+  // pra não parecer que uma nota fiscal real foi emitida.
+  if (fiscal.type === 'comprovante_nao_fiscal') {
+    return (
+      <div className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 font-sans text-xs font-medium text-muted-foreground">
+        <Receipt className="size-3.5" />
+        Comprovante não fiscal (venda sem CPF)
+      </div>
+    )
+  }
+
   const meta = FISCAL_STATUS_META[fiscal.status]
   const Icon = meta.icon
 
@@ -121,11 +133,18 @@ export function HistoryView() {
     }
   }
 
-  function handlePrintFiscal() {
+  /**
+   * Cobre os dois tipos de `FiscalDocument` "issued" (venda com CPF = NFC-e
+   * real, com QR; venda sem CPF = comprovante local, sem QR/chave — ver
+   * `recordNonFiscalReceipt` no Intermediador). Antes desta função exigia os
+   * três campos fiscais e simplesmente não fazia nada pra venda sem CPF — o
+   * botão aparecia (status já vinha "issued" nesse caso) mas clicar não
+   * imprimia nada, sem erro visível. `fiscal` já é opcional no payload
+   * (ver `ReceiptPrintPayload`) exatamente pra cobrir esse caso.
+   */
+  function handlePrint() {
     if (!detail || detailFiscal?.status !== 'issued') return
-    const { documentNumber, accessKey, qrCodeUrl } = detailFiscal
-    if (!documentNumber || !accessKey || !qrCodeUrl) return
-    printReceipt.mutate({
+    const basePayload = {
       saleId: detail.id,
       confirmedAt: detail.confirmedAt ?? new Date().toISOString(),
       items: detail.items.map((item) => ({
@@ -137,9 +156,14 @@ export function HistoryView() {
       payments: detail.payments
         .filter((p) => p.status === 'aprovado')
         .map((p) => ({ label: paymentLabel(p), amount: p.amount })),
-      fiscal: { documentNumber, accessKey, qrCodeUrl },
       customerDocument: detailCustomer?.document ? formatCpf(detailCustomer.document) : undefined,
-    })
+    }
+    const { documentNumber, accessKey, qrCodeUrl } = detailFiscal
+    printReceipt.mutate(
+      documentNumber && accessKey && qrCodeUrl
+        ? { ...basePayload, fiscal: { documentNumber, accessKey, qrCodeUrl } }
+        : basePayload,
+    )
   }
 
   const filtered = useMemo(() => {
@@ -286,11 +310,11 @@ export function HistoryView() {
               )}
               {detailFiscal?.status === 'issued' && (
                 <button
-                  onClick={handlePrintFiscal}
+                  onClick={handlePrint}
                   disabled={printReceipt.isPending}
                   className="rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Imprimir cupom fiscal
+                  {detailFiscal.type === 'comprovante_nao_fiscal' ? 'Imprimir cupom' : 'Imprimir cupom fiscal'}
                 </button>
               )}
               <button
