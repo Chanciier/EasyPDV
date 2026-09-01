@@ -1,6 +1,13 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Fluxo de pagamento em etapas + bandeira de cartão removida (2026-09-01)
+Pedido direto do usuário: reformula a tela de pagamento (F4) inteira, de "tudo numa tela só" pra um fluxo em passos, mais rápido pelo teclado numérico.
+
+- **Novo fluxo em 3 passos**: (1) seleção de forma de pagamento (tecla 1-5 ou clique — nada mais na tela) → (2) valor daquela perna (mesmos campos de sempre: parcelas pra cartão, recebido/troco/valores rápidos pra dinheiro) → confirma a perna; se ainda faltar pagar, volta sozinho pro passo 1 pra próxima perna; se cobriu o total, mostra a tela de confirmar venda (igual sempre foi). Esc/fechar no passo de valor volta um passo (não fecha o diálogo inteiro) — só fecha de verdade no passo de seleção ou já com tudo pago.
+- **Bandeira do cartão (Mastercard/Visa) removida** — decisão deliberada do usuário: a escolha de bandeira (2026-08-21) virou uma etapa a mais sem necessidade real. Crédito/Débito agora sempre gravam `cardBrand: "mastercard"` fixo, sem perguntar nada ao operador. O Bling continua recebendo "mastercard" sem mudança nenhuma na resolução de forma de pagamento — **cartões Visa passam a aparecer como "Crédito (Mastercard)"/"Débito (Mastercard)" nos relatórios do Bling e do PDV daí em diante**, confirmado com o usuário que está tudo bem (loja não precisa distinguir bandeira).
+- `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes. **Testado de ponta a ponta de verdade** (backend + frontend escratch, `next dev` não hidratava nesse ambiente por um problema de WebSocket/HMR alheio ao código — servindo o export estático real, do jeito que o Electron carrega em produção, funcionou normal): venda com desconto por item (10%, calculado certinho), pagamento dividido Crédito R$10 + PIX R$12,41 completando o total, voltando sozinho pra seleção de forma na perna parcial e indo pra tela de confirmar na perna final, cupom final mostrando "Crédito (Mastercard)" — confirmado.
+
 ### Desconto em %, desconto por item, fonte maior e mais atalhos (2026-09-01)
 Pedido direto do usuário, quatro melhorias na tela de Venda:
 

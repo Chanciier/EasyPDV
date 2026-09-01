@@ -9,16 +9,25 @@ import { ApiError } from '@/lib/api-client'
 import { useRegisterPayment, useRemovePayment } from '@/hooks/use-sales'
 
 /**
- * Bandeira do cartão (2026-08-21) — pedido direto do usuário pra bater com
- * as formas de pagamento reais da loja no Bling ("Crédito (Mastercard)",
- * "Crédito (Visa)", etc — confirmado via API contra a conta real). Crédito e
- * Débito viram botões de primeiro nível (não mais um "Cartão" genérico com
- * sub-escolha) — depois de escolher um dos dois, a bandeira é obrigatória
- * antes de dar pra adicionar a perna. "Outro" continua existindo no backend
- * (fallback), só não aparece mais aqui — as 5 formas abaixo cobrem tudo que
- * a loja realmente usa.
+ * Fluxo em etapas (2026-09-01, pedido direto do usuário) — F4 abre direto na
+ * seleção de forma de pagamento (nada mais na tela), escolher uma forma
+ * (clique ou tecla numérica 1-5) avança pra tela de valor daquela perna;
+ * `addLeg()` registra e, se ainda faltar pagar, volta sozinho pra seleção de
+ * forma pra próxima perna — até `fullyPaid`, que aí mostra a tela de
+ * confirmar (igual sempre foi). Reverte a decisão de 2026-08-21 de deixar
+ * tudo numa tela só.
+ *
+ * Bandeira do cartão (removida, 2026-09-01, pedido direto do usuário) — a
+ * escolha Mastercard/Visa (2026-08-21) virou passo a mais sem necessidade
+ * real: `cardBrand` agora é sempre "mastercard" fixo pra qualquer
+ * Crédito/Débito, sem pedir nada ao operador. O Bling continua recebendo
+ * "mastercard" (resolvePaymentMethodId bate pelo nome exato "Crédito
+ * (Mastercard)"/"Débito (Mastercard)", sem mudança nenhuma lá) — cartões
+ * Visa passam a sair como Mastercard nos relatórios, decisão deliberada do
+ * usuário (loja não precisa distinguir bandeira, só queria tirar a etapa).
  */
 type MethodKey = 'dinheiro' | 'credito' | 'debito' | 'pix' | 'vale_troca'
+type Step = 'method' | 'amount'
 
 const METHODS: { key: MethodKey; label: string; icon: typeof Banknote; num: string }[] = [
   { key: 'dinheiro', label: 'Dinheiro', icon: Banknote, num: '1' },
@@ -28,10 +37,7 @@ const METHODS: { key: MethodKey; label: string; icon: typeof Banknote; num: stri
   { key: 'vale_troca', label: 'Vale-Troca', icon: Gift, num: '5' },
 ]
 
-const BRANDS: { key: PaymentCardBrand; label: string }[] = [
-  { key: 'mastercard', label: 'Mastercard' },
-  { key: 'visa', label: 'Visa' },
-]
+const FIXED_CARD_BRAND: PaymentCardBrand = 'mastercard'
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   dinheiro: 'Dinheiro',
@@ -95,8 +101,8 @@ export function PaymentDialog({
   const registerPayment = useRegisterPayment()
   const removePayment = useRemovePayment()
 
+  const [step, setStep] = useState<Step>('method')
   const [selectedKey, setSelectedKey] = useState<MethodKey>('dinheiro')
-  const [cardBrand, setCardBrand] = useState<PaymentCardBrand | null>(null)
   const [amount, setAmount] = useState('')
   const [received, setReceived] = useState('')
   const [installments, setInstallments] = useState(1)
@@ -115,26 +121,28 @@ export function PaymentDialog({
 
   useEffect(() => {
     if (open) {
+      setStep('method')
       setSelectedKey('dinheiro')
-      setCardBrand(null)
       setInstallments(1)
       setAddError(null)
     }
   }, [open])
-
-  // Trocar a forma de pagamento sempre limpa a bandeira escolhida — evita
-  // levar "Mastercard" de um Crédito pra um Débito sem querer.
-  useEffect(() => {
-    setCardBrand(null)
-  }, [selectedKey])
 
   // Reseta os campos da perna atual sempre que o restante mudar (perna
   // adicionada ou removida) — o valor sugerido acompanha o que ainda falta.
   useEffect(() => {
     setAmount(remaining > 0 ? remaining.toFixed(2).replace('.', ',') : '')
     setReceived('')
-    if (open && remaining > 0) setTimeout(() => inputRef.current?.focus(), 50)
-  }, [remaining, open])
+    if (open && step === 'amount' && remaining > 0) setTimeout(() => inputRef.current?.focus(), 50)
+  }, [remaining, open, step])
+
+  /** Escolher uma forma (clique ou tecla numérica) já avança pra tela de valor — não é só um destaque visual. */
+  function selectMethod(key: MethodKey) {
+    setSelectedKey(key)
+    setInstallments(1)
+    setAddError(null)
+    setStep('amount')
+  }
 
   const isCash = selectedKey === 'dinheiro'
   const amountNum = Number(amount.replace(',', '.')) || 0
@@ -145,7 +153,6 @@ export function PaymentDialog({
   const canAddLeg =
     !fullyPaid &&
     !registerPayment.isPending &&
-    (!isCard || cardBrand !== null) &&
     appliedAmount > 0 &&
     appliedAmount <= remaining + 0.001 &&
     (isCash ? receivedNum > 0 : amountNum > 0 && amountNum <= remaining + 0.001)
@@ -162,12 +169,25 @@ export function PaymentDialog({
         method,
         amount: appliedAmount,
         cardType: isCard ? cardType : null,
-        cardBrand: isCard ? cardBrand : null,
+        cardBrand: isCard ? FIXED_CARD_BRAND : null,
         installments: isCard ? installments : null,
       })
       const newPayment = updated.payments.find((p) => !sale.payments.some((existing) => existing.id === p.id))
       if (newPayment) {
         onPaymentRegistered?.(newPayment, receivedForThisLeg)
+      }
+      // Ainda falta pagar: volta sozinho pra seleção de forma, pra próxima
+      // perna. Cobriu o total: não faz nada aqui — `fullyPaid` (derivado da
+      // Sale já atualizada) assume o render sozinho, mostrando a tela de
+      // confirmar. Calculado em cima da Sale que voltou da mutation (não de
+      // `remaining`/`approvedTotal` do closure) — mesmo raciocínio do resto
+      // do arquivo: nunca confiar num total calculado só localmente.
+      const updatedApprovedTotal = updated.payments
+        .filter((p) => p.status === 'aprovado')
+        .reduce((sum, p) => sum + p.amount, 0)
+      const newRemaining = Math.max(0, Math.round((updated.totalAmount - updatedApprovedTotal) * 100) / 100)
+      if (newRemaining > 0) {
+        setStep('method')
       }
     } catch (e) {
       setAddError(describeError(e, 'Erro ao registrar pagamento.'))
@@ -189,41 +209,53 @@ export function PaymentDialog({
     onConfirm()
   }
 
+  /** Esc no passo de valor volta pra seleção de forma (corrigir escolha errada) em vez de fechar o diálogo inteiro — só fecha de verdade na seleção ou já com tudo pago. */
+  function handleClose() {
+    if (step === 'amount' && !fullyPaid) {
+      setStep('method')
+      setAddError(null)
+      return
+    }
+    onClose()
+  }
+
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       const found = METHODS.find((m) => m.num === e.key)
       if (found && document.activeElement?.tagName !== 'INPUT') {
-        setSelectedKey(found.key)
+        selectMethod(found.key)
+        return
       }
       if (e.key === 'Enter') {
         e.preventDefault()
         if (fullyPaid) confirm()
-        else void addLeg()
+        else if (step === 'amount') void addLeg()
+        else selectMethod(selectedKey)
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, selectedKey, cardBrand, amount, received, fullyPaid, canAddLeg, canConfirm, installments])
+  }, [open, step, selectedKey, amount, received, fullyPaid, canAddLeg, canConfirm, installments])
 
   const quickValues = [remaining, 20, 50, 100, 200].filter((v, i, a) => v > 0 && a.indexOf(v) === i)
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       title="Pagamento"
       footer={
-        <>
-          <button
-            onClick={onClose}
-            disabled={submitting || registerPayment.isPending || removePayment.isPending}
-            className="rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Cancelar (Esc)
-          </button>
-          {fullyPaid ? (
+        fullyPaid ? (
+          <>
+            <button
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancelar (Esc)
+            </button>
             <button
               onClick={confirm}
               disabled={!canConfirm}
@@ -231,7 +263,16 @@ export function PaymentDialog({
             >
               {submitting ? 'Confirmando…' : 'Confirmar venda (Enter)'}
             </button>
-          ) : (
+          </>
+        ) : step === 'amount' ? (
+          <>
+            <button
+              onClick={() => setStep('method')}
+              disabled={registerPayment.isPending}
+              className="rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Voltar (Esc)
+            </button>
             <button
               onClick={() => void addLeg()}
               disabled={!canAddLeg}
@@ -239,8 +280,15 @@ export function PaymentDialog({
             >
               {registerPayment.isPending ? 'Adicionando…' : 'Adicionar pagamento (Enter)'}
             </button>
-          )}
-        </>
+          </>
+        ) : (
+          <button
+            onClick={onClose}
+            className="rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted"
+          >
+            Cancelar (Esc)
+          </button>
+        )
       }
     >
       <div className="space-y-5">
@@ -278,58 +326,45 @@ export function PaymentDialog({
           </div>
         )}
 
-        {!fullyPaid && (
+        {!fullyPaid && step === 'method' && (
+          <div>
+            <p className="mb-2 text-sm font-medium">Forma de pagamento</p>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+              {METHODS.map((m) => {
+                const Icon = m.icon
+                return (
+                  <button
+                    key={m.key}
+                    onClick={() => selectMethod(m.key)}
+                    className="flex flex-col items-center gap-1.5 rounded-lg border-2 border-border bg-card px-2 py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+                  >
+                    <Icon className="size-5" />
+                    {m.label}
+                    <kbd className="rounded bg-muted px-1 font-mono text-[10px]">{m.num}</kbd>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {!fullyPaid && step === 'amount' && (
           <>
-            <div>
-              <p className="mb-2 text-sm font-medium">Forma de pagamento</p>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-                {METHODS.map((m) => {
-                  const Icon = m.icon
-                  const active = selectedKey === m.key
-                  return (
-                    <button
-                      key={m.key}
-                      onClick={() => setSelectedKey(m.key)}
-                      disabled={registerPayment.isPending}
-                      className={`flex flex-col items-center gap-1.5 rounded-lg border-2 px-2 py-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                        active
-                          ? 'border-primary bg-primary/15 text-foreground'
-                          : 'border-border bg-card text-muted-foreground hover:border-primary/50'
-                      }`}
-                    >
-                      <Icon className="size-5" />
-                      {m.label}
-                      <kbd className="rounded bg-muted px-1 font-mono text-[10px]">{m.num}</kbd>
-                    </button>
-                  )
-                })}
-              </div>
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              {(() => {
+                const m = METHODS.find((x) => x.key === selectedKey)!
+                const Icon = m.icon
+                return (
+                  <>
+                    <Icon className="size-4" />
+                    {m.label}
+                  </>
+                )
+              })()}
             </div>
 
             {isCard && (
               <div className="space-y-3">
-                <div>
-                  <p className="mb-1.5 text-sm font-medium">Bandeira</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {BRANDS.map((b) => (
-                      <button
-                        key={b.key}
-                        onClick={() => setCardBrand(b.key)}
-                        disabled={registerPayment.isPending}
-                        className={`rounded-lg border-2 px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                          cardBrand === b.key
-                            ? 'border-primary bg-primary/15 text-foreground'
-                            : 'border-border bg-card text-muted-foreground hover:border-primary/50'
-                        }`}
-                      >
-                        {b.label}
-                      </button>
-                    ))}
-                  </div>
-                  {cardBrand === null && (
-                    <p className="mt-1 text-xs text-muted-foreground">Escolha a bandeira pra continuar.</p>
-                  )}
-                </div>
                 <div>
                   <label htmlFor="card-amount" className="mb-1.5 block text-sm font-medium">
                     Valor desta perna
