@@ -5,7 +5,6 @@ import {
   SaleNotEditableError,
   SaleNotFoundError,
 } from "../../domain/errors.js";
-import { computeClubDiscountAmount } from "../../domain/club-discount.constants.js";
 import type { Sale } from "../../domain/entities/sale.entity.js";
 import { SALE_REPOSITORY, type SaleRepositoryPort } from "../ports/sale-repository.port.js";
 import {
@@ -19,6 +18,12 @@ import {
  * os dois coexistem, sem exclusão mútua (ao contrário de manual vs clube, que
  * são mutuamente exclusivos NA VENDA). `discountAmount = 0` remove o desconto
  * desse item.
+ *
+ * Reaproveitado pelo Clube Saldão (2026-09-02) — o desconto de sócio deixou
+ * de ser um percentual fixo na venda inteira e passou a ser por item
+ * (10%-90%, escolhido na hora de bipar cada produto, com 30% de fallback se
+ * o operador não escolher nada — ver `sale-view.tsx`). O frontend converte
+ * a porcentagem em R$ e chama exatamente este mesmo endpoint.
  */
 @Injectable()
 export class ApplyItemDiscountUseCase {
@@ -52,14 +57,6 @@ export class ApplyItemDiscountUseCase {
       entityId: saleId,
       metadata: { itemId, discountAmount },
     });
-
-    // Mesmo recálculo de add/remove-sale-item.use-case.ts — mudar o
-    // subtotal de um item muda o subtotal da venda, e o desconto de clube
-    // (percentual sobre o subtotal) precisa acompanhar.
-    if (updated.discountSource === "club") {
-      const subtotal = updated.items.reduce((sum, i) => sum + i.totalAmount, 0);
-      return this.saleRepository.applyDiscount(updated.id, computeClubDiscountAmount(subtotal), "club");
-    }
     return updated;
   }
 }

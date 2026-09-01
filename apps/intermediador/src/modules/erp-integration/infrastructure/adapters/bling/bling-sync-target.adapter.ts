@@ -412,8 +412,17 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * docblock daquele método) pra achar ou criar o contato, depois sempre
    * atualiza o nome pro informado e mescla a tag "Clube Saldão" em cima do
    * `tiposContato` atual (nunca sobrescreve outros tipos que já tinha).
+   * `phone` (2026-09-02) vai pro campo `celular` do contato no Bling —
+   * confirmado no schema oficial da API v3, campo top-level distinto de
+   * `telefone` (fixo).
    */
-  async addClubMember(organizationId: string, name: string, document: string, validUntil: Date): Promise<ClubMemberSummary> {
+  async addClubMember(
+    organizationId: string,
+    name: string,
+    document: string,
+    validUntil: Date,
+    phone: string,
+  ): Promise<ClubMemberSummary> {
     const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
     if (!integration) {
       throw new ErpIntegrationNotFoundError(organizationId);
@@ -430,6 +439,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       tipo: contact.tipo ?? "F",
       tiposContato: hasClubTag ? currentTipoIds : [...currentTipoIds, { id: clubTipoId }],
       numeroDocumento: document,
+      celular: phone,
     });
 
     const membership = await this.clubMembershipRepository.upsert({

@@ -8,6 +8,7 @@ export interface AddClubMemberInput {
   name: string;
   document: string;
   validUntil: string;
+  phone: string;
 }
 
 export interface ClubGatewayPort {

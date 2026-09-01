@@ -25,6 +25,8 @@ export interface BlingContact {
   /** Campos abaixo só vêm no detalhe (`GET /contatos/{id}`) — necessários pra reconstruir o corpo de um `PUT /contatos/{id}` sem perder dado (ver `updateContact`). */
   tipo?: "F" | "J";
   situacao?: string;
+  /** Celular do contato (2026-09-02) — confirmado no schema oficial da API v3 (`POST /contatos`, doc pública): campo top-level "celular", distinto de "telefone" (fixo). Usado pelo Clube Saldão. */
+  celular?: string;
 }
 
 export interface BlingContactType {
@@ -340,7 +342,7 @@ export class BlingApiClient {
   async updateContact(
     accessToken: string,
     id: number,
-    body: { nome: string; tipo: "F" | "J"; tiposContato: { id: number }[]; numeroDocumento?: string },
+    body: { nome: string; tipo: "F" | "J"; tiposContato: { id: number }[]; numeroDocumento?: string; celular?: string },
   ): Promise<void> {
     await this.request<void>(accessToken, "PUT", `/contatos/${id}`, { ...body, situacao: "A" });
   }

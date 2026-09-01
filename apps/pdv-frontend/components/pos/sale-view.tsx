@@ -46,6 +46,18 @@ const BRAND_LABELS: Record<string, string> = {
   visa: 'Visa',
 }
 
+/** Desconto padrão do item de venda de sócio (30%) quando o operador não digita nada — ver `finalizeClubItemDiscount` em SaleView. */
+const CLUB_DEFAULT_DISCOUNT_PERCENT = 30
+
+/**
+ * Clube Saldão — desconto por item (2026-09-02, pedido direto do usuário):
+ * pausa depois de um único dígito 1-9 digitado, pra distinguir de um leitor
+ * de código de barras USB (que manda vários dígitos + Enter em poucos
+ * milissegundos). Curta o bastante pra não travar o operador, longa o
+ * bastante pra nenhum leitor real terminar de mandar um código nesse tempo.
+ */
+const CLUB_DISCOUNT_DIGIT_DELAY_MS = 300
+
 /** Pagamento dividido + bandeira (2026-08-21) — usado no cupom/recibo pra identificar cada perna (ex: "Crédito (Mastercard) 3x"). */
 function paymentLegLabel(payment: Payment): string {
   if (!payment.cardType) return PAYMENT_LABELS[payment.method]
@@ -277,6 +289,26 @@ export function SaleView() {
     }
   }
 
+  /** Converte a % (10-90, escolhida pelo operador ou o fallback de 30%) num valor em R$ sobre o subtotal ATUAL da linha, e aplica via o mesmo endpoint do desconto manual por item. */
+  function applyClubItemDiscountPercent(item: SaleItem, percent: number) {
+    if (!sale) return
+    const lineSubtotal = item.quantity * item.unitPrice
+    const discountAmount = Math.round(lineSubtotal * (percent / 100) * 100) / 100
+    applyItemDiscount.mutate({ saleId: sale.id, itemId: item.id, discountAmount })
+  }
+
+  /**
+   * Clube Saldão — fecha o desconto de um item "pendente" (nasceu com
+   * `discountAmount: 0`, nunca recebeu uma tecla 1-9 do operador) em 30% de
+   * fallback. Chamado ao trocar de item selecionado (bipar o próximo
+   * produto) e antes de abrir o pagamento, pro último item da venda — que
+   * nunca tem um "próximo bip" pra disparar isso sozinho.
+   */
+  function finalizeClubItemDiscount(item: SaleItem | undefined) {
+    if (!item || item.discountAmount > 0) return
+    applyClubItemDiscountPercent(item, CLUB_DEFAULT_DISCOUNT_PERCENT)
+  }
+
   async function addProduct(product: Product) {
     setError(null)
     setAdding(true)
@@ -288,6 +320,13 @@ export function SaleView() {
       } else {
         await addItem.mutateAsync({ saleId: currentSale.id, productId: product.id, quantity: 1 })
       }
+      // Clube Saldão — trocar de item selecionado fecha a decisão do
+      // anterior (30% se o operador não digitou nada pra ele). Só quando é
+      // de fato outro produto — bipar o MESMO produto de novo (aumenta
+      // quantidade) não conta como "próximo item".
+      if (sale?.discountSource === 'club' && selectedProductId && selectedProductId !== product.id) {
+        finalizeClubItemDiscount(sale.items.find((i) => i.productId === selectedProductId))
+      }
       setSelectedProductId(product.id)
       setTerm('')
       setDebouncedTerm('')
@@ -298,6 +337,56 @@ export function SaleView() {
     } finally {
       setAdding(false)
     }
+  }
+
+  /**
+   * Clube Saldão — pausa depois de um único dígito (ver
+   * CLUB_DISCOUNT_DIGIT_DELAY_MS acima). Só observa `term`, nunca intercepta
+   * a tecla em si — o dígito digita normal na busca (feedback visual pro
+   * operador) e, se ninguém mais chegar antes do tempo, vira o desconto do
+   * item selecionado e o campo é limpo. Se mais caracteres chegarem
+   * (leitor de código de barras, ou uma busca de verdade começando com
+   * número), o cleanup cancela e nada acontece aqui — segue o fluxo normal.
+   * Fora de uma venda de sócio (`discountSource !== 'club'`), este efeito
+   * nunca dispara — dígitos continuam se comportando exatamente como antes.
+   */
+  useEffect(() => {
+    if (sale?.discountSource !== 'club' || !selectedProductId || !/^[1-9]$/.test(term)) return
+    const percent = Number(term) * 10
+    const timer = setTimeout(() => {
+      const item = sale.items.find((i) => i.productId === selectedProductId)
+      if (item) applyClubItemDiscountPercent(item, percent)
+      setTerm('')
+    }, CLUB_DISCOUNT_DIGIT_DELAY_MS)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [term, sale?.discountSource, selectedProductId])
+
+  /**
+   * Abre o pagamento (F4 ou botão "Finalizar") — numa venda de sócio,
+   * primeiro fecha em 30% qualquer item ainda pendente (o último item
+   * bipado nunca tem um "próximo bip" pra disparar `finalizeClubItemDiscount`
+   * sozinho lá em addProduct). Espera essas chamadas terminarem antes de
+   * mostrar a tela de pagamento, pra não abrir com um total que ainda vai
+   * mudar sozinho debaixo do operador.
+   */
+  async function openPayment() {
+    if (!sale) return
+    if (sale.discountSource === 'club') {
+      const pending = sale.items.filter((i) => i.discountAmount === 0)
+      if (pending.length > 0) {
+        await Promise.all(
+          pending.map((i) =>
+            applyItemDiscount.mutateAsync({
+              saleId: sale.id,
+              itemId: i.id,
+              discountAmount: Math.round(i.quantity * i.unitPrice * (CLUB_DEFAULT_DISCOUNT_PERCENT / 100) * 100) / 100,
+            }),
+          ),
+        )
+      }
+    }
+    setPaymentOpen(true)
   }
 
   /**
@@ -328,6 +417,15 @@ export function SaleView() {
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (e.nativeEvent.isComposing || e.keyCode === 229) return
+      // Clube Saldão — Enter com um único dígito pendente confirma o
+      // desconto na hora, sem esperar a pausa (CLUB_DISCOUNT_DIGIT_DELAY_MS)
+      // — operador que já sabe o que quer não precisa aguardar.
+      if (sale?.discountSource === 'club' && selectedProductId && /^[1-9]$/.test(term.trim())) {
+        const item = sale.items.find((i) => i.productId === selectedProductId)
+        if (item) applyClubItemDiscountPercent(item, Number(term.trim()) * 10)
+        setTerm('')
+        return
+      }
       // `matches` vem de `debouncedTerm` (250ms atrás de `term`) — só confia
       // nele quando o debounce já alcançou o texto atual. Bug real
       // (2026-08-19): um leitor de código de barras USB digita + Enter bem
@@ -386,7 +484,7 @@ export function SaleView() {
       }
       if (e.key === 'F4') {
         e.preventDefault()
-        if (sale && sale.items.length > 0) setPaymentOpen(true)
+        if (sale && sale.items.length > 0) void openPayment()
         return
       }
       if (e.key === 'Escape') {
@@ -531,7 +629,7 @@ export function SaleView() {
           >
             <span>
               {clubNotice === 'member'
-                ? 'Cliente do Clube Saldão — 30% de desconto aplicado.'
+                ? 'Cliente do Clube Saldão — ao bipar cada produto, digite 1-9 pra escolher o desconto (10%-90%). Sem nada digitado, cai em 30%.'
                 : 'Cliente não pertence ao Clube Saldão.'}
             </span>
             <button onClick={() => setClubNotice(null)} className="text-xs underline">
@@ -782,7 +880,7 @@ export function SaleView() {
             {sale.discountSource === 'club' ? (
               <div className="flex w-full items-center justify-between text-sm">
                 <span className="text-muted-foreground">Desconto Clube Saldão</span>
-                <span className="font-mono font-medium text-primary">- {formatBRL(sale.discountAmount)}</span>
+                <span className="text-xs text-muted-foreground">por item — veja o carrinho</span>
               </div>
             ) : discountOpen ? (
               <div className="space-y-2">
@@ -871,7 +969,7 @@ export function SaleView() {
         </div>
 
         <button
-          onClick={() => items.length > 0 && setPaymentOpen(true)}
+          onClick={() => items.length > 0 && void openPayment()}
           disabled={items.length === 0}
           className="flex h-16 items-center justify-center gap-2 rounded-xl bg-accent text-lg font-bold text-accent-foreground shadow-lg transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-40"
         >

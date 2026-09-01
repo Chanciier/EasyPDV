@@ -21,7 +21,7 @@ export function useClubStatus(document: string | null) {
 export function useAddClubMember() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { name: string; document: string; validUntil: string }) =>
+    mutationFn: (input: { name: string; document: string; validUntil: string; phone: string }) =>
       apiRequest<ClubMember>('/club/members', { method: 'POST', body: input }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['club', 'members'] }),
   })

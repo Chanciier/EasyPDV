@@ -7,8 +7,8 @@ import { ApiError } from '@/lib/api-client'
 import { useAddClubMember, useClubMembers, useRemoveClubMember } from '@/hooks/use-club'
 import { Modal } from './ui/modal'
 
-type FormState = { name: string; document: string; validUntil: string }
-const emptyForm: FormState = { name: '', document: '', validUntil: '' }
+type FormState = { name: string; document: string; validUntil: string; phone: string }
+const emptyForm: FormState = { name: '', document: '', validUntil: '', phone: '' }
 
 function formatDate(iso: string | null): string {
   if (!iso) return 'validade desconhecida'
@@ -53,9 +53,19 @@ export function ClubeView() {
       setFormError('Informe a validade.')
       return
     }
+    const phone = form.phone.trim()
+    if (!phone) {
+      setFormError('Informe o celular.')
+      return
+    }
     setFormError(null)
     try {
-      await addMember.mutateAsync({ name, document: documentDigits, validUntil: new Date(form.validUntil).toISOString() })
+      await addMember.mutateAsync({
+        name,
+        document: documentDigits,
+        validUntil: new Date(form.validUntil).toISOString(),
+        phone,
+      })
       setAdding(false)
     } catch (e) {
       setFormError(e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Erro ao adicionar ao clube.')
@@ -173,6 +183,16 @@ export function ClubeView() {
             />
           </label>
           <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">Celular</span>
+            <input
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              placeholder="(00) 00000-0000"
+              inputMode="tel"
+              className="pos-input font-mono"
+            />
+          </label>
+          <label className="block">
             <span className="mb-1.5 block text-sm font-medium">Validade</span>
             <input
               type="date"
@@ -209,7 +229,7 @@ export function ClubeView() {
         }
       >
         <p className="text-sm text-muted-foreground">
-          Remover do clube tira o desconto de 30% dessa pessoa. Pra renovar a validade, remova e adicione de novo.
+          Remover do clube tira o desconto dessa pessoa nas próximas vendas. Pra renovar a validade, remova e adicione de novo.
         </p>
       </Modal>
     </div>

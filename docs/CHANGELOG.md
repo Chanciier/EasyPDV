@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Clube Saldão — desconto por item + celular do sócio (2026-09-02)
+Pedido direto do usuário: reformula o mecanismo de desconto do clube, de 30% fixo na venda inteira pra um percentual escolhido por produto (10%-90%), e passa a registrar o celular do sócio no cadastro.
+
+- **Celular do sócio**: novo campo no formulário "Adicionar ao clube" (`clube-view.tsx`), obrigatório, vai pro campo `celular` do contato no Bling — confirmado na documentação oficial da API v3 (`POST /contatos`, campo top-level `celular`, distinto de `telefone` fixo). Passa pela cadeia inteira: schema compartilhado (`addClubMemberSchema`) → pdv-backend → Intermediador → `BlingApiClient.updateContact`.
+- **Desconto por item, não mais por venda**: ao bipar um produto numa venda de sócio (`Sale.discountSource === "club"`), digitar um dígito de 1 a 9 (10%-90%) e fazer uma pausa curta (300ms) aplica esse percentual só naquele item — reaproveita o mesmo `ApplyItemDiscountUseCase`/`PATCH /sales/:id/items/:itemId/discount` já usado pelo desconto manual por item. **Sem interceptar a tecla**: o dígito digita normal na busca (só observa `term` via `useEffect`) — se mais caracteres chegarem antes da pausa (leitor de código de barras, que manda um código inteiro + Enter em poucos milissegundos), o timer cancela sozinho e nada acontece, segue como busca/leitura normal. Enter com um único dígito pendente confirma na hora, sem esperar a pausa. Se nada for digitado, o item cai no fallback de 30% — disparado ao bipar o PRÓXIMO produto (fecha a decisão do anterior) ou, pro último item da venda, ao abrir o pagamento (F4/"Finalizar").
+- `ApplyClubDiscountUseCase` (aplicado uma vez no início da venda, quando o CPF é confirmado como sócio) simplificado: só marca a venda (`discountSource: "club"`), não calcula mais nenhum valor — os três pontos que recalculavam 30% sobre o subtotal da venda inteira a cada mudança no carrinho (`add-sale-item`, `remove-sale-item`, `apply-item-discount`) foram removidos, já que o desconto agora vive no item.
+- `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes. **Testado de ponta a ponta clicando de verdade** (export estático real): dígito único + pausa → 20% aplicado exato (R$4,98 de R$24,90); vários dígitos rápido → nenhum desconto disparado, tratado como busca normal; Enter com dígito pendente → aplica na hora (50%, R$7,95 de R$15,90); F4 com item pendente → 30% de fallback aplicado sozinho antes do pagamento (R$2,55 de R$8,50) — total final bateu exato em todos os casos.
+
 ### Fluxo de pagamento em etapas + bandeira de cartão removida (2026-09-01)
 Pedido direto do usuário: reformula a tela de pagamento (F4) inteira, de "tudo numa tela só" pra um fluxo em passos, mais rápido pelo teclado numérico.
 

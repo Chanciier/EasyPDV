@@ -42,7 +42,7 @@ export class ClubController {
     @Body(new ZodValidationPipe(addClubMemberSchema)) body: AddClubMemberInput,
     @CurrentTerminal() terminal: AuthenticatedTerminal,
   ) {
-    return this.addClubMemberUseCase.execute(terminal.organizationId, body.name, body.document, body.validUntil);
+    return this.addClubMemberUseCase.execute(terminal.organizationId, body.name, body.document, body.validUntil, body.phone);
   }
 
   @Delete("members/:document")

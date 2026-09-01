@@ -8,17 +8,20 @@ import {
   type CustomerRepositoryPort,
 } from "../../../customers/application/ports/customer-repository.port.js";
 import { CLUB_GATEWAY, type ClubGatewayPort } from "../../../club/application/ports/club-gateway.port.js";
-import { computeClubDiscountAmount } from "../../domain/club-discount.constants.js";
 import { ClubDiscountBlockedByManualError, SaleHasNoCustomerError, SaleNotEditableError, SaleNotFoundError } from "../../domain/errors.js";
 import type { Sale } from "../../domain/entities/sale.entity.js";
 import { SALE_REPOSITORY, type SaleRepositoryPort } from "../ports/sale-repository.port.js";
 
 /**
  * Chamado pelo PDV logo depois do CPF ser anexado no início da venda (ver
- * plano seção 5.1/5.2). Recalcula sempre do zero a partir dos itens atuais
- * (não confia num "restante" acumulado) — `add-sale-item`/`remove-sale-item`
- * chamam de novo automaticamente quando o carrinho muda com desconto de
- * clube já ativo, pra manter os 30% corretos.
+ * plano seção 5.1/5.2). Até 2026-09-02 aplicava 30% fixo sobre o subtotal da
+ * venda inteira (`Sale.discountAmount`); a partir daqui só MARCA a venda
+ * como de sócio (`discountSource: "club"`, `discountAmount` sempre 0) — o
+ * desconto de verdade passou a ser por item (10%-90%, escolhido na hora de
+ * bipar cada produto, com 30% de fallback — ver `AddSaleItemUseCase` e
+ * `ApplyItemDiscountUseCase` no frontend/sale-view.tsx). Como o CPF é pedido
+ * ANTES do primeiro item (CpfGateDialog), o carrinho está sempre vazio aqui
+ * na prática — não precisa aplicar nada em itens existentes.
  */
 @Injectable()
 export class ApplyClubDiscountUseCase {
@@ -59,15 +62,13 @@ export class ApplyClubDiscountUseCase {
       return sale;
     }
 
-    const subtotal = sale.items.reduce((sum, item) => sum + item.totalAmount, 0);
-    const discountAmount = computeClubDiscountAmount(subtotal);
-    const updated = await this.saleRepository.applyDiscount(saleId, discountAmount, "club");
+    const updated = await this.saleRepository.applyDiscount(saleId, 0, "club");
     await this.auditLogRepository.record({
       userId: actorUserId,
       action: "sale.club_discount_applied",
       entityType: "sale",
       entityId: saleId,
-      metadata: { discountAmount, subtotal },
+      metadata: {},
     });
     return updated;
   }

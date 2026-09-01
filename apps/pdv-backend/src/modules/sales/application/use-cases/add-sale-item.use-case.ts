@@ -2,7 +2,6 @@ import { Inject, Injectable } from "@nestjs/common";
 import type { AddSaleItemInput } from "@easypdv/shared-validation";
 import { ResolvePriceUseCase } from "../../../catalog/application/use-cases/resolve-price.use-case.js";
 import { SaleNotEditableError, SaleNotFoundError } from "../../domain/errors.js";
-import { computeClubDiscountAmount } from "../../domain/club-discount.constants.js";
 import type { Sale } from "../../domain/entities/sale.entity.js";
 import { SALE_REPOSITORY, type SaleRepositoryPort } from "../ports/sale-repository.port.js";
 
@@ -40,23 +39,16 @@ export class AddSaleItemUseCase {
 
     const resolvedPrice = await this.resolvePriceUseCase.execute(input.productId);
 
-    const updated = await this.saleRepository.addItem({
+    // Clube Saldão (2026-09-02) — desconto por item agora, não mais um
+    // percentual fixo recalculado sobre a venda inteira (ver
+    // ApplyClubDiscountUseCase) — o item novo nasce sem desconto
+    // (`discountAmount: 0`), decidido depois via `ApplyItemDiscountUseCase`
+    // (frontend escolhe 10%-90%, ou 30% de fallback).
+    return this.saleRepository.addItem({
       saleId,
       productId: input.productId,
       quantity: input.quantity,
       unitPrice: resolvedPrice.effectivePrice,
     });
-
-    // Clube Saldão (2026-08-25) — desconto de 30% é sempre um percentual do
-    // subtotal ATUAL, não um valor fixo: precisa recalcular a cada item
-    // adicionado enquanto o desconto de clube estiver ativo, senão o
-    // percentual real vai divergindo dos 30% conforme o carrinho muda. Só
-    // recalcula o valor (não reconsulta o Bling/Intermediador de novo — a
-    // elegibilidade já foi confirmada quando o desconto foi aplicado).
-    if (updated.discountSource === "club") {
-      const subtotal = updated.items.reduce((sum, item) => sum + item.totalAmount, 0);
-      return this.saleRepository.applyDiscount(updated.id, computeClubDiscountAmount(subtotal), "club");
-    }
-    return updated;
   }
 }

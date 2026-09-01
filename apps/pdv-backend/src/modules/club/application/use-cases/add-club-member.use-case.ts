@@ -19,7 +19,7 @@ export class AddClubMemberUseCase {
       action: "club.member_added",
       entityType: "club_member",
       entityId: input.document,
-      metadata: { name: input.name, validUntil: input.validUntil },
+      metadata: { name: input.name, validUntil: input.validUntil, phone: input.phone },
     });
     return member;
   }
