@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Permitir estoque negativo temporariamente (2026-08-26)
+Pedido direto do usuário: vender mesmo com estoque insuficiente/zerado no PDV, deixando o saldo ir negativo (localmente e no Bling depois do sync) — reverte temporariamente a trava de 19/08 ("não posso ter 5 produtos cadastrados e no fim acabar tendo 6 vendidos").
+
+- **Novo `ALLOW_NEGATIVE_STOCK`**: quando `"true"`, desliga as duas travas existentes — a checagem antecipada em `AddSaleItemUseCase` e o piso (`WHERE quantity >= X`) no débito atômico de `PrismaSaleRepository.confirm()`, trocado por um `upsert` incondicional (cobre até produto sem `StockItem` nenhum ainda). Sem a flag, comportamento idêntico a antes.
+- **Não existe `.env` de verdade no app instalado** (removido de propósito do bundle empacotado) — variáveis por-instalação são hardcoded no Electron. Pra dar pra ligar/desligar isso sem gerar instalador novo toda vez, novo mecanismo genérico: `resolveUserConfigOverrides()` (`apps/electron/src/main/index.ts`) lê `%APPDATA%\EasyPDV\config.env` (mesma pasta de `easypdv.db`/`jwt-secret`) — arquivo texto simples, `CHAVE=valor` por linha, criado manualmente pelo lojista, mesclado no ambiente do pdv-backend ANTES dos campos fixos (DATABASE_URL/JWT_SECRET/PORT/INTERMEDIADOR_URL não podem ser sobrescritos por erro de digitação nesse arquivo). Arquivo ausente = nenhuma mudança de comportamento.
+- **Precisa ser setado em CADA terminal** (config é por-instalação, não tem central pro pdv-backend) — criar/editar `config.env` e reiniciar o app.
+- `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes.
+
 ### Emissão manual de NFC-e sem CPF, pelo Histórico (2026-08-26)
 Pedido do usuário depois de ver a correção anterior: venda sem CPF só gera comprovante local por padrão (decisão do Clube Saldão), mas às vezes o cliente quer a nota fiscal mesmo assim — CPF numa NFC-e é sempre opcional, pode sair pra "Consumidor Final". Só sob demanda (não muda o comportamento automático); só vale pra vendas novas a partir desta versão, não retroativo.
 

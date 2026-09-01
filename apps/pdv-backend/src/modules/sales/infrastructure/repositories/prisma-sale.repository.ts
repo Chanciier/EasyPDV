@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { SaleDiscountSource, SaleStatus, SaleSyncPayload, SaleVoidSyncPayload } from "@easypdv/shared-types";
 import { Sale } from "../../domain/entities/sale.entity.js";
 import { InsufficientStockError, SaleWarehouseNotResolvableError } from "../../domain/errors.js";
@@ -15,7 +16,10 @@ const SALE_INCLUDE = { items: true, payments: true } as const;
 
 @Injectable()
 export class PrismaSaleRepository implements SaleRepositoryPort {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
 
   async findById(id: string): Promise<Sale | null> {
     const record = await this.prisma.sale.findUnique({ where: { id }, include: SALE_INCLUDE });
@@ -121,7 +125,11 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
    * insuficiente OU produto sem `StockItem` nenhum, tratado como 0
    * disponível), `count` vem 0 e a transação inteira é abortada
    * (`InsufficientStockError`, ver domain/errors.ts) em vez de deixar o saldo
-   * ir negativo silenciosamente. Precisou virar transação interativa
+   * ir negativo silenciosamente — a MENOS que `ALLOW_NEGATIVE_STOCK=true`
+   * (2026-08-26, pedido temporário do usuário), que troca esse piso por um
+   * `upsert` incondicional, deixando o saldo ir negativo de propósito (sync
+   * com o Bling reflete a mesma baixa, negativa e tudo — precisa ser setada
+   * em CADA terminal, `.env` é por-instalação). Precisou virar transação interativa
    * (`async (tx) => ...`) em vez do array de antes — o array não permite
    * inspecionar o resultado de uma operação no meio pra decidir abortar as
    * seguintes. O SyncOutbox segue o mesmo raciocínio de sempre: se a venda
@@ -182,17 +190,30 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
         data: { status: "confirmed", confirmedAt },
       });
 
+      const allowNegativeStock = this.configService.get<string>("ALLOW_NEGATIVE_STOCK") === "true";
       for (const item of sale.items) {
-        const debited = await tx.stockItem.updateMany({
-          where: { warehouseId, productId: item.productId, quantity: { gte: item.quantity } },
-          data: { quantity: { decrement: item.quantity } },
-        });
-        if (debited.count === 0) {
-          const current = await tx.stockItem.findUnique({
+        if (allowNegativeStock) {
+          // Sem piso (ALLOW_NEGATIVE_STOCK, 2026-08-26, pedido temporário do
+          // usuário) — upsert em vez de updateMany, pra também cobrir o
+          // produto sem StockItem nenhum ainda (fica negativo desde já, em
+          // vez de abortar por "0 disponível").
+          await tx.stockItem.upsert({
             where: { warehouseId_productId: { warehouseId, productId: item.productId } },
+            update: { quantity: { decrement: item.quantity } },
+            create: { warehouseId, productId: item.productId, quantity: -item.quantity },
           });
-          const product = productById.get(item.productId);
-          throw new InsufficientStockError(product?.name ?? item.productId, current?.quantity ?? 0, item.quantity);
+        } else {
+          const debited = await tx.stockItem.updateMany({
+            where: { warehouseId, productId: item.productId, quantity: { gte: item.quantity } },
+            data: { quantity: { decrement: item.quantity } },
+          });
+          if (debited.count === 0) {
+            const current = await tx.stockItem.findUnique({
+              where: { warehouseId_productId: { warehouseId, productId: item.productId } },
+            });
+            const product = productById.get(item.productId);
+            throw new InsufficientStockError(product?.name ?? item.productId, current?.quantity ?? 0, item.quantity);
+          }
         }
         await tx.stockMovement.create({
           data: {
