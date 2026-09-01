@@ -103,37 +103,6 @@ function resolveJwtSecret(): string {
   return secret;
 }
 
-/**
- * Overrides opcionais, por-instalação, pra variáveis de ambiente do
- * pdv-backend — sem isso, ligar algo tipo `ALLOW_NEGATIVE_STOCK` (2026-08-26,
- * pedido temporário do usuário) exigiria hardcodar no código-fonte e gerar
- * um instalador novo toda vez que quisesse ligar/desligar. O instalado não
- * tem `.env` de verdade (removido de propósito do bundle, ver
- * resolveJwtSecret acima) — então esse arquivo é criado manualmente pelo
- * lojista em `%APPDATA%\EasyPDV\config.env` (mesma pasta de `easypdv.db` e
- * `jwt-secret`), formato `CHAVE=valor` uma por linha, linhas com `#` ou
- * vazias ignoradas. Arquivo ausente = nenhum override, comportamento normal.
- * Spread ANTES dos campos fixos abaixo (DATABASE_URL/JWT_SECRET/PORT/
- * INTERMEDIADOR_URL) — de propósito, pra um erro de digitação nesse arquivo
- * nunca conseguir sobrescrever infra crítica.
- */
-function resolveUserConfigOverrides(): Record<string, string> {
-  const configPath = path.join(app.getPath("userData"), "config.env");
-  if (!fs.existsSync(configPath)) {
-    return {};
-  }
-  const overrides: Record<string, string> = {};
-  const lines = fs.readFileSync(configPath, "utf8").split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    overrides[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
-  }
-  return overrides;
-}
-
 async function waitForHealth(url: string, timeoutMs = 30_000): Promise<void> {
   const start = Date.now();
   let lastError: unknown;
@@ -166,7 +135,6 @@ async function startBackend(): Promise<void> {
     cwd,
     env: {
       ...process.env,
-      ...resolveUserConfigOverrides(),
       ELECTRON_RUN_AS_NODE: "1",
       DATABASE_URL: resolveDatabaseUrl(),
       JWT_SECRET: resolveJwtSecret(),

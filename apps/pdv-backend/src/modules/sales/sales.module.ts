@@ -32,6 +32,7 @@ import { RegisterPaymentUseCase } from "./application/use-cases/register-payment
 import { RemovePaymentUseCase } from "./application/use-cases/remove-payment.use-case.js";
 import { ConfirmSaleUseCase } from "./application/use-cases/confirm-sale.use-case.js";
 import { ApplySaleDiscountUseCase } from "./application/use-cases/apply-sale-discount.use-case.js";
+import { ApplyItemDiscountUseCase } from "./application/use-cases/apply-item-discount.use-case.js";
 import { ApplyClubDiscountUseCase } from "./application/use-cases/apply-club-discount.use-case.js";
 import { VoidConfirmedSaleUseCase } from "./application/use-cases/void-confirmed-sale.use-case.js";
 import { AttachCustomerToSaleUseCase } from "./application/use-cases/attach-customer-to-sale.use-case.js";
@@ -59,6 +60,7 @@ import { AttachCustomerToSaleUseCase } from "./application/use-cases/attach-cust
     RemovePaymentUseCase,
     ConfirmSaleUseCase,
     ApplySaleDiscountUseCase,
+    ApplyItemDiscountUseCase,
     ApplyClubDiscountUseCase,
     VoidConfirmedSaleUseCase,
     AttachCustomerToSaleUseCase,

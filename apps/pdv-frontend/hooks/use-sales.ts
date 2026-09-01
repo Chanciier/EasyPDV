@@ -151,6 +151,19 @@ export function useApplySaleDiscount() {
   })
 }
 
+/** Desconto individual por item do carrinho (2026-09-01) — independente do desconto da venda inteira, os dois coexistem. `discountAmount: 0` remove. */
+export function useApplyItemDiscount() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { saleId: string; itemId: string; discountAmount: number }) =>
+      apiRequest<Sale>(`/sales/${input.saleId}/items/${input.itemId}/discount`, {
+        method: 'PATCH',
+        body: { discountAmount: input.discountAmount },
+      }),
+    onSuccess: (sale) => queryClient.setQueryData(['sale', sale.id], sale),
+  })
+}
+
 /**
  * Clube Saldão (2026-08-25) — aplica os 30% se o cliente já anexado à venda
  * for membro; se não for, devolve a venda sem nenhuma mudança (checagem

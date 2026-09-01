@@ -39,6 +39,8 @@ export interface SaleRepositoryPort {
    * ApplyClubDiscountUseCase) — os dois são mutuamente exclusivos.
    */
   applyDiscount(saleId: string, discountAmount: number, source: SaleDiscountSource | null): Promise<Sale>;
+  /** Desconto por item (2026-09-01) — recalcula SaleItem.totalAmount = max(0, quantity*unitPrice - discountAmount), independente do desconto da venda inteira (os dois coexistem). */
+  applyItemDiscount(saleId: string, itemId: string, discountAmount: number): Promise<Sale>;
   /** "CPF na nota" (2026-08-19) — anexa/troca o cliente de uma venda já iniciada (o seletor da tela de Venda só seta isso no início; o pagamento pode chegar depois). */
   attachCustomer(saleId: string, customerId: string): Promise<Sale>;
   registerPayment(data: RegisterPaymentData): Promise<Sale>;

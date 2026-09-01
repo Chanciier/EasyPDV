@@ -85,6 +85,14 @@ export class DiscountExceedsSaleTotalError extends DomainError {
   }
 }
 
+/** Desconto por item (2026-09-01) — mesmo guarda-corrimão de DiscountExceedsSaleTotalError, escopado à linha do carrinho (quantity * unitPrice), não à venda inteira. */
+export class ItemDiscountExceedsLineTotalError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(itemId: string, discountAmount: number, lineSubtotal: number) {
+    super(`Desconto ${discountAmount} excede o subtotal ${lineSubtotal} do item ${itemId}`);
+  }
+}
+
 /** Clube Saldão (2026-08-25) — desconto manual e de clube são mutuamente exclusivos na mesma venda. */
 export class ManualDiscountBlockedByClubError extends DomainError {
   readonly kind: DomainErrorKind = "conflict";

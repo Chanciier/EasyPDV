@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, Plus, Minus, Trash2, ShoppingCart, Lock } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Lock, Percent } from 'lucide-react'
 import type { Payment, PaymentMethod, Product, ReceiptPrintPayload, Sale, SaleItem } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
@@ -14,6 +14,7 @@ import {
   findProductByBarcode,
   useAddSaleItem,
   useApplyClubDiscount,
+  useApplyItemDiscount,
   useApplySaleDiscount,
   useAttachCustomer,
   useCancelSale,
@@ -91,7 +92,13 @@ export function SaleView() {
   const [receivedByPaymentId, setReceivedByPaymentId] = useState<Record<string, number>>({})
   const [discountOpen, setDiscountOpen] = useState(false)
   const [discountValue, setDiscountValue] = useState('')
+  const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount')
   const [discountError, setDiscountError] = useState<string | null>(null)
+  const [itemDiscountId, setItemDiscountId] = useState<string | null>(null)
+  const [itemDiscountValue, setItemDiscountValue] = useState('')
+  const [itemDiscountMode, setItemDiscountMode] = useState<'amount' | 'percent'>('amount')
+  const [itemDiscountError, setItemDiscountError] = useState<string | null>(null)
+  const applyItemDiscount = useApplyItemDiscount()
   // CPF no início da venda (2026-08-25) — ver CpfGateDialog. `gateSubmitting`/
   // `gateError` cobrem só o passo de iniciar a venda em si; falha ao anexar
   // CPF/checar clube DEPOIS da venda já criada nunca bloqueia (mostrado no
@@ -145,19 +152,49 @@ export function SaleView() {
     return fallback
   }
 
+  /**
+   * `discountMode: 'percent'` (2026-09-01) é só uma conveniência de entrada
+   * — converte pra R$ aqui antes de mandar pro backend, que continua só
+   * conhecendo `discountAmount` em reais (mesmo contrato de sempre, sem
+   * mudança de schema). Igual ao desconto em R$ já existente, fica um valor
+   * FIXO no momento em que é aplicado — não recalcula sozinho se o carrinho
+   * mudar depois (diferente do desconto de clube, que é sempre um
+   * percentual vivo do subtotal atual).
+   */
   async function handleApplyDiscount() {
     if (!sale) return
-    const amount = Number(discountValue.replace(',', '.'))
-    if (Number.isNaN(amount) || amount < 0) {
+    const raw = Number(discountValue.replace(',', '.'))
+    if (Number.isNaN(raw) || raw < 0) {
       setDiscountError('Valor inválido.')
       return
     }
+    const subtotal = sale.totalAmount + sale.discountAmount
+    const amount = discountMode === 'percent' ? Math.round(subtotal * (raw / 100) * 100) / 100 : raw
     setDiscountError(null)
     try {
       await applyDiscount.mutateAsync({ saleId: sale.id, discountAmount: amount })
       setDiscountOpen(false)
     } catch (e) {
       setDiscountError(describeError(e, 'Erro ao aplicar desconto.'))
+    }
+  }
+
+  /** Desconto por item (2026-09-01) — mesmo esquema de conversão %→R$ do handleApplyDiscount acima, escopado à linha (quantity * unitPrice) em vez do subtotal da venda. */
+  async function handleApplyItemDiscount(item: SaleItem) {
+    if (!sale) return
+    const raw = Number(itemDiscountValue.replace(',', '.'))
+    if (Number.isNaN(raw) || raw < 0) {
+      setItemDiscountError('Valor inválido.')
+      return
+    }
+    const lineSubtotal = item.quantity * item.unitPrice
+    const amount = itemDiscountMode === 'percent' ? Math.round(lineSubtotal * (raw / 100) * 100) / 100 : raw
+    setItemDiscountError(null)
+    try {
+      await applyItemDiscount.mutateAsync({ saleId: sale.id, itemId: item.id, discountAmount: amount })
+      setItemDiscountId(null)
+    } catch (e) {
+      setItemDiscountError(describeError(e, 'Erro ao aplicar desconto.'))
     }
   }
 
@@ -263,13 +300,31 @@ export function SaleView() {
     }
   }
 
+  /**
+   * Navegação do carrinho por teclado (2026-09-01) — sem nenhum resultado de
+   * busca pra navegar (dropdown fechado), Seta pra cima/baixo passa a mover
+   * a seleção entre os itens do carrinho, pra +/-/Delete (atalhos globais
+   * abaixo) funcionarem inteiramente pelo teclado, sem precisar clicar numa
+   * linha antes. Com o dropdown aberto (`matches.length > 0`), o
+   * comportamento de sempre continua — navega os resultados da busca.
+   */
   const handleSearchKey = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setHighlight((h) => Math.min(h + 1, matches.length - 1))
+      if (matches.length > 0) {
+        setHighlight((h) => Math.min(h + 1, matches.length - 1))
+      } else if (items.length > 0) {
+        const idx = items.findIndex((i) => i.productId === selectedProductId)
+        setSelectedProductId(items[Math.min(idx + 1, items.length - 1)].productId)
+      }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setHighlight((h) => Math.max(h - 1, 0))
+      if (matches.length > 0) {
+        setHighlight((h) => Math.max(h - 1, 0))
+      } else if (items.length > 0) {
+        const idx = items.findIndex((i) => i.productId === selectedProductId)
+        setSelectedProductId(items[Math.max(idx - 1, 0)].productId)
+      }
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (e.nativeEvent.isComposing || e.keyCode === 229) return
@@ -535,11 +590,11 @@ export function SaleView() {
                   <button
                     onMouseEnter={() => setHighlight(i)}
                     onClick={() => addProduct(p)}
-                    className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm ${
+                    className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-base ${
                       i === highlight ? 'bg-primary/15' : 'hover:bg-muted'
                     }`}
                   >
-                    <span className="font-mono text-xs text-muted-foreground">{p.sku}</span>
+                    <span className="font-mono text-sm text-muted-foreground">{p.sku}</span>
                     <span className="flex-1 truncate font-medium">{p.name}</span>
                     <span className="font-mono font-semibold">
                       {price ? formatBRL(price.effectivePrice) : '…'}
@@ -554,11 +609,12 @@ export function SaleView() {
 
         {/* Carrinho */}
         <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
-          <div className="grid grid-cols-[1fr_5rem_7rem_6rem_2.5rem] items-center gap-2 border-b border-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="grid grid-cols-[1fr_5rem_7rem_6rem_2.5rem_2.5rem] items-center gap-2 border-b border-border px-4 py-2.5 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             <span>Produto</span>
             <span className="text-center">Qtd</span>
             <span className="text-right">Preço</span>
             <span className="text-right">Total</span>
+            <span />
             <span />
           </div>
 
@@ -566,67 +622,149 @@ export function SaleView() {
             {items.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
                 <ShoppingCart className="size-10 opacity-30" />
-                <p className="text-sm">Nenhum item. Leia um código ou busque (F2).</p>
+                <p className="text-base">Nenhum item. Leia um código ou busque (F2).</p>
               </div>
             ) : (
               items.map((item) => {
                 const active = item.productId === selectedProductId
                 const pending = pendingProductId === item.productId
+                const hasItemDiscount = item.discountAmount > 0
                 return (
-                  <div
-                    key={item.id}
-                    onClick={() => setSelectedProductId(item.productId)}
-                    className={`grid cursor-pointer grid-cols-[1fr_5rem_7rem_6rem_2.5rem] items-center gap-2 border-l-2 px-4 py-2.5 text-sm transition-opacity ${
-                      active ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-muted/50'
-                    } ${pending ? 'opacity-50' : ''}`}
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{productNames[item.productId] ?? '…'}</p>
+                  <div key={item.id}>
+                    <div
+                      onClick={() => setSelectedProductId(item.productId)}
+                      className={`grid cursor-pointer grid-cols-[1fr_5rem_7rem_6rem_2.5rem_2.5rem] items-center gap-2 border-l-2 px-4 py-2.5 text-base transition-opacity ${
+                        active ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-muted/50'
+                      } ${pending ? 'opacity-50' : ''}`}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{productNames[item.productId] ?? '…'}</p>
+                        {hasItemDiscount && (
+                          <p className="text-xs font-medium text-primary">- {formatBRL(item.discountAmount)}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (sale) changeQty(sale.id, item, item.quantity - 1)
+                          }}
+                          disabled={pending}
+                          className="grid size-6 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed"
+                          aria-label="Diminuir"
+                        >
+                          <Minus className="size-3" />
+                        </button>
+                        <span className="w-6 text-center font-mono font-semibold">{item.quantity}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (sale) changeQty(sale.id, item, item.quantity + 1)
+                          }}
+                          disabled={pending}
+                          className="grid size-6 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed"
+                          aria-label="Aumentar"
+                        >
+                          <Plus className="size-3" />
+                        </button>
+                      </div>
+                      <span className="text-right font-mono text-muted-foreground">
+                        {formatBRL(item.unitPrice)}
+                      </span>
+                      <span className="text-right font-mono font-semibold">
+                        {formatBRL(item.totalAmount)}
+                      </span>
+                      <div className="flex justify-end">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (itemDiscountId === item.id) {
+                              setItemDiscountId(null)
+                              return
+                            }
+                            setItemDiscountId(item.id)
+                            setItemDiscountValue(hasItemDiscount ? String(item.discountAmount) : '')
+                            setItemDiscountMode('amount')
+                            setItemDiscountError(null)
+                          }}
+                          disabled={pending}
+                          className={`grid size-7 place-items-center rounded-md transition-colors hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed ${
+                            hasItemDiscount ? 'text-primary' : 'text-muted-foreground'
+                          }`}
+                          aria-label="Desconto no item"
+                        >
+                          <Percent className="size-4" />
+                        </button>
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            removeLine(item)
+                          }}
+                          disabled={pending}
+                          className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed"
+                          aria-label="Remover"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (sale) changeQty(sale.id, item, item.quantity - 1)
-                        }}
-                        disabled={pending}
-                        className="grid size-6 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed"
-                        aria-label="Diminuir"
+                    {itemDiscountId === item.id && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="space-y-2 border-l-2 border-transparent bg-muted/30 px-4 py-2.5"
                       >
-                        <Minus className="size-3" />
-                      </button>
-                      <span className="w-6 text-center font-mono font-semibold">{item.quantity}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (sale) changeQty(sale.id, item, item.quantity + 1)
-                        }}
-                        disabled={pending}
-                        className="grid size-6 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed"
-                        aria-label="Aumentar"
-                      >
-                        <Plus className="size-3" />
-                      </button>
-                    </div>
-                    <span className="text-right font-mono text-muted-foreground">
-                      {formatBRL(item.unitPrice)}
-                    </span>
-                    <span className="text-right font-mono font-semibold">
-                      {formatBRL(item.totalAmount)}
-                    </span>
-                    <div className="flex justify-end">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          removeLine(item)
-                        }}
-                        disabled={pending}
-                        className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed"
-                        aria-label="Remover"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-muted-foreground">
+                            Desconto em {productNames[item.productId] ?? 'item'}
+                          </label>
+                          <div className="flex overflow-hidden rounded-md border border-border text-xs font-semibold">
+                            <button
+                              onClick={() => setItemDiscountMode('amount')}
+                              className={`px-2 py-0.5 ${itemDiscountMode === 'amount' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                            >
+                              R$
+                            </button>
+                            <button
+                              onClick={() => setItemDiscountMode('percent')}
+                              className={`px-2 py-0.5 ${itemDiscountMode === 'percent' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                            >
+                              %
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            autoFocus
+                            inputMode="decimal"
+                            value={itemDiscountValue}
+                            onChange={(e) => setItemDiscountValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                handleApplyItemDiscount(item)
+                              } else if (e.key === 'Escape') {
+                                e.stopPropagation()
+                                setItemDiscountId(null)
+                                setItemDiscountError(null)
+                              }
+                            }}
+                            placeholder={itemDiscountMode === 'percent' ? '0' : '0,00'}
+                            className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-primary"
+                            aria-label="Valor do desconto do item"
+                          />
+                          <button
+                            onClick={() => handleApplyItemDiscount(item)}
+                            disabled={applyItemDiscount.isPending}
+                            className="shrink-0 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Aplicar
+                          </button>
+                        </div>
+                        {itemDiscountError && <p className="text-xs text-destructive">{itemDiscountError}</p>}
+                      </div>
+                    )}
                   </div>
                 )
               })
@@ -648,7 +786,23 @@ export function SaleView() {
               </div>
             ) : discountOpen ? (
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-muted-foreground">Desconto (R$)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-muted-foreground">Desconto</label>
+                  <div className="flex overflow-hidden rounded-md border border-border text-xs font-semibold">
+                    <button
+                      onClick={() => setDiscountMode('amount')}
+                      className={`px-2 py-0.5 ${discountMode === 'amount' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                    >
+                      R$
+                    </button>
+                    <button
+                      onClick={() => setDiscountMode('percent')}
+                      className={`px-2 py-0.5 ${discountMode === 'percent' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                    >
+                      %
+                    </button>
+                  </div>
+                </div>
                 <div className="flex gap-2">
                   <input
                     autoFocus
@@ -665,7 +819,7 @@ export function SaleView() {
                         setDiscountError(null)
                       }
                     }}
-                    placeholder="0,00"
+                    placeholder={discountMode === 'percent' ? '0' : '0,00'}
                     className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-primary"
                     aria-label="Valor do desconto"
                   />
@@ -683,6 +837,7 @@ export function SaleView() {
               <button
                 onClick={() => {
                   setDiscountValue(sale.discountAmount > 0 ? String(sale.discountAmount) : '')
+                  setDiscountMode('amount')
                   setDiscountError(null)
                   setDiscountOpen(true)
                 }}

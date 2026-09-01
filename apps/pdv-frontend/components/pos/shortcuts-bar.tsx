@@ -6,6 +6,7 @@ const SHORTCUTS: Record<string, { key: string; label: string }[]> = {
   venda: [
     { key: 'F2', label: 'Buscar / Ler código' },
     { key: 'F4', label: 'Finalizar venda' },
+    { key: '↑ / ↓', label: 'Selecionar item' },
     { key: '+ / -', label: 'Quantidade' },
     { key: 'Del', label: 'Remover item' },
     { key: 'Esc', label: 'Cancelar venda' },

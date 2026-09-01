@@ -1,8 +1,7 @@
 import { Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import type { SaleDiscountSource, SaleStatus, SaleSyncPayload, SaleVoidSyncPayload } from "@easypdv/shared-types";
 import { Sale } from "../../domain/entities/sale.entity.js";
-import { InsufficientStockError, SaleWarehouseNotResolvableError } from "../../domain/errors.js";
+import { SaleWarehouseNotResolvableError } from "../../domain/errors.js";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
 import type {
   AddSaleItemData,
@@ -16,10 +15,7 @@ const SALE_INCLUDE = { items: true, payments: true } as const;
 
 @Injectable()
 export class PrismaSaleRepository implements SaleRepositoryPort {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly configService: ConfigService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async findById(id: string): Promise<Sale | null> {
     const record = await this.prisma.sale.findUnique({ where: { id }, include: SALE_INCLUDE });
@@ -75,6 +71,14 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     return this.recalculateTotal(saleId);
   }
 
+  async applyItemDiscount(saleId: string, itemId: string, discountAmount: number): Promise<Sale> {
+    const item = await this.prisma.saleItem.findUniqueOrThrow({ where: { id: itemId } });
+    const lineSubtotal = item.quantity * item.unitPrice;
+    const totalAmount = Math.max(0, lineSubtotal - discountAmount);
+    await this.prisma.saleItem.update({ where: { id: itemId }, data: { discountAmount, totalAmount } });
+    return this.recalculateTotal(saleId);
+  }
+
   async attachCustomer(saleId: string, customerId: string): Promise<Sale> {
     const record = await this.prisma.sale.update({ where: { id: saleId }, data: { customerId }, include: SALE_INCLUDE });
     return toDomainSale(record);
@@ -113,29 +117,20 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
 
   /**
    * Confirma a venda, debita o estoque de cada item e grava a entrada de
-   * sincronização — tudo na mesma transação. O débito usa `updateMany` com
-   * piso (`WHERE quantity >= X`) em vez de um `upsert`/`decrement` cego —
-   * pedido direto do usuário (2026-08-19: "não posso ter 5 produtos
-   * cadastrados e no fim acabar tendo 6 vendidos"). `updateMany` continua
-   * sendo uma escrita atômica (SQL `UPDATE ... WHERE ...`, não um
-   * read-modify-write em código de aplicação), então a resolução da race
-   * condition de dois caixas confirmando o último item do mesmo produto ao
-   * mesmo tempo (risco documentado desde a Sprint 3) continua valendo — a
-   * diferença é que agora, se a condição do WHERE não bater (estoque
-   * insuficiente OU produto sem `StockItem` nenhum, tratado como 0
-   * disponível), `count` vem 0 e a transação inteira é abortada
-   * (`InsufficientStockError`, ver domain/errors.ts) em vez de deixar o saldo
-   * ir negativo silenciosamente — a MENOS que `ALLOW_NEGATIVE_STOCK=true`
-   * (2026-08-26, pedido temporário do usuário), que troca esse piso por um
-   * `upsert` incondicional, deixando o saldo ir negativo de propósito (sync
-   * com o Bling reflete a mesma baixa, negativa e tudo — precisa ser setada
-   * em CADA terminal, `.env` é por-instalação). Precisou virar transação interativa
-   * (`async (tx) => ...`) em vez do array de antes — o array não permite
-   * inspecionar o resultado de uma operação no meio pra decidir abortar as
-   * seguintes. O SyncOutbox segue o mesmo raciocínio de sempre: se a venda
-   * foi commitada, a entrada de sync também foi, sem exceção — grava-se aqui
-   * em vez de via SyncOutboxRepositoryPort para não sair do escopo desta
-   * transação (mesma exceção pragmática documentada em docs/DATABASE.md).
+   * sincronização — tudo na mesma transação.
+   *
+   * **Estoque negativo permitido (2026-09-01, pedido do usuário, "até
+   * segunda ordem")**: até aqui o débito usava `updateMany` com piso
+   * (`WHERE quantity >= X`), pedido direto do usuário em 2026-08-19 ("não
+   * posso ter 5 produtos cadastrados e no fim acabar tendo 6 vendidos") —
+   * abortava a transação inteira com `InsufficientStockError` se o estoque
+   * não desse. Uma tentativa de tornar isso um toggle via arquivo de config
+   * (`ALLOW_NEGATIVE_STOCK`) não funcionou de forma confiável em campo —
+   * removida. Agora usa `upsert` incondicional (cobre até produto sem
+   * `StockItem` nenhum ainda, criando já negativo) — o saldo pode ir
+   * negativo de propósito, e o sync reflete a mesma baixa pro Bling. Pra
+   * reverter, é só trocar de volta pro `updateMany` com o piso e o throw de
+   * `InsufficientStockError` (ver histórico do git).
    */
   async confirm(saleId: string, warehouseId: string, actorUserId: string | null): Promise<Sale> {
     const sale = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
@@ -190,31 +185,12 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
         data: { status: "confirmed", confirmedAt },
       });
 
-      const allowNegativeStock = this.configService.get<string>("ALLOW_NEGATIVE_STOCK") === "true";
       for (const item of sale.items) {
-        if (allowNegativeStock) {
-          // Sem piso (ALLOW_NEGATIVE_STOCK, 2026-08-26, pedido temporário do
-          // usuário) — upsert em vez de updateMany, pra também cobrir o
-          // produto sem StockItem nenhum ainda (fica negativo desde já, em
-          // vez de abortar por "0 disponível").
-          await tx.stockItem.upsert({
-            where: { warehouseId_productId: { warehouseId, productId: item.productId } },
-            update: { quantity: { decrement: item.quantity } },
-            create: { warehouseId, productId: item.productId, quantity: -item.quantity },
-          });
-        } else {
-          const debited = await tx.stockItem.updateMany({
-            where: { warehouseId, productId: item.productId, quantity: { gte: item.quantity } },
-            data: { quantity: { decrement: item.quantity } },
-          });
-          if (debited.count === 0) {
-            const current = await tx.stockItem.findUnique({
-              where: { warehouseId_productId: { warehouseId, productId: item.productId } },
-            });
-            const product = productById.get(item.productId);
-            throw new InsufficientStockError(product?.name ?? item.productId, current?.quantity ?? 0, item.quantity);
-          }
-        }
+        await tx.stockItem.upsert({
+          where: { warehouseId_productId: { warehouseId, productId: item.productId } },
+          update: { quantity: { decrement: item.quantity } },
+          create: { warehouseId, productId: item.productId, quantity: -item.quantity },
+        });
         await tx.stockMovement.create({
           data: {
             warehouseId,

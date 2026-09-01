@@ -1,12 +1,20 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
-### Permitir estoque negativo temporariamente (2026-08-26)
-Pedido direto do usuário: vender mesmo com estoque insuficiente/zerado no PDV, deixando o saldo ir negativo (localmente e no Bling depois do sync) — reverte temporariamente a trava de 19/08 ("não posso ter 5 produtos cadastrados e no fim acabar tendo 6 vendidos").
+### Desconto em %, desconto por item, fonte maior e mais atalhos (2026-09-01)
+Pedido direto do usuário, quatro melhorias na tela de Venda:
 
-- **Novo `ALLOW_NEGATIVE_STOCK`**: quando `"true"`, desliga as duas travas existentes — a checagem antecipada em `AddSaleItemUseCase` e o piso (`WHERE quantity >= X`) no débito atômico de `PrismaSaleRepository.confirm()`, trocado por um `upsert` incondicional (cobre até produto sem `StockItem` nenhum ainda). Sem a flag, comportamento idêntico a antes.
-- **Não existe `.env` de verdade no app instalado** (removido de propósito do bundle empacotado) — variáveis por-instalação são hardcoded no Electron. Pra dar pra ligar/desligar isso sem gerar instalador novo toda vez, novo mecanismo genérico: `resolveUserConfigOverrides()` (`apps/electron/src/main/index.ts`) lê `%APPDATA%\EasyPDV\config.env` (mesma pasta de `easypdv.db`/`jwt-secret`) — arquivo texto simples, `CHAVE=valor` por linha, criado manualmente pelo lojista, mesclado no ambiente do pdv-backend ANTES dos campos fixos (DATABASE_URL/JWT_SECRET/PORT/INTERMEDIADOR_URL não podem ser sobrescritos por erro de digitação nesse arquivo). Arquivo ausente = nenhuma mudança de comportamento.
-- **Precisa ser setado em CADA terminal** (config é por-instalação, não tem central pro pdv-backend) — criar/editar `config.env` e reiniciar o app.
+- **Desconto em porcentagem**: o editor de desconto da venda (botão "Desconto" na coluna de totais) ganha um seletor R$/%. A % é só uma conveniência de entrada — convertida pra R$ no momento de aplicar (mesmo subtotal usado pelo backend) e enviada pelo endpoint `PATCH /sales/:id/discount` de sempre, sem mudança de schema. Igual ao desconto em R$, fica um valor fixo (não recalcula sozinho se o carrinho mudar depois — diferente do desconto de clube, que é sempre um percentual vivo).
+- **Desconto individual por item**: `SaleItem.discountAmount` já existia no schema desde a Sprint 14 mas nunca tinha sido usado — só faltava o caminho de escrita. Novo botão (ícone %) em cada linha do carrinho abre um editor inline (R$ ou %, escopado ao subtotal daquela linha) — novo `ApplyItemDiscountUseCase`/`PATCH /sales/:id/items/:itemId/discount`, independente do desconto da venda inteira (os dois coexistem, sem exclusão mútua). Recalcula o desconto de clube automaticamente se estiver ativo (mesmo padrão de add/remove item).
+- **Fonte maior na listagem de produtos**: busca (dropdown) e itens do carrinho, de `text-sm`/`text-xs` pra `text-base`/`text-sm`.
+- **Mais atalhos de teclado**: Seta pra cima/baixo agora navega os itens do carrinho quando não há resultado de busca pra navegar (dropdown fechado) — antes só dava pra selecionar um item clicando com o mouse, o que travava o uso 100% por teclado dos atalhos +/-/Delete já existentes.
+- `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes.
+
+### Permitir estoque negativo (2026-08-26, ajustado 2026-09-01)
+Pedido direto do usuário: vender mesmo com estoque insuficiente/zerado no PDV, deixando o saldo ir negativo (localmente e no Bling depois do sync) — reverte a trava de 19/08 ("não posso ter 5 produtos cadastrados e no fim acabar tendo 6 vendidos").
+
+- **v1.5.4 (2026-08-26)**: tentativa via toggle `ALLOW_NEGATIVE_STOCK`, ligado por um arquivo `config.env` criado manualmente pelo lojista em `%APPDATA%\EasyPDV\config.env` (o instalado não tem `.env` de verdade). **Não funcionou de forma confiável em campo** (relatado pelo usuário) — mecanismo inteiro removido.
+- **v1.5.5 (2026-09-01)**: comportamento permanente, sem toggle nenhum — "até segunda ordem", a pedido do usuário. `AddSaleItemUseCase` não checa mais estoque disponível antes de adicionar item; `PrismaSaleRepository.confirm()` debita via `upsert` incondicional (cobre até produto sem `StockItem` nenhum ainda, criando já negativo) em vez do antigo `updateMany` com piso (`WHERE quantity >= X`). Reverter é só recolocar as duas checagens removidas (ver histórico do git).
 - `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes.
 
 ### Emissão manual de NFC-e sem CPF, pelo Histórico (2026-08-26)
