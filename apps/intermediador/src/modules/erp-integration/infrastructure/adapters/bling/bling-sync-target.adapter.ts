@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { SaleSyncPayload, SaleVoidSyncPayload } from "@easypdv/shared-types";
+import { toBrazilDateString } from "@easypdv/shared-validation";
 import {
   CLUB_MEMBERSHIP_REPOSITORY,
   type ClubMembershipRepositoryPort,
@@ -622,7 +623,13 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       items.push({ produtoId, quantidade: item.quantity, valor: item.unitPrice, descricao: item.name || item.sku });
     }
 
-    const dueDate = payload.confirmedAt.slice(0, 10);
+    // Bug real de produção (2026-09-02): `.slice(0, 10)` numa string ISO
+    // (sempre UTC) pegava o dia errado pra qualquer venda confirmada entre
+    // ~21h e 23h59 no horário de Brasília — o pedido (e a NFC-e gerada a
+    // partir dele, que herda a data do pedido) saía com a data de amanhã.
+    // `toBrazilDateString` calcula a data certa no fuso de Brasília, não no
+    // fuso do servidor. Ver docs/CHANGELOG.md.
+    const dueDate = toBrazilDateString(payload.confirmedAt);
     const result = await this.blingApiClient.createSalesOrder(accessToken, {
       contatoId,
       parcelas,

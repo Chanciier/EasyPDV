@@ -1,6 +1,16 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Bug real de produção: NFC-e/relatórios com data errada à noite (2026-09-02)
+Usuário reportou notas fiscais saindo com a data do dia seguinte, suspeitando de fuso horário. Confirmado: bug real, não é sobre o fuso do servidor em si (Railway roda em UTC, o que não muda nada aqui — `Date.prototype.toISOString()` sempre devolve UTC, não importa em que fuso o processo roda).
+
+- **Causa raiz**: `bling-sync-target.adapter.ts` calculava a data do pedido de venda com `payload.confirmedAt.slice(0, 10)` — fatiando direto uma string ISO (sempre UTC). Uma venda confirmada entre ~21h e 23h59 no horário de Brasília (UTC-3, sem horário de verão desde 2019) já virou o dia seguinte em UTC, então a data ficava um dia à frente. A NFC-e é gerada a partir desse pedido (`POST /pedidos/vendas/{id}/gerar-nfce`, corpo vazio — herda tudo do pedido, inclusive a data), então o problema se propagava pra nota fiscal de verdade.
+- **Corrigido com `toBrazilDateString`** (novo, `packages/shared-validation/src/date.ts`) — usa `Intl.DateTimeFormat` com `timeZone: "America/Sao_Paulo"` explícito em vez de fatiar a string UTC. Testado contra os horários reais do bug: venda às 23h30 BRT (02h30 UTC do dia seguinte) — código antigo dava a data errada, o novo dá a data certa; confirmado também que não regride o resto do dia (14h, 20h59, 00h01 BRT todos corretos nos dois).
+- **`dataSaida` do pedido, antes nunca enviado** — adicionado explicitamente (mesmo valor já corrigido), pra não depender de qual default o Bling assume nesse campo quando ausente.
+- **Mesmo padrão de bug corrigido em mais dois lugares** (achados na mesma varredura, menos críticos — relatório, não fiscal): agrupamento por dia do Relatório de Vendas (`prisma-reporting.repository.ts`) e o intervalo padrão de datas da tela de Relatórios (`reports-view.tsx`) — ambos também fatiavam `toISOString()` direto.
+- **Não corrige vendas já emitidas** — NFC-e's que já saíram com a data errada continuam como estão no Bling/SEFAZ (documento fiscal já transmitido); esse fix só vale a partir de quando for instalado. Se precisar identificar quais vendas passadas foram afetadas (janela de ~21h-23h59 BRT), posso ajudar a levantar isso sob demanda.
+- `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes.
+
 ### Clube Saldão — desconto por item + celular do sócio (2026-09-02)
 Pedido direto do usuário: reformula o mecanismo de desconto do clube, de 30% fixo na venda inteira pra um percentual escolhido por produto (10%-90%), e passa a registrar o celular do sócio no cadastro.
 

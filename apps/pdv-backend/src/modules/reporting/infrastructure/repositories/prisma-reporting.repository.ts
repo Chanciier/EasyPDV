@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { CashSession, DashboardReport, SalesReportEntry, StockReportEntry } from "@easypdv/shared-types";
+import { toBrazilDateString } from "@easypdv/shared-validation";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
 import type { ReportingRepositoryPort } from "../../application/ports/reporting-repository.port.js";
 
@@ -14,7 +15,14 @@ import type { ReportingRepositoryPort } from "../../application/ports/reporting-
 export class PrismaReportingRepository implements ReportingRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Agrupado por dia em JS, não SQL — SQLite dá pra fazer com strftime, mas evita depender de $queryRaw pra um volume que nunca vai justificar. */
+  /**
+   * Agrupado por dia em JS, não SQL — SQLite dá pra fazer com strftime, mas
+   * evita depender de $queryRaw pra um volume que nunca vai justificar.
+   * `toBrazilDateString` (não `.toISOString().slice(0,10)`, sempre UTC) —
+   * mesma classe de bug encontrada em produção (2026-09-02) na geração de
+   * NFC-e: sem isso, uma venda confirmada à noite (~21h-23h59 BRT) cairia no
+   * dia seguinte do relatório.
+   */
   async getSalesReport(from: Date, to: Date): Promise<SalesReportEntry[]> {
     const sales = await this.prisma.sale.findMany({
       where: { status: "confirmed", confirmedAt: { gte: from, lte: to } },
@@ -23,7 +31,7 @@ export class PrismaReportingRepository implements ReportingRepositoryPort {
 
     const byDay = new Map<string, { salesCount: number; totalAmount: number }>();
     for (const sale of sales) {
-      const day = sale.confirmedAt!.toISOString().slice(0, 10);
+      const day = toBrazilDateString(sale.confirmedAt!);
       const entry = byDay.get(day) ?? { salesCount: 0, totalAmount: 0 };
       entry.salesCount += 1;
       entry.totalAmount += sale.totalAmount;

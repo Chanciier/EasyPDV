@@ -2,23 +2,20 @@
 
 import { useMemo, useState } from 'react'
 import { BarChart3, Boxes, Receipt, Wallet } from 'lucide-react'
+import { toBrazilDateString } from '@easypdv/shared-validation'
 import { formatBRL } from '@/lib/pos-data'
 import { useCashSessionsReport, useSalesReport, useStockReport } from '@/hooks/use-reports'
 import { useProducts } from '@/hooks/use-sales'
 
-function isoDate(date: Date): string {
-  return date.toISOString().slice(0, 10)
-}
-
 function defaultFrom(): string {
   const d = new Date()
   d.setDate(d.getDate() - 30)
-  return isoDate(d)
+  return toBrazilDateString(d)
 }
 
 export function ReportsView() {
   const [from, setFrom] = useState(defaultFrom())
-  const [to, setTo] = useState(isoDate(new Date()))
+  const [to, setTo] = useState(toBrazilDateString(new Date()))
 
   const { data: salesReport = [], isLoading: loadingSales } = useSalesReport({ from, to })
   const { data: cashSessions = [], isLoading: loadingCash } = useCashSessionsReport({ from, to })

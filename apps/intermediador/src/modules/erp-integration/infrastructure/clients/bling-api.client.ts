@@ -361,6 +361,14 @@ export class BlingApiClient {
   async createSalesOrder(accessToken: string, input: CreateSalesOrderInput): Promise<CreateSalesOrderResult> {
     const body = {
       data: input.dueDate,
+      // `dataSaida` (2026-09-02) — confirmado no schema oficial de
+      // `POST /pedidos/vendas`, campo top-level distinto de `data`. Antes não
+      // era enviado (Bling decidia sozinho o que assumir); `gerar-nfce`
+      // herda campos do pedido sem receber nenhuma data explícita, então
+      // deixar isso implícito arriscava a NFC-e sair com uma data diferente
+      // da venda de verdade — manda a mesma data (já calculada certa, no
+      // fuso de Brasília) nos dois campos, sem ambiguidade.
+      dataSaida: input.dueDate,
       observacoesInternas: `Venda PDV ${input.saleId}`,
       contato: { id: input.contatoId },
       // `desconto` só entra quando existe de fato — mandar `{ valor: 0 }` num

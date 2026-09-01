@@ -3,6 +3,7 @@ export * from "./cash.js";
 export * from "./catalog.js";
 export * from "./club.js";
 export * from "./customers.js";
+export * from "./date.js";
 export * from "./document.js";
 export * from "./inventory.js";
 export * from "./sales.js";
