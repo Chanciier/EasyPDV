@@ -7,7 +7,7 @@ import { formatCpf } from '@easypdv/shared-validation'
 import { formatBRL, normalize } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/lib/auth-store'
-import { useFiscalStatus, useIssueFiscalReceipt, useProducts, useSalesList, useVoidSale } from '@/hooks/use-sales'
+import { useFiscalStatus, useIssueFiscalReceipt, useProducts, useRetryFiscalReceipt, useSalesList, useVoidSale } from '@/hooks/use-sales'
 import { useDashboardReport } from '@/hooks/use-reports'
 import { useCustomer } from '@/hooks/use-customers'
 import { usePrintReceipt } from '@/hooks/use-hardware'
@@ -111,6 +111,7 @@ export function HistoryView() {
   const [voidReason, setVoidReason] = useState('')
   const [voidError, setVoidError] = useState<string | null>(null)
   const issueFiscalReceipt = useIssueFiscalReceipt()
+  const retryFiscalReceipt = useRetryFiscalReceipt()
   const setPendingFiscalPrint = useFiscalPrintStore((s) => s.setPending)
   // pollWhilePending: emitir manualmente (handleIssueFiscal abaixo) deixa o
   // status "pending" por alguns segundos (SEFAZ é assíncrono) até virar
@@ -195,6 +196,17 @@ export function HistoryView() {
     if (!detail) return
     setPendingFiscalPrint({ saleId: detail.id, basePayload: buildPrintBasePayload(detail) })
     issueFiscalReceipt.mutate(detail.id)
+  }
+
+  /**
+   * Reenvio manual de NFC-e rejeitada (2026-09-02) — mesmo mecanismo de
+   * impressão pendente do handleIssueFiscal acima: se o reenvio funcionar,
+   * o FiscalPrintWatcher imprime sozinho assim que virar "issued".
+   */
+  function handleRetryFiscal() {
+    if (!detail) return
+    setPendingFiscalPrint({ saleId: detail.id, basePayload: buildPrintBasePayload(detail) })
+    retryFiscalReceipt.mutate(detail.id)
   }
 
   const filtered = useMemo(() => {
@@ -349,6 +361,16 @@ export function HistoryView() {
                   {issueFiscalReceipt.isPending ? 'Emitindo…' : 'Emitir cupom fiscal'}
                 </button>
               )}
+              {detailFiscal?.type === 'nfce' && detailFiscal?.status === 'error' && (
+                <button
+                  onClick={handleRetryFiscal}
+                  disabled={retryFiscalReceipt.isPending}
+                  title="Reenvia a NFC-e rejeitada pra SEFAZ"
+                  className="rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {retryFiscalReceipt.isPending ? 'Reenviando…' : 'Tentar novamente'}
+                </button>
+              )}
               {detailFiscal?.status === 'issued' && (
                 <button
                   onClick={handlePrint}
@@ -385,6 +407,13 @@ export function HistoryView() {
                 {issueFiscalReceipt.error instanceof ApiError
                   ? issueFiscalReceipt.error.code
                   : 'Erro ao emitir NFC-e. Tente de novo em alguns instantes.'}
+              </div>
+            )}
+            {retryFiscalReceipt.isError && (
+              <div className="rounded-lg bg-destructive/10 px-3 py-2 font-sans text-xs text-destructive">
+                {retryFiscalReceipt.error instanceof ApiError
+                  ? retryFiscalReceipt.error.code
+                  : 'Erro ao reenviar NFC-e. Tente de novo em alguns instantes.'}
               </div>
             )}
             <div className="border-t border-dashed border-border" />

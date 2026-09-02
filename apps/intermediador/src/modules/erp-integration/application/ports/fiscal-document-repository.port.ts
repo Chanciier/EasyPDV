@@ -18,6 +18,7 @@ export interface UpdateFiscalDocumentData {
   danfeUrl?: string | null;
   qrCodeUrl?: string | null;
   errorMessage?: string | null;
+  retryCount?: number;
   issuedAt?: Date | null;
 }
 
@@ -27,6 +28,8 @@ export interface FiscalDocumentRepositoryPort {
   update(id: string, data: UpdateFiscalDocumentData): Promise<FiscalDocument>;
   /** Usado só pra emissão manual de NFC-e sobre uma venda que já tem um comprovante não fiscal (placeholder) — precisa sumir antes de criar o documento real, por causa do `@@unique([organizationId, provider, saleId])`. */
   delete(id: string): Promise<void>;
+  /** NFC-e's ("nfce", nunca comprovante_nao_fiscal) em "error" com `retryCount < maxRetryCount` — candidatas ao retry automático (FiscalRetryWorker). */
+  findRetryable(maxRetryCount: number): Promise<FiscalDocument[]>;
 }
 
 export const FISCAL_DOCUMENT_REPOSITORY = Symbol("FISCAL_DOCUMENT_REPOSITORY");

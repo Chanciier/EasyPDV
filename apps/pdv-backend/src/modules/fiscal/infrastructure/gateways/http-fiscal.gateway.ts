@@ -53,4 +53,21 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
     }
     return (await response.json()) as FiscalStatusPayload;
   }
+
+  async retryManually(saleId: string): Promise<FiscalStatusPayload | null> {
+    const identity = await this.storeIdentityRepository.find();
+    if (!identity) {
+      return null;
+    }
+
+    const response = await fetch(`${this.baseUrl}/fiscal/sale/${encodeURIComponent(saleId)}/retry`, {
+      method: "POST",
+      headers: { "X-Terminal-Api-Key": identity.apiKey },
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Intermediador respondeu ${response.status} para POST /fiscal/sale/${saleId}/retry: ${body}`);
+    }
+    return (await response.json()) as FiscalStatusPayload;
+  }
 }

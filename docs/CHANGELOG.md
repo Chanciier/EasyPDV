@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Retry de NFC-e rejeitada — automático + botão manual (2026-09-02)
+Usuário reportou notas ainda saindo rejeitadas mesmo depois do fix de fuso horário anterior (código SEFAZ 704, "Data-Hora de emissão atrasada"). Investigação contra dados reais de produção (Bling API + logs + banco, via `railway ssh`, só leitura): 3 rejeições numa janela de ~3h30 (02/09, 17h06-20h42), depois de 11 NFC-e's consecutivas emitidas sem problema nenhum ao longo de 12+ dias, com uma autorização normal intercalada bem no meio das rejeições. `dataSaida`/`data` do pedido não correlacionavam com quem falhava (2 das 3 rejeitadas nem tinham `dataSaida`), e o pipeline de sincronização não mostrou atraso real (~30s entre confirmar a venda e gerar a NFC-e). Conclusão: padrão condizente com instabilidade pontual da SEFAZ/Bling naquela janela, fora do nosso payload — não achamos um bug determinístico pra corrigir.
+
+- **O problema real**: uma vez rejeitada, a NFC-e ficava travada em "error" pra sempre — nada nunca tentava de novo, e o cliente nunca recebia documento fiscal válido daquela venda.
+- **Retry automático** (`FiscalRetryWorker`, Intermediador, `@Interval` a cada 10 min): reenvia (`POST /nfce/{id}/enviar`, mesmo `externalId` — documento rejeitado nunca teve chave de acesso autorizada, não está "consumido") NFC-e's em "error" até 3 tentativas (`FiscalDocument.retryCount`, migração aditiva no Postgres). Falha nunca propaga — mesma filosofia de "fiscal pode esperar" do fluxo automático original.
+- **Botão manual "Tentar novamente"** no Histórico (visível pra NFC-e "error"), sem teto de tentativas — pro operador não precisar esperar o worker ou confirmar na hora que já resolveu.
+- `pnpm -w typecheck`, `lint` e `build` passam nos 10 pacotes.
+
 ### Bug real de produção: NFC-e/relatórios com data errada à noite (2026-09-02)
 Usuário reportou notas fiscais saindo com a data do dia seguinte, suspeitando de fuso horário. Confirmado: bug real, não é sobre o fuso do servidor em si (Railway roda em UTC, o que não muda nada aqui — `Date.prototype.toISOString()` sempre devolve UTC, não importa em que fuso o processo roda).
 

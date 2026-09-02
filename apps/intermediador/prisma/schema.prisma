@@ -212,6 +212,15 @@ model FiscalDocument {
   // UF+chave. Ver docs/DATABASE.md.
   qrCodeUrl      String?
   errorMessage   String?
+  // Investigação 02/09 (NFC-e rejeitada 704 "Data-Hora de emissão atrasada"):
+  // 3 rejeições reais numa janela de ~3h30, sem causa determinística achada
+  // no payload (dataSaida/data não correlacionavam com quem falhava) —
+  // padrão condizente com instabilidade pontual da SEFAZ/Bling. Como o
+  // status "error" nunca reconsultava sozinho, a nota ficava travada pra
+  // sempre. `retryCount` limita as tentativas automáticas do
+  // FiscalRetryWorker (MAX_AUTO_RETRY_ATTEMPTS) — o botão manual no
+  // Histórico ignora esse teto.
+  retryCount     Int                  @default(0)
   issuedAt       DateTime?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt

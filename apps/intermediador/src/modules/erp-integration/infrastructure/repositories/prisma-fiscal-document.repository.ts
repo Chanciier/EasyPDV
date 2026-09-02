@@ -30,4 +30,11 @@ export class PrismaFiscalDocumentRepository implements FiscalDocumentRepositoryP
   async delete(id: string): Promise<void> {
     await this.prisma.fiscalDocument.delete({ where: { id } });
   }
+
+  async findRetryable(maxRetryCount: number): Promise<FiscalDocument[]> {
+    const records = await this.prisma.fiscalDocument.findMany({
+      where: { status: "error", type: "nfce", retryCount: { lt: maxRetryCount } },
+    });
+    return records.map(toDomainFiscalDocument);
+  }
 }

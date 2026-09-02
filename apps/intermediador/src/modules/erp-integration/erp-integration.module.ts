@@ -3,6 +3,7 @@ import { OrganizationsModule } from "../organizations/organizations.module.js";
 import { TerminalApiKeyGuard } from "../organizations/infrastructure/guards/terminal-api-key.guard.js";
 import { ErpIntegrationController } from "./infrastructure/controllers/erp-integration.controller.js";
 import { FiscalController } from "./infrastructure/controllers/fiscal.controller.js";
+import { FiscalRetryWorker } from "./infrastructure/workers/fiscal-retry.worker.js";
 import { BlingSyncTargetAdapter } from "./infrastructure/adapters/bling/bling-sync-target.adapter.js";
 import { BlingApiClient } from "./infrastructure/clients/bling-api.client.js";
 import { BlingOAuthClient } from "./infrastructure/clients/bling-oauth.client.js";
@@ -20,6 +21,8 @@ import { HandleBlingCallbackUseCase } from "./application/use-cases/handle-bling
 import { GetBlingConnectionStatusUseCase } from "./application/use-cases/get-bling-connection-status.use-case.js";
 import { GetFiscalStatusUseCase } from "./application/use-cases/get-fiscal-status.use-case.js";
 import { IssueFiscalReceiptManuallyUseCase } from "./application/use-cases/issue-fiscal-receipt-manually.use-case.js";
+import { RetryFiscalDocumentUseCase } from "./application/use-cases/retry-fiscal-document.use-case.js";
+import { RetryFailedFiscalDocumentsUseCase } from "./application/use-cases/retry-failed-fiscal-documents.use-case.js";
 import { ListBlingProductsUseCase } from "./application/use-cases/list-bling-products.use-case.js";
 
 @Module({
@@ -40,6 +43,9 @@ import { ListBlingProductsUseCase } from "./application/use-cases/list-bling-pro
     GetBlingConnectionStatusUseCase,
     GetFiscalStatusUseCase,
     IssueFiscalReceiptManuallyUseCase,
+    RetryFiscalDocumentUseCase,
+    RetryFailedFiscalDocumentsUseCase,
+    FiscalRetryWorker,
     ListBlingProductsUseCase,
     { provide: ERP_INTEGRATION_REPOSITORY, useClass: PrismaErpIntegrationRepository },
     { provide: ERP_SYNC_MAPPING_REPOSITORY, useClass: PrismaErpSyncMappingRepository },

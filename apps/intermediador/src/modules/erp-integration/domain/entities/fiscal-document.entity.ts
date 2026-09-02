@@ -17,6 +17,7 @@ export interface FiscalDocumentProps {
   danfeUrl: string | null;
   qrCodeUrl: string | null;
   errorMessage: string | null;
+  retryCount: number;
   issuedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -36,6 +37,7 @@ export class FiscalDocument {
   readonly danfeUrl: string | null;
   readonly qrCodeUrl: string | null;
   readonly errorMessage: string | null;
+  readonly retryCount: number;
   readonly issuedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -54,6 +56,7 @@ export class FiscalDocument {
     this.danfeUrl = props.danfeUrl;
     this.qrCodeUrl = props.qrCodeUrl;
     this.errorMessage = props.errorMessage;
+    this.retryCount = props.retryCount;
     this.issuedAt = props.issuedAt;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;

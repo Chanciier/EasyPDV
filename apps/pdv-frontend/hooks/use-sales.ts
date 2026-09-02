@@ -249,6 +249,24 @@ export function useIssueFiscalReceipt() {
   })
 }
 
+/**
+ * Reenvio manual de NFC-e "error" (Histórico, 2026-09-02) — depois de uma
+ * rejeição da SEFAZ (ex: código 704 "Data-Hora de emissão atrasada", em
+ * geral transitória). O retry automático (FiscalRetryWorker, Intermediador)
+ * já tenta sozinho algumas vezes; este botão é pra quando o operador não
+ * quer esperar ou quer confirmar que já foi resolvido.
+ */
+export function useRetryFiscalReceipt() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (saleId: string) =>
+      apiRequest<FiscalDocument | null>(`/sales/${saleId}/fiscal/retry`, { method: 'POST' }),
+    onSuccess: (doc, saleId) => {
+      queryClient.setQueryData(['fiscal-status', saleId], doc)
+    },
+  })
+}
+
 export function useCancelSale() {
   const queryClient = useQueryClient()
   return useMutation({

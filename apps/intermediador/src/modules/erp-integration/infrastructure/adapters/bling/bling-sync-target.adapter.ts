@@ -31,6 +31,8 @@ const PROVIDER: ErpProviderCode = "bling";
 const DEFAULT_CONTACT_NAME = "Consumidor Final";
 const DEFAULT_CONTACT_KEY = "default";
 const DEFAULT_WAREHOUSE_KEY = "default";
+/** Ver docblock de `retryFailedFiscalDocuments`. */
+const MAX_AUTO_RETRY_ATTEMPTS = 3;
 
 /**
  * Bling rejeita `POST /pedidos/vendas` com um 400 genérico ("Não foi possível
@@ -749,6 +751,82 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       throw new Error(`ensureFiscalDocument não criou um FiscalDocument pra venda ${saleId}`);
     }
     return doc;
+  }
+
+  /**
+   * Reenvia uma NFC-e que ficou "error" (ex: rejeição transitória da SEFAZ,
+   * tipo "704 - Data-Hora de emissão atrasada" — investigado contra dados
+   * reais de produção em 02/09/2026: 3 rejeições numa janela de ~3h30,
+   * intercaladas com uma autorização normal, sem correlação com `data`/
+   * `dataSaida` do pedido nem com atraso no nosso pipeline — padrão
+   * condizente com instabilidade pontual do lado SEFAZ/Bling, fora do nosso
+   * payload). Não gera uma NFC-e nova: reenvia o MESMO `externalId` já
+   * criado — `POST /nfce/{id}/enviar` aceita reenvio, um documento rejeitado
+   * nunca teve chave de acesso autorizada pela SEFAZ, não está "consumido".
+   * Reaproveitado pelo retry automático (FiscalRetryWorker) e pelo botão
+   * manual no Histórico.
+   */
+  private async resendNfce(accessToken: string, doc: FiscalDocument): Promise<FiscalDocument> {
+    await this.blingApiClient.sendNfce(accessToken, Number(doc.externalId));
+    const details = await this.blingApiClient.findNfce(accessToken, Number(doc.externalId));
+    await this.updateFiscalDocumentFromBling(doc, details);
+    const updated = await this.fiscalDocumentRepository.findBySale(doc.saleId);
+    if (!updated) {
+      throw new Error(`FiscalDocument sumiu durante o reenvio (venda ${doc.saleId})`);
+    }
+    return updated;
+  }
+
+  /**
+   * Ação explícita do operador (botão "Tentar novamente" no Histórico, só
+   * aparece pra NFC-e "error") — ao contrário do retry automático, não tem
+   * teto de tentativas e propaga erro: o operador precisa saber que o
+   * reenvio falhou de novo, não ver um resultado antigo como se tivesse
+   * dado certo (mesma lógica de issueFiscalReceiptManually).
+   */
+  async retryFiscalDocumentManually(saleId: string): Promise<FiscalDocument> {
+    const doc = await this.fiscalDocumentRepository.findBySale(saleId);
+    if (!doc || doc.type !== "nfce" || doc.status !== "error") {
+      throw new Error(`Venda ${saleId} não tem NFC-e rejeitada pra reenviar`);
+    }
+    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+    if (!integration) {
+      throw new ErpIntegrationNotFoundError(doc.organizationId);
+    }
+    const accessToken = await this.tokenProvider.getValidAccessToken(integration);
+    return this.resendNfce(accessToken, doc);
+  }
+
+  /**
+   * Varredura periódica (FiscalRetryWorker, @Interval) — reenvia sozinho
+   * NFC-e's em "error" até MAX_AUTO_RETRY_ATTEMPTS tentativas, espaçadas
+   * pelo próprio intervalo do worker. Depois disso só o botão manual tenta
+   * de novo (retryFiscalDocumentManually, sem teto). Falha aqui nunca
+   * propaga — mesma decisão de "fiscal pode esperar" do fluxo automático
+   * original (ensureFiscalDocument).
+   */
+  async retryFailedFiscalDocuments(): Promise<{ attempted: number; succeeded: number }> {
+    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+    if (!integration) {
+      return { attempted: 0, succeeded: 0 };
+    }
+    const candidates = await this.fiscalDocumentRepository.findRetryable(MAX_AUTO_RETRY_ATTEMPTS);
+    let succeeded = 0;
+    for (const doc of candidates) {
+      try {
+        const accessToken = await this.tokenProvider.getValidAccessToken(integration);
+        const updated = await this.resendNfce(accessToken, doc);
+        await this.fiscalDocumentRepository.update(doc.id, { retryCount: doc.retryCount + 1 });
+        if (updated.status === "issued") {
+          succeeded += 1;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Retry automático de NFC-e falhou pra venda ${doc.saleId}: ${message}`);
+        await this.fiscalDocumentRepository.update(doc.id, { retryCount: doc.retryCount + 1 }).catch(() => {});
+      }
+    }
+    return { attempted: candidates.length, succeeded };
   }
 
   private async ensureFiscalDocument(
