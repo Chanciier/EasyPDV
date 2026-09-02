@@ -248,7 +248,7 @@ async function boot(): Promise<void> {
   // build.publish com uma release real por trás) — em dev, checkForUpdates()
   // só erraria por falta de metadata de update.
   if (app.isPackaged) {
-    setupAutoUpdate();
+    setupAutoUpdate(() => mainWindow);
   }
 }
 

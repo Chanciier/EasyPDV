@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Botão "Atualização disponível" no PDV (2026-09-03)
+Pedido direto do usuário, depois do hotfix de ponto flutuante: hoje a atualização já baixa e aplica sozinha em segundo plano (checagem no boot + a cada 4h, nunca com caixa aberto — reavalia a cada 10min até liberar), mas sem nenhum aviso visível nem jeito de forçar antes desse ciclo.
+
+- **Badge no cabeçalho** ("Atualização disponível", ícone de download) aparece assim que o `electron-updater` termina de baixar uma atualização (`update-downloaded`) — novo evento Main → Renderer (`window.easypdv.onUpdateDownloaded`, primeiro caso desse sentido no projeto; até então só existia Renderer → Main via `invoke`).
+- **Clique no botão**: sem caixa aberto, aplica na hora (`autoUpdater.quitAndInstall()`, sempre reconferindo `GET /provisioning/busy-status` do lado do Main antes, nunca confia só no Renderer). Com caixa aberto, navega pra tela Caixa e **abre sozinho o modal "Fechar caixa"** já preenchido com o saldo esperado (mesmo caminho que o clique manual em "Fechar caixa" sempre usou — a contagem do operador continua obrigatória, não é pulada) — assim que o fechamento confirmar, a atualização é aplicada automaticamente, com um aviso explicando o porquê no próprio modal.
+- Reaproveita o mesmo mecanismo de estado entre abas já usado pela impressão fiscal pendente (`fiscal-print-store.ts`/`FiscalPrintWatcher`) — novo `app-update-store.ts`/`AppUpdateWatcher`, mesmo padrão.
+- `pnpm --filter @easypdv/electron` e `@easypdv/pdv-frontend` (`typecheck`/`lint`/`build`) passam. **Testado de ponta a ponta contra um backend/frontend escratch** (produção real intocada, porta 4001 nunca tocada): badge aparece, título muda dinamicamente com o caixa aberto/fechado, clique sem caixa aberto não quebra nada, clique com caixa aberto navega + abre o modal + pré-preenche certo, e confirmar o fechamento dispara a chamada de aplicar atualização — confirmado via instrumentação direta (stub de `window.easypdv`), já que a instalação/reinício de verdade do `electron-updater` só é testável contra uma release real publicada (limitação já documentada no projeto, não nova).
+
 ### Bug real de produção: caixa travava com "pagamento insuficiente" mesmo pago certinho (2026-09-03)
 Usuário reportou (com foto do caixa real) uma venda de R$99,99 paga com R$99,99 no crédito, travada na tela de pagamento com "Venda ... tem pagamento insuficiente: pago 99.99, total 99.99000000000001".
 

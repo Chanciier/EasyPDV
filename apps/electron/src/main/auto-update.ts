@@ -1,3 +1,4 @@
+import { BrowserWindow, ipcMain } from "electron";
 import { autoUpdater } from "electron-updater";
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h — terminal de loja, não precisa ser agressivo
@@ -5,6 +6,7 @@ const INSTALL_RETRY_INTERVAL_MS = 10 * 60 * 1000; // 10min — reavalia se o cai
 const BACKEND_BUSY_STATUS_URL = "http://127.0.0.1:4001/provisioning/busy-status";
 
 let updateReadyToInstall = false;
+let getMainWindow: () => BrowserWindow | null = () => null;
 
 /**
  * Checa atualização no boot + periodicamente. Uma vez baixada, só instala
@@ -17,19 +19,31 @@ let updateReadyToInstall = false;
  * publicadas; sem uma release real publicada lá, checkForUpdates()
  * simplesmente não acha nada — não é testável ponta a ponta localmente. Ver
  * docs/ELECTRON.md.
+ *
+ * `windowGetter` (2026-09-03) — resolvido em cada uso (não capturado uma vez
+ * só) porque `mainWindow` em src/main/index.ts pode ainda ser `null` no
+ * momento de `setupAutoUpdate()` (chamado antes de `createWindow()` em
+ * `boot()`). Usado só pra avisar o Renderer (badge "Atualização disponível"
+ * no pos-shell) — o botão manual (`update:apply-now`, ver `applyUpdateNow`
+ * abaixo) é só um atalho pro mesmo caminho, nunca pula a checagem de caixa
+ * aberto.
  */
-export function setupAutoUpdate(): void {
+export function setupAutoUpdate(windowGetter: () => BrowserWindow | null): void {
+  getMainWindow = windowGetter;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on("update-downloaded", () => {
     updateReadyToInstall = true;
+    getMainWindow()?.webContents.send("update:downloaded");
     void tryInstallIfIdle();
   });
 
   autoUpdater.on("error", (error) => {
     console.error("electron-updater:", error);
   });
+
+  ipcMain.handle("update:apply-now", () => applyUpdateNow());
 
   checkForUpdates();
   setInterval(checkForUpdates, CHECK_INTERVAL_MS);
@@ -62,4 +76,27 @@ async function tryInstallIfIdle(): Promise<void> {
     return;
   }
   autoUpdater.quitAndInstall();
+}
+
+/**
+ * Chamado pelo botão "Atualizar agora" (pos-shell, 2026-09-03) — o Renderer
+ * já garantiu que fechou o caixa antes de chamar isso (ver
+ * app-update-store.ts no pdv-frontend), mas confere de novo aqui do lado do
+ * Main por segurança (mesma checagem do caminho automático, nunca confia só
+ * no que o Renderer diz). `applied: false` deixa o Renderer avisar o
+ * operador em vez de simplesmente não fazer nada — não deveria acontecer na
+ * prática (o fluxo normal já fecha o caixa antes de chamar isso), mas cobre
+ * o caso de outro caixa do mesmo terminal ter aberto uma sessão nova bem
+ * nesse intervalo.
+ */
+async function applyUpdateNow(): Promise<{ applied: boolean }> {
+  if (!updateReadyToInstall) {
+    return { applied: false };
+  }
+  const busy = await hasOpenCashSession();
+  if (busy) {
+    return { applied: false };
+  }
+  autoUpdater.quitAndInstall();
+  return { applied: true };
 }

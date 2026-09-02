@@ -24,4 +24,16 @@ contextBridge.exposeInMainWorld("easypdv", {
   createBackup: () => ipcRenderer.invoke("backup:create"),
   listBackups: () => ipcRenderer.invoke("backup:list"),
   restoreBackup: (fileName: string) => ipcRenderer.invoke("backup:restore", fileName),
+
+  // Atualização automática (2026-09-03) — botão "Atualizar agora" no
+  // pos-shell. onUpdateDownloaded é um evento (Main -> Renderer, não
+  // invoke/resposta), primeiro caso disso no projeto — devolve uma função de
+  // cleanup pra quem assina poder desmontar sem vazar listener, mesmo padrão
+  // que useEffect espera. Ver docs/ELECTRON.md e lib/app-update-store.ts.
+  onUpdateDownloaded: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on("update:downloaded", listener);
+    return () => ipcRenderer.removeListener("update:downloaded", listener);
+  },
+  applyUpdateNow: () => ipcRenderer.invoke("update:apply-now") as Promise<{ applied: boolean }>,
 });

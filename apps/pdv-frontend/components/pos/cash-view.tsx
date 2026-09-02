@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import type { CashMovementType } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
+import { useAppUpdateStore } from '@/lib/app-update-store'
 import {
   useCashRegisters,
   useCashMovements,
@@ -43,6 +44,9 @@ export function CashView() {
   const [movNote, setMovNote] = useState('')
   const [closeModalOpen, setCloseModalOpen] = useState(false)
   const [countedAmount, setCountedAmount] = useState('')
+
+  const updateApplyRequested = useAppUpdateStore((s) => s.applyRequested)
+  const clearUpdateApplyRequested = useAppUpdateStore((s) => s.clearApplyRequested)
 
   const isOpen = cashSession?.status === 'open'
 
@@ -77,6 +81,19 @@ export function CashView() {
     return () => window.removeEventListener('keydown', onKey)
   }, [isOpen])
 
+  /**
+   * Botão "Atualizar agora" (pos-shell.tsx) navega pra esta tela e marca
+   * `applyRequested` — abre o modal de fechamento sozinho (mesmo pre-fill do
+   * clique manual em "Fechar caixa"), pra chegar o mais perto possível de
+   * "clicar uma vez e o resto acontece", sem pular a contagem do operador.
+   */
+  useEffect(() => {
+    if (!updateApplyRequested || !isOpen || closeModalOpen) return
+    setCountedAmount(totals.saldo.toFixed(2).replace('.', ','))
+    setCloseModalOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updateApplyRequested, isOpen])
+
   const confirmMov = () => {
     const amount = Number(movAmount.replace(',', '.')) || 0
     if (amount <= 0 || !movType) return
@@ -98,9 +115,23 @@ export function CashView() {
     openMutation.mutate({ cashRegisterId: registerId, openingAmount: Number(openAmount.replace(',', '.')) || 0 })
   }
 
+  /**
+   * Se o fechamento foi disparado pelo botão "Atualizar agora" (pos-shell —
+   * ver app-update-store.ts), a atualização é aplicada assim que o
+   * fechamento confirmar, sem esperar o próximo ciclo de retry (até 10min).
+   * Fechamento "normal" (sem uma atualização pendente) não muda em nada.
+   */
   const confirmClose = () => {
     const closingAmount = Number(countedAmount.replace(',', '.')) || 0
-    closeMutation.mutate(closingAmount, { onSuccess: () => setCloseModalOpen(false) })
+    closeMutation.mutate(closingAmount, {
+      onSuccess: () => {
+        setCloseModalOpen(false)
+        if (updateApplyRequested) {
+          clearUpdateApplyRequested()
+          void window.easypdv?.applyUpdateNow()
+        }
+      },
+    })
   }
 
   if (loadingSession) {
@@ -318,6 +349,11 @@ export function CashView() {
         }
       >
         <div className="space-y-3">
+          {updateApplyRequested && (
+            <p className="rounded-lg bg-primary/10 px-3 py-2 text-xs text-primary-foreground">
+              Uma atualização está pronta — assim que o caixa fechar, ela é aplicada automaticamente.
+            </p>
+          )}
           <p className="text-sm text-muted-foreground">
             Saldo esperado: <span className="font-mono font-semibold text-foreground">{formatBRL(totals.saldo)}</span>
           </p>

@@ -18,11 +18,13 @@ import {
   UserCog,
   WifiOff,
   AlertTriangle,
+  Download,
 } from 'lucide-react'
 import type { UserRole } from '@easypdv/shared-types'
 import { usePOS } from './pos-provider'
 import { formatBRL } from '@/lib/pos-data'
 import { useAuthStore } from '@/lib/auth-store'
+import { useAppUpdateStore } from '@/lib/app-update-store'
 import { useCurrentCashSession } from '@/hooks/use-cash'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useSyncStatus } from '@/hooks/use-sync'
@@ -38,6 +40,7 @@ import { AdminView } from './admin-view'
 import { ShortcutsBar } from './shortcuts-bar'
 import { SettingsDialog } from './settings-dialog'
 import { FiscalPrintWatcher } from './fiscal-print-watcher'
+import { AppUpdateWatcher } from './app-update-watcher'
 
 const NAV = [
   { key: 'venda', label: 'Venda', icon: ShoppingCart, hint: 'F1' },
@@ -118,6 +121,25 @@ export function POSShell() {
   }, [setView, canSeeAudit, canSeeReports, canSeeAdmin, view])
 
   const cashOpen = cashSession?.status === 'open'
+
+  const updateDownloaded = useAppUpdateStore((s) => s.downloaded)
+  const requestUpdateApply = useAppUpdateStore((s) => s.requestApply)
+
+  /**
+   * Botão "Atualizar agora" (2026-09-03) — se o caixa estiver aberto, não dá
+   * pra atualizar na hora (fechamento exige contagem do operador, ver
+   * cash-view.tsx): manda pra tela Caixa e marca a intenção no store; assim
+   * que o fechamento terminar lá, a atualização é disparada sozinha. Sem
+   * caixa aberto, aplica direto.
+   */
+  function handleUpdateClick() {
+    if (cashOpen) {
+      requestUpdateApply()
+      setView('caixa')
+    } else {
+      void window.easypdv?.applyUpdateNow()
+    }
+  }
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
@@ -206,6 +228,16 @@ export function POSShell() {
             {visibleNav.find((n) => n.key === view)?.label}
           </h1>
           <div className="flex items-center gap-4 text-sm">
+            {updateDownloaded && (
+              <button
+                onClick={handleUpdateClick}
+                title={cashOpen ? 'Feche o caixa para aplicar a atualização' : 'Aplicar atualização agora'}
+                className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/20"
+              >
+                <Download className="size-3.5" />
+                Atualização disponível
+              </button>
+            )}
             {syncStatus && syncStatus.failedCount > 0 ? (
               <span className="flex items-center gap-1.5 rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive">
                 <AlertTriangle className="size-3.5" />
@@ -230,6 +262,7 @@ export function POSShell() {
         </header>
 
         <FiscalPrintWatcher />
+        <AppUpdateWatcher />
         <main className="min-h-0 flex-1 overflow-hidden">
           {view === 'venda' && <SaleView />}
           {view === 'caixa' && <CashView />}

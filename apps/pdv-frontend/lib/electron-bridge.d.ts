@@ -16,6 +16,8 @@ export interface EasyPdvBridge {
   createBackup: () => Promise<BackupInfo>;
   listBackups: () => Promise<BackupInfo[]>;
   restoreBackup: (fileName: string) => Promise<void>;
+  onUpdateDownloaded: (callback: () => void) => () => void;
+  applyUpdateNow: () => Promise<{ applied: boolean }>;
 }
 
 declare global {
