@@ -86,9 +86,17 @@ export class Sale {
     return this.payments.filter((p) => p.status === "aprovado").reduce((sum, p) => sum + p.amount, 0);
   }
 
-  /** Pagamento aprovado cobre o total — condição pra confirmar. Ver docs/DATABASE.md "evento central". */
+  /**
+   * Pagamento aprovado cobre o total — condição pra confirmar. Ver
+   * docs/DATABASE.md "evento central". Reaproveita `remainingAmount`
+   * (arredondado pra 2 casas) em vez de comparar `approvedPaymentsTotal >=
+   * totalAmount` direto — bug real de produção (2026-09-03): soma de ponto
+   * flutuante de itens/descontos gera totais como `99.99000000000001`, que
+   * nunca batem com um pagamento de exatamente R$99,99, travando o caixa
+   * com "pagamento insuficiente" numa venda já paga certinha.
+   */
   get isFullyPaid(): boolean {
-    return this.approvedPaymentsTotal >= this.totalAmount;
+    return this.remainingAmount <= 0;
   }
 
   /**

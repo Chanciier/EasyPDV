@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Bug real de produção: caixa travava com "pagamento insuficiente" mesmo pago certinho (2026-09-03)
+Usuário reportou (com foto do caixa real) uma venda de R$99,99 paga com R$99,99 no crédito, travada na tela de pagamento com "Venda ... tem pagamento insuficiente: pago 99.99, total 99.99000000000001".
+
+- **Causa raiz**: `Sale.isFullyPaid` (`sale.entity.ts`) comparava `approvedPaymentsTotal >= totalAmount` direto, em ponto flutuante, sem arredondar — soma de itens/descontos ocasionalmente produz um total como `99.99000000000001` em vez de `99.99` exato, e um pagamento de exatamente R$99,99 nunca "alcança" esse valor. `remainingAmount`, a duas linhas de distância no mesmo arquivo, já arredondava certo pra 2 casas — só `isFullyPaid` não usava a mesma lógica.
+- **Corrigido**: `isFullyPaid` agora é `this.remainingAmount <= 0`, reaproveitando o cálculo já arredondado em vez de duplicar (e errar) a comparação.
+- **Sem workaround client-side possível** enquanto o bug existia — o botão "Confirmar venda" já ficava habilitado (o front só reflete o `remainingAmount`, que já batia certo), o erro só aparecia ao clicar, vindo do backend.
+- `pnpm --filter @easypdv/pdv-backend typecheck/lint/build` passam. Verificado reproduzindo os números exatos do caso real (`99.99` vs `99.99000000000001`) antes e depois do fix.
+
 ### Ícone do app corrigido — mostrava o padrão do Electron (2026-09-03)
 Usuário reportou o Gerenciador de Tarefas mostrando "Electron" (ícone genérico) em vez do app de verdade ao abrir o PDV.
 
