@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Ícone do app corrigido — mostrava o padrão do Electron (2026-09-03)
+Usuário reportou o Gerenciador de Tarefas mostrando "Electron" (ícone genérico) em vez do app de verdade ao abrir o PDV.
+
+- **Causa raiz**: `signAndEditExecutable: false` (workaround de uma limitação específica desta máquina de dev — falta de privilégio de symlink do Windows pra extrair ferramentas de assinatura de código, ver `docs/ELECTRON.md`) desligava o `rcedit`, que é quem grava o ícone/ProductName/FileDescription de verdade no `.exe` final — inclusive nos instaladores publicados via CI (`windows-latest`, sem essa restrição), não só localmente.
+- **Corrigido**: `signAndEditExecutable: true`. `build/icon.ico` trocado pelo logo real da loja ("Saldão da Reversa SJC", enviado pelo usuário — multi-resolução 16 a 256px).
+- **Rename "EasyPDV" → "Easy PDV" pedido pelo usuário, adiado**: risco documentado do electron-builder — com `allowToChangeInstallationDirectory: true` (já ligado), mudar `productName` entre versões pode fazer o auto-update desempacotar numa pasta nova em vez de atualizar a instalação existente nos terminais já em produção. `app.setName("EasyPDV")` (novo, `src/main/index.ts`) já trava a identidade interna (pasta de dados/banco/config) independente do que `productName` for no futuro — só o rename em si ficou pra depois, com um plano de migração.
+- `pnpm --filter @easypdv/electron typecheck` e `lint` passam.
+
 ### Retry de NFC-e rejeitada — automático + botão manual (2026-09-02)
 Usuário reportou notas ainda saindo rejeitadas mesmo depois do fix de fuso horário anterior (código SEFAZ 704, "Data-Hora de emissão atrasada"). Investigação contra dados reais de produção (Bling API + logs + banco, via `railway ssh`, só leitura): 3 rejeições numa janela de ~3h30 (02/09, 17h06-20h42), depois de 11 NFC-e's consecutivas emitidas sem problema nenhum ao longo de 12+ dias, com uma autorização normal intercalada bem no meio das rejeições. `dataSaida`/`data` do pedido não correlacionavam com quem falhava (2 das 3 rejeitadas nem tinham `dataSaida`), e o pipeline de sincronização não mostrou atraso real (~30s entre confirmar a venda e gerar a NFC-e). Conclusão: padrão condizente com instabilidade pontual da SEFAZ/Bling naquela janela, fora do nosso payload — não achamos um bug determinístico pra corrigir.
 

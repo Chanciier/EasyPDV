@@ -15,6 +15,18 @@ import { resolveDatabasePath, scheduleAutoBackup } from "./backup.js";
  * docs/ELECTRON.md.
  */
 
+// Fixa a identidade interna do app ANTES de qualquer app.getPath("userData")
+// (JWT secret, banco SQLite, backups, settings.json — todos derivados daí).
+// Sem isso, `app.name` seguiria `productName` do package.json por padrão —
+// travado aqui (2026-09-03) pensando num rename futuro pra "Easy PDV"
+// (pedido do usuário, adiado por risco documentado do electron-builder: com
+// `allowToChangeInstallationDirectory: true`, mudar `productName` pode fazer
+// o auto-update desempacotar numa pasta NOVA em vez de atualizar a instalação
+// existente — precisa de plano de migração antes, não é só trocar a string).
+// Enquanto isso não acontece, esta linha já garante que nenhuma mudança de
+// `productName` vai mexer sozinha na pasta de userData de instalações reais.
+app.setName("EasyPDV");
+
 const BACKEND_PORT = 4001;
 const BACKEND_HEALTH_URL = `http://127.0.0.1:${BACKEND_PORT}/health`;
 const BACKEND_PROVISIONING_STATUS_URL = `http://127.0.0.1:${BACKEND_PORT}/provisioning/status`;
