@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Clube Saldão: validade aparecia e vencia um dia antes (fuso horário) (2026-09-09)
+Usuário pediu pra lançar validade 05/09/2027 pra dois sócios que a tela do Clube mostrava como "validade desconhecida". A investigação achou **dois problemas distintos**, um esperado e um bug real.
+
+- **"Validade desconhecida" não é bug**: acontece quando o contato tem a tag "Clube Saldão" no Bling mas não tem linha correspondente em `ClubMembership` (comportamento já documentado em `club-member-summary.ts`). Era o caso dos dois — resolvido inserindo as linhas que faltavam.
+- **Bug real, causa raiz**: `clube-view.tsx` fazia `new Date(form.validUntil).toISOString()` com o valor cru do `<input type="date">` ("YYYY-MM-DD"). Pela regra do ECMAScript, string **só-data** é parseada como **meia-noite UTC** — que no Brasil (UTC-3) cai às 21h do dia ANTERIOR. Como `ClubMembership.isValid()` compara instante exato (`validUntil >= now()`) e a lista formata com `toLocaleDateString('pt-BR')`, a validade **aparecia e vencia um dia antes** do escolhido pelo operador.
+- **Corrigido na origem**: novo `endOfDayIso()` anexa `"T23:59:59"` antes do parse, o que muda a interpretação pra **local** (data-hora sem offset é local pela mesma regra) — grava o fim do dia certo sem hardcodar fuso nenhum, continuando correto se um dia o produto sair do Brasil. Mesma classe do bug de fuso corrigido em `4629318` nas vendas noturnas.
+- **Dados de produção corrigidos**: os **19 registros** já gravados em meia-noite UTC foram deslocados pro fim do dia local (`+26h59min59s`) via `railway ssh` no Postgres de produção, depois de preview linha a linha. Verificado depois: 21/21 registros no formato certo, 0 no antigo. Os terminais em produção continuam gerando o valor errado até atualizarem pra esta versão — o fix é client-side.
+- `pnpm typecheck`, `lint` e `build` passam (11/11, 11/11, 7/7).
 ### Botão "Atualização disponível" no PDV (2026-09-03)
 Pedido direto do usuário, depois do hotfix de ponto flutuante: hoje a atualização já baixa e aplica sozinha em segundo plano (checagem no boot + a cada 4h, nunca com caixa aberto — reavalia a cada 10min até liberar), mas sem nenhum aviso visível nem jeito de forçar antes desse ciclo.
 

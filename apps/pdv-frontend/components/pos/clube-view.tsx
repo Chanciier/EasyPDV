@@ -15,6 +15,21 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString('pt-BR')
 }
 
+/**
+ * `<input type="date">` devolve "YYYY-MM-DD", e `new Date("2027-09-05")` é
+ * parseado como MEIA-NOITE UTC (regra do ECMAScript pra string só-data) — que
+ * no Brasil (UTC-3) cai em 04/09 21:00. Como ClubMembership.isValid() compara
+ * instante exato (`validUntil >= now()`) e a lista acima formata com
+ * toLocaleDateString, a validade aparecia E vencia um dia antes do escolhido.
+ * Anexar "T23:59:59" muda o parse pra LOCAL (data-hora sem offset é local),
+ * gravando o fim do dia certo — sem hardcodar fuso nenhum. Mesma classe do bug
+ * de fuso corrigido em 4629318 nas vendas noturnas. Os 19 registros já gravados
+ * errado foram corrigidos direto no banco em 2026-09-09.
+ */
+function endOfDayIso(date: string): string {
+  return new Date(`${date}T23:59:59`).toISOString()
+}
+
 export function ClubeView() {
   const [term, setTerm] = useState('')
   const { data: members = [], isLoading } = useClubMembers()
@@ -63,7 +78,7 @@ export function ClubeView() {
       await addMember.mutateAsync({
         name,
         document: documentDigits,
-        validUntil: new Date(form.validUntil).toISOString(),
+        validUntil: endOfDayIso(form.validUntil),
         phone,
       })
       setAdding(false)
