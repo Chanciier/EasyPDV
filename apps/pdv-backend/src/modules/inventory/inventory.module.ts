@@ -30,6 +30,11 @@ import { ListStockMovementsUseCase } from "./application/use-cases/list-stock-mo
   // pra resolver o depósito padrão — leitura síncrona entre módulos, ver docs/MODULES.md.
   // GetStockUseCase: mesmo padrão, consumido por AddSaleItemUseCase pra checar
   // estoque disponível antes de deixar adicionar um item à venda (2026-08-19).
-  exports: [ListWarehousesUseCase, GetStockUseCase],
+  // RegisterStockMovementUseCase: consumido pelo módulo StoreCredit (Fase 2,
+  // GrantStoreCreditUseCase) pra devolver ao estoque os itens da troca
+  // marcados `restock: true` — reaproveita a use case inteira (resolve
+  // warehouse, grava StockMovement, registra auditoria) em vez de duplicar
+  // a lógica com acesso direto ao Prisma.
+  exports: [ListWarehousesUseCase, GetStockUseCase, RegisterStockMovementUseCase],
 })
 export class InventoryModule {}

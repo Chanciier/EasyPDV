@@ -42,3 +42,29 @@ export const redeemStoreCreditSchema = z.object({
 export type GrantStoreCreditItemInput = z.infer<typeof grantStoreCreditItemSchema>;
 export type GrantStoreCreditInput = z.infer<typeof grantStoreCreditSchema>;
 export type RedeemStoreCreditInput = z.infer<typeof redeemStoreCreditSchema>;
+
+/**
+ * Variante LOCAL (Fase 2, pdv-backend) — distinta de `grantStoreCreditSchema`
+ * (que fala com o Intermediador): aqui o item carrega `productId` (FK real
+ * do catálogo local), nunca sku/nome soltos nem preço — o pdv-backend
+ * sempre resolve produto e preço vigente do lado do servidor
+ * (GetProductUseCase/ResolvePriceUseCase), mesma desconfiança de cliente já
+ * aplicada em AddSaleItemUseCase. `discountAmount` continua em R$, mesmo
+ * motivo do schema acima.
+ */
+export const createStoreCreditGrantItemSchema = z.object({
+  productId: z.string().min(1),
+  quantity: z.number().positive(),
+  discountAmount: z.number().nonnegative().default(0),
+  restock: z.boolean().default(true),
+});
+
+export const createStoreCreditGrantSchema = z.object({
+  document: z.string().refine(isValidCpf, { message: "CPF inválido" }),
+  customerName: z.string().min(1).optional(),
+  customerPhone: z.string().min(1).optional(),
+  items: z.array(createStoreCreditGrantItemSchema).min(1),
+});
+
+export type CreateStoreCreditGrantItemInput = z.infer<typeof createStoreCreditGrantItemSchema>;
+export type CreateStoreCreditGrantInput = z.infer<typeof createStoreCreditGrantSchema>;

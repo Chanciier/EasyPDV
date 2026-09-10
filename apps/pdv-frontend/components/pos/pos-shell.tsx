@@ -8,6 +8,7 @@ import {
   Receipt,
   Users,
   Award,
+  Gift,
   ScanBarcode,
   Lock,
   Unlock,
@@ -34,6 +35,7 @@ import { ProductsView } from './products-view'
 import { HistoryView } from './history-view'
 import { CustomersView } from './customers-view'
 import { ClubeView } from './clube-view'
+import { StoreCreditView } from './store-credit-view'
 import { AuditView } from './audit-view'
 import { ReportsView } from './reports-view'
 import { AdminView } from './admin-view'
@@ -49,6 +51,7 @@ const NAV = [
   { key: 'historico', label: 'Histórico', icon: Receipt, hint: 'F8' },
   { key: 'clientes', label: 'Clientes', icon: Users, hint: 'F9' },
   { key: 'clube', label: 'Clube', icon: Award, hint: '' },
+  { key: 'vale-troca', label: 'Vale-Troca', icon: Gift, hint: '' },
 ] as const
 
 const AUDIT_NAV = { key: 'auditoria', label: 'Auditoria', icon: ShieldCheck, hint: 'F2' } as const
@@ -270,6 +273,7 @@ export function POSShell() {
           {view === 'historico' && <HistoryView />}
           {view === 'clientes' && <CustomersView />}
           {view === 'clube' && <ClubeView />}
+          {view === 'vale-troca' && <StoreCreditView />}
           {view === 'relatorios' && canSeeReports && <ReportsView />}
           {view === 'auditoria' && canSeeAudit && <AuditView />}
           {view === 'administracao' && canSeeAdmin && <AdminView />}

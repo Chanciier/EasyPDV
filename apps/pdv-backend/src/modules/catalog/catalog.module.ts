@@ -51,10 +51,13 @@ import { BlingStockSyncWorker } from "./infrastructure/workers/bling-stock-sync.
   ],
   // ResolvePriceUseCase é consumido pelo módulo Sales (AddSaleItemUseCase);
   // SyncProductsFromBlingUseCase é consumido pelo módulo Provisioning
-  // (ActivateTerminalUseCase, sync automático do catálogo na ativação) —
-  // leitura/uso síncrono entre módulos, mesmo padrão já documentado em
-  // docs/MODULES.md. Nenhum dos dois cria ciclo: CatalogModule não depende
-  // de SalesModule nem de ProvisioningModule de volta.
-  exports: [ResolvePriceUseCase, SyncProductsFromBlingUseCase],
+  // (ActivateTerminalUseCase, sync automático do catálogo na ativação);
+  // GetProductUseCase é consumido pelo módulo StoreCredit (Fase 2,
+  // GrantStoreCreditUseCase — resolve sku/nome do produto pro snapshot no
+  // Intermediador, nunca confia no que o cliente manda) — leitura/uso
+  // síncrono entre módulos, mesmo padrão já documentado em docs/MODULES.md.
+  // Nenhum dos três cria ciclo: CatalogModule não depende de SalesModule,
+  // ProvisioningModule nem StoreCreditModule de volta.
+  exports: [ResolvePriceUseCase, SyncProductsFromBlingUseCase, GetProductUseCase],
 })
 export class CatalogModule {}

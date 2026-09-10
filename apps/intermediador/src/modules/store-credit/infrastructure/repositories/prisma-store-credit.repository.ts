@@ -33,10 +33,22 @@ export class PrismaStoreCreditRepository implements StoreCreditRepositoryPort {
         },
       });
 
-      const balanceRecord = await tx.storeCreditBalance.upsert({
+      // Upsert primeiro (garante que a linha existe), incremento arredondado
+      // depois — ver comentário completo em `redeem()` sobre o motivo do
+      // ROUND explícito dentro do UPDATE, não só no valor de retorno.
+      await tx.storeCreditBalance.upsert({
         where: { organizationId_customerCpf: { organizationId: data.organizationId, customerCpf: data.customerCpf } },
-        create: { organizationId: data.organizationId, customerCpf: data.customerCpf, balance: data.totalAmount },
-        update: { balance: { increment: data.totalAmount } },
+        create: { organizationId: data.organizationId, customerCpf: data.customerCpf, balance: 0 },
+        update: {},
+      });
+      await tx.$executeRaw`
+        UPDATE "StoreCreditBalance"
+        SET balance = ROUND((balance + ${data.totalAmount}::float8)::numeric, 2)::float8,
+            "updatedAt" = now()
+        WHERE "organizationId" = ${data.organizationId} AND "customerCpf" = ${data.customerCpf}
+      `;
+      const balanceRecord = await tx.storeCreditBalance.findUniqueOrThrow({
+        where: { organizationId_customerCpf: { organizationId: data.organizationId, customerCpf: data.customerCpf } },
       });
 
       return { grantId: grant.id, totalAmount: data.totalAmount, balance: balanceRecord.balance, items: data.items };
@@ -45,19 +57,34 @@ export class PrismaStoreCreditRepository implements StoreCreditRepositoryPort {
 
   /**
    * Decremento atômico condicional — mesma técnica do débito de estoque
-   * (`{decrement: n}` com guarda no `WHERE`). `updateMany` com `balance:
-   * {gte: amount}` só afeta a linha se ainda houver saldo suficiente NO
-   * MOMENTO da transação; `count === 0` cobre tanto "saldo insuficiente"
-   * quanto "CPF nunca teve crédito nenhum" (nenhuma linha existe pra
-   * atualizar) — os dois casos são "não pode resgatar", tratados iguais.
+   * (`{decrement: n}` com guarda no `WHERE`), com um detalhe a mais:
+   * **arredondamento explícito (`ROUND(..., 2)`) dentro do próprio UPDATE**,
+   * não só no valor de retorno. Achado testando de verdade (2026-09-10):
+   * dois grants de 53.3 e 24.9 resultavam em `78.19999999999999` armazenado
+   * (soma em ponto flutuante, Postgres `double precision` tem o mesmo
+   * problema que JS) — sem o arredondamento AQUI, essa mesma comparação
+   * (`balance >= amount`) rejeitaria um resgate de exatamente 78.20,
+   * negando um saldo que era válido pra qualquer humano. Mesma classe do
+   * bug já corrigido em `Sale.isFullyPaid` (commit `de5b8fd`) — lá o fix
+   * foi arredondar o valor COMPARADO; aqui precisa arredondar o valor
+   * ARMAZENADO, porque a comparação roda dentro do próprio `WHERE` da
+   * atualização atômica, não em código de aplicação depois de ler o valor.
+   *
+   * `count === 0` cobre tanto "saldo insuficiente" quanto "CPF nunca teve
+   * crédito nenhum" (nenhuma linha existe pra atualizar) — os dois casos
+   * são "não pode resgatar", tratados iguais.
    */
   async redeem(data: RedeemStoreCreditData): Promise<{ balance: number } | null> {
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.storeCreditBalance.updateMany({
-        where: { organizationId: data.organizationId, customerCpf: data.customerCpf, balance: { gte: data.amount } },
-        data: { balance: { decrement: data.amount } },
-      });
-      if (updated.count === 0) {
+      const affected = await tx.$executeRaw`
+        UPDATE "StoreCreditBalance"
+        SET balance = ROUND((balance - ${data.amount}::float8)::numeric, 2)::float8,
+            "updatedAt" = now()
+        WHERE "organizationId" = ${data.organizationId}
+          AND "customerCpf" = ${data.customerCpf}
+          AND balance >= ${data.amount}
+      `;
+      if (affected === 0) {
         return null;
       }
 

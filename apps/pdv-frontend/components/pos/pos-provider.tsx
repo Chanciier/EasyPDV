@@ -26,6 +26,7 @@ type View =
   | 'historico'
   | 'clientes'
   | 'clube'
+  | 'vale-troca'
   | 'auditoria'
   | 'relatorios'
   | 'administracao'

@@ -50,7 +50,13 @@ export class HttpStoreCreditGateway implements StoreCreditGatewayPort {
       body: JSON.stringify(input),
     });
     if (!response.ok) {
-      throw new Error(`Intermediador respondeu ${response.status} para POST /store-credit/grants`);
+      // 409 aqui (desconto excede a linha) não deveria acontecer na prática —
+      // GrantStoreCreditUseCase já valida o mesmo antes de chamar o gateway,
+      // com preço resolvido no servidor. Se ainda assim o Intermediador
+      // recusar, repassa a mensagem dele em vez de um "500 genérico" opaco —
+      // defesa em profundidade, não o caminho esperado.
+      const body = (await response.json().catch(() => null)) as { message?: string } | null;
+      throw new Error(body?.message ?? `Intermediador respondeu ${response.status} para POST /store-credit/grants`);
     }
     return (await response.json()) as StoreCreditGrantResult;
   }
