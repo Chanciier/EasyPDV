@@ -7,5 +7,6 @@ export * from "./date.js";
 export * from "./document.js";
 export * from "./inventory.js";
 export * from "./sales.js";
+export * from "./store-credit.js";
 export * from "./sync.js";
 export * from "./terminals.js";

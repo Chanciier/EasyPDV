@@ -16,6 +16,7 @@ import { ProvisioningModule } from "./modules/provisioning/provisioning.module.j
 import { ReportingModule } from "./modules/reporting/reporting.module.js";
 import { RealtimeModule } from "./modules/realtime/realtime.module.js";
 import { SalesModule } from "./modules/sales/sales.module.js";
+import { StoreCreditModule } from "./modules/store-credit/store-credit.module.js";
 import { SyncModule } from "./modules/sync/sync.module.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
 
@@ -42,6 +43,7 @@ import { PrismaModule } from "./prisma/prisma.module.js";
     RealtimeModule,
     CustomersModule,
     ClubModule,
+    StoreCreditModule,
     // Ver docs/MODULES.md para a lista completa de módulos.
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],

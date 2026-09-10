@@ -29,6 +29,10 @@ model Organization {
   fiscalDocuments  FiscalDocument[]
   orgUsers         OrgUser[]
   clubMemberships  ClubMembership[]
+
+  storeCreditBalances    StoreCreditBalance[]
+  storeCreditGrants      StoreCreditGrant[]
+  storeCreditRedemptions StoreCreditRedemption[]
 }
 
 // Mesmos valores de UserRole em apps/pdv-backend/prisma/schema.prisma (enum
@@ -267,6 +271,87 @@ model ClubMembership {
 
   @@unique([organizationId, provider, customerCpf])
   @@index([organizationId, validUntil])
+}
+
+// Vale-Troca (2026-09-10) — crédito de troca vinculado a CPF, resgatável em
+// qualquer terminal da organização (saldo GERAL, não por loja — pedido
+// explícito do usuário: "o sistema inteiro foi criado para apenas uma
+// empresa... então o saldo é geral"). Mesmo desenho do ClubMembership
+// (central no Intermediador, terminal consulta via apiKey), mas aqui com
+// projeção + ledger (como StockItem/StockMovement no pdv-backend) em vez de
+// só um valor upsertado: StoreCreditBalance é a projeção atual (decremento
+// atômico via `UPDATE ... WHERE balance >= amount`, nunca fica negativo,
+// mesma técnica do débito de estoque — ver docs/ERROR-HANDLING.md),
+// StoreCreditGrant/StoreCreditRedemption são o ledger de auditoria. Ver
+// Planejamento - Vale-Troca (Crédito por CPF).md no cofre Obsidian.
+model StoreCreditBalance {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  customerCpf    String
+  balance        Float        @default(0)
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, customerCpf])
+  @@index([organizationId])
+}
+
+// Cabeçalho de uma troca (geração de crédito) — itemizado, pra auditoria e
+// pro pdv-backend saber quais itens devolver ao estoque local (só os
+// marcados `restock: true` em StoreCreditGrantItem). customerName/Phone são
+// um snapshot pro admin conseguir identificar o CPF sem cruzar com o SQLite
+// de um terminal específico — o cadastro de verdade (Customer) é local.
+model StoreCreditGrant {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  customerCpf    String
+  customerName   String?
+  customerPhone  String?
+  storeId        String?
+  terminalId     String?
+  totalAmount    Float
+  createdAt      DateTime     @default(now())
+
+  items StoreCreditGrantItem[]
+
+  @@index([organizationId, customerCpf])
+}
+
+// Sem FK pro catálogo — o Intermediador não tem Product próprio (catálogo
+// vive no SQLite de cada terminal, vindo do Bling), então sku/nome são
+// snapshot em texto no momento da troca, não referência viva.
+model StoreCreditGrantItem {
+  id             String           @id @default(cuid())
+  grantId        String
+  grant          StoreCreditGrant @relation(fields: [grantId], references: [id])
+  productSku     String
+  productName    String
+  quantity       Float
+  unitPrice      Float
+  discountAmount Float            @default(0)
+  totalAmount    Float
+  restock        Boolean          @default(true)
+
+  @@index([grantId])
+}
+
+// Resgate — sem itens (não é uma troca nova, é débito de um valor contra o
+// saldo, dentro de uma venda normal). `saleReference` é o id da Sale local
+// (SQLite do terminal) só pra auditoria cruzada manual — sem FK de verdade,
+// bancos diferentes.
+model StoreCreditRedemption {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  customerCpf    String
+  amount         Float
+  storeId        String?
+  terminalId     String?
+  saleReference  String?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, customerCpf])
 }
 
 enum SyncStatus {

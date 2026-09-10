@@ -1,6 +1,21 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Vale-Troca: modelo de dados + endpoints no Intermediador, gateway no pdv-backend (Fase 1) (2026-09-10)
+Fase 1 do plano de crédito de troca vinculado a CPF ("Planejamento - Vale-Troca (Crédito por CPF).md" no cofre Obsidian) — só a base: modelo de dados, endpoints no Intermediador e o gateway no pdv-backend. Nenhuma tela/UI ainda (Fase 2) nem resgate na venda normal (Fase 3).
+
+- **Saldo GERAL por organização** (não por loja) — decisão explícita do usuário, mesmo desenho do `ClubMembership`: central no Postgres do Intermediador, qualquer terminal da organização enxerga e resgata o mesmo saldo.
+- **Ledger + projeção** (mesmo espírito de `StockItem`/`StockMovement`): `StoreCreditBalance` é a projeção atual, `StoreCreditGrant`/`StoreCreditGrantItem` e `StoreCreditRedemption` são o ledger de auditoria. Migration só com `CREATE TABLE`, nenhuma tabela existente tocada.
+- **Resgate nunca deixa saldo negativo** — decremento atômico condicional (`UPDATE ... WHERE balance >= amount`, mesma técnica já usada no débito de estoque) dentro de uma transação Prisma; retorna "saldo insuficiente" (409) tanto pra saldo insuficiente quanto pra CPF que nunca teve crédito nenhum (nenhuma linha pra decrementar).
+- **Desconto manual por item, mesmo modelo do Clube** (decisão do usuário) — `totalAmount` de cada item sempre recalculado no backend (`quantity*unitPrice - discountAmount`), nunca confiado do cliente; rejeita com 409 se o desconto exceder o valor da linha (mesma regra de `ItemDiscountExceedsLineTotalError`).
+- **Opção por item: volta ou não pro estoque** (`restock: boolean`) — decisão do usuário. Fase 2 só cria `StockMovement` de devolução pros itens marcados `restock: true`.
+- **Sem expiração** (decisão do usuário) — sem `expiresAt`, sem worker de limpeza.
+- **`GET /store-credit/balance/:document`**, **`POST /store-credit/grants`**, **`POST /store-credit/redemptions`** — todas atrás de `TerminalApiKeyGuard`, mesma fronteira de confiança de `/club`.
+- **Gateway novo no pdv-backend** (`StoreCreditGatewayPort`/`HttpStoreCreditGateway`), espelhando `ClubGatewayPort`/`HttpClubGateway` exatamente — inclusive a mesma cautela de não importar `ProvisioningModule` (ciclo Sales→StoreCredit→Provisioning→Sales quando a Fase 3 existir), registrando `STORE_IDENTITY_REPOSITORY` localmente, mesmo padrão do `ClubModule`.
+- **Sem env var nova nem `getOrThrow`** — diferente da Fase 0 (login de admin), esta Fase 1 não introduz nenhuma configuração obrigatória nova; deploy não tem o mesmo risco de derrubar o boot do Intermediador.
+- **Testado ponta a ponta localmente**: saldo zerado inicial, geração com dois itens (um com desconto, um `restock:false`), saldo correto após geração, resgate parcial, resgate excedendo o saldo (409), resgate exato zerando o saldo, resgate de saldo zerado (409), CPF sem crédito nenhum (409, não 500), desconto de item excedendo o valor da linha rejeitado sem deixar resíduo (atomicidade), guard de terminal (401 sem apiKey / apiKey inválida). Confirmado que os dois apps sobem sem erro de dependência circular (bootstrap completo do Nest passa antes de tentar abrir a porta).
+- `pnpm typecheck/lint/build` do workspace inteiro passam (11/11, 11/11, 7/7).
+
 ### Intermediador: sessão de login de administrador (Fase 0 do painel administrativo) (2026-09-10)
 Fecha o risco #9 (Decisões e Riscos Abertos, cofre Obsidian): até aqui o Intermediador não tinha autenticação de administrador nenhuma — só o login mediado por terminal (`OrgUsersController.verifyLogin`, que confirma credencial pro pdv-backend mas não emite sessão nenhuma). Pré-requisito bloqueador para qualquer painel web (planejamento em "Planejamento - Lembrete de Renovação do Clube.md" no cofre Obsidian, Opção B).
 
