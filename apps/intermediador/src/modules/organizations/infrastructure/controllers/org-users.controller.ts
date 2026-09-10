@@ -13,27 +13,15 @@ import {
 import type { OrgUserPayload } from "@easypdv/shared-types";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe.js";
 import { OrganizationMismatchError } from "../../domain/errors.js";
-import type { OrgUser } from "../../domain/entities/org-user.entity.js";
 import { CreateOrgUserUseCase } from "../../application/use-cases/create-org-user.use-case.js";
 import { ListOrgUsersUseCase } from "../../application/use-cases/list-org-users.use-case.js";
 import { UpdateOrgUserUseCase } from "../../application/use-cases/update-org-user.use-case.js";
 import { VerifyOrgUserLoginUseCase } from "../../application/use-cases/verify-org-user-login.use-case.js";
 import { ChangeOrgUserPasswordUseCase } from "../../application/use-cases/change-org-user-password.use-case.js";
+import { toOrgUserPayload } from "../../application/mappers/org-user-payload.mapper.js";
 import { TerminalApiKeyGuard } from "../guards/terminal-api-key.guard.js";
 import { VerifyLoginThrottlerGuard } from "../guards/verify-login-throttler.guard.js";
 import { CurrentTerminal, type AuthenticatedTerminal } from "../decorators/current-terminal.decorator.js";
-
-function toOrgUserPayload(user: OrgUser): OrgUserPayload {
-  return {
-    id: user.id,
-    organizationId: user.organizationId,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    active: user.active,
-    employeeCode: user.employeeCode,
-  };
-}
 
 /**
  * Usuário canônico por organização (login único entre terminais, 2026-08-21)

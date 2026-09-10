@@ -67,8 +67,28 @@ model OrgUser {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  authSessions OrgAuthSession[]
+
   @@unique([organizationId, email])
   @@index([organizationId])
+}
+
+// Sessão de login direto no Intermediador (Fase 0 do painel administrativo,
+// 2026-09-10) — distinta do login mediado por terminal (`verify-login`, que
+// não emite sessão nenhuma, só confirma credencial pro pdv-backend). Mesmo
+// padrão de refresh token do AuthSession (pdv-backend/SQLite): opaco
+// (`sessionId.secret`), hash guardado (nunca o secret em claro), rotacionado
+// a cada uso (RefreshTokenUseCase revoga a sessão antiga e cria uma nova).
+model OrgAuthSession {
+  id               String    @id @default(cuid())
+  orgUserId        String
+  orgUser          OrgUser   @relation(fields: [orgUserId], references: [id])
+  refreshTokenHash String
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([orgUserId])
 }
 
 model Store {

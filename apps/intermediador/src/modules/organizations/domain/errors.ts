@@ -49,6 +49,14 @@ export class OrganizationMismatchError extends DomainError {
   }
 }
 
+/** Mesma checagem de defesa-em-profundidade de OrganizationMismatchError, mas pro token de sessão de admin (Fase 0) — mensagem própria pra não falar de "terminal" num contexto sem terminal nenhum. */
+export class OrgUserOrganizationMismatchError extends DomainError {
+  readonly kind = "forbidden";
+  constructor() {
+    super("Sessão não pertence a esta organização");
+  }
+}
+
 // Login único entre terminais (2026-08-21) — ver docs/DATABASE.md `OrgUser`.
 
 export class OrgUserEmailAlreadyInUseError extends DomainError {
@@ -76,5 +84,14 @@ export class InvalidOrgUserCredentialsError extends DomainError {
   readonly kind = "unauthorized";
   constructor() {
     super("E-mail ou senha inválidos");
+  }
+}
+
+// Sessão de admin no Intermediador (Fase 0, 2026-09-10) — ver OrgLoginUseCase.
+
+export class InvalidOrgRefreshTokenError extends DomainError {
+  readonly kind = "unauthorized";
+  constructor() {
+    super("Sessão inválida ou expirada");
   }
 }

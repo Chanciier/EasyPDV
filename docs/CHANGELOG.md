@@ -1,6 +1,17 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Intermediador: sessão de login de administrador (Fase 0 do painel administrativo) (2026-09-10)
+Fecha o risco #9 (Decisões e Riscos Abertos, cofre Obsidian): até aqui o Intermediador não tinha autenticação de administrador nenhuma — só o login mediado por terminal (`OrgUsersController.verifyLogin`, que confirma credencial pro pdv-backend mas não emite sessão nenhuma). Pré-requisito bloqueador para qualquer painel web (planejamento em "Planejamento - Lembrete de Renovação do Clube.md" no cofre Obsidian, Opção B).
+
+- **Novo `POST /organizations/:id/auth/login`** — autentica um `OrgUser` direto (sem terminal no meio, é o navegador do painel), emite `accessToken` (JWT, 15min) + `refreshToken` (opaco, hash guardado, rotacionado a cada uso) — mesmo padrão do `LoginUseCase` do pdv-backend, sem a etapa de fallback local (o Intermediador já É a fonte da verdade, não cai pra espelho nenhum). Reaproveita `VerifyOrgUserLoginUseCase` pro check de credencial, sem duplicar a distinção 404 (e-mail inexistente) / 401 (senha errada ou inativo) já corrigida ali.
+- **`POST /auth/refresh`**, **`POST /auth/logout`**, **`GET /auth/me`** (guard JWT) completam o ciclo. `GET /auth/me` confere `organizationId` do token contra o do path (defesa em profundidade, mesmo padrão de `OrganizationsController`).
+- **Novo model `OrgAuthSession`** (Postgres) — sessão por usuário, hash do refresh token (nunca o valor em claro), `revokedAt`/`expiresAt`. Migration aditiva, sem risco pros dados existentes.
+- **Rate limit dedicado** (`OrgLoginThrottlerGuard`, 5/60s por IP+e-mail) — sem terminal no meio pra chavear por `terminalId` como o `verify-login` já fazia, usa IP no lugar.
+- **Testado de ponta a ponta localmente** (login, `/me` com e sem token, `organizationId` divergente no path, refresh com rotação, reuso do refresh token antigo, logout revogando a sessão, senha errada, e-mail inexistente, rate limit) — todos os casos com o status HTTP esperado.
+- ⚠️ **Não implantado ainda.** `JWT_SECRET` é `getOrThrow` dentro de `JwtModule.registerAsync`, resolvido na inicialização do módulo — **sem essa variável configurada no Railway antes do deploy, o Intermediador inteiro falha no boot**, derrubando a sincronização de todos os terminais ativos (não só a feature nova). Ver `docs/DEPLOY.md` e `.env.example` do intermediador.
+- `pnpm --filter @easypdv/intermediador typecheck/lint/build` passam. Build completo do workspace (11/11, 11/11, 7/7) também passa.
+
 ### Clube Saldão: validade aparecia e vencia um dia antes (fuso horário) (2026-09-09)
 Usuário pediu pra lançar validade 05/09/2027 pra dois sócios que a tela do Clube mostrava como "validade desconhecida". A investigação achou **dois problemas distintos**, um esperado e um bug real.
 
