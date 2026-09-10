@@ -1,6 +1,9 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Implantado em produção (2026-09-10)
+As Fases 0-3 abaixo (login de admin + Vale-Troca completo) foram implantadas em produção nesta data: `JWT_SECRET` configurado no Railway (serviço `@easypdv/intermediador`), os 4 commits empurrados juntos pra `main`, migrations `org_auth_session`/`store_credit` aplicadas sozinhas no boot (`runMigrations()` em `main.ts`), confirmado via `railway logs` ("Nest application successfully started", nenhum erro) e `/health` respondendo 200. Não havia nenhuma alteração de WhatsApp pendente nesta leva — o `JWT_SECRET` é exclusivo do login de admin (Fase 0), sem relação com WhatsApp/Baileys (que segue só como planejamento, nunca implementado). Falta só cortar uma release (`v*`) do instalador pra a aba Vale-Troca e a validação de pagamento chegarem às lojas — o Intermediador já atende qualquer terminal atualizado.
+
 ### Vale-Troca: resgate na venda normal (Fase 3) (2026-09-10)
 Fase 3 do plano de crédito de troca — fecha o achado crítico documentado desde o início: até aqui "Vale-Troca" já existia como botão na tela de pagamento, mas aceitava qualquer valor digitado, sem saldo nenhum por trás. Agora valida de verdade.
 
