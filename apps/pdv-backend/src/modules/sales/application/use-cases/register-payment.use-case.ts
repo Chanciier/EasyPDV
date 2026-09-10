@@ -1,12 +1,23 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { RegisterPaymentInput } from "@easypdv/shared-validation";
-import { PaymentExceedsRemainingAmountError, SaleNotEditableError, SaleNotFoundError } from "../../domain/errors.js";
+import {
+  InsufficientStoreCreditError,
+  PaymentExceedsRemainingAmountError,
+  SaleNotEditableError,
+  SaleNotFoundError,
+  StoreCreditRedemptionRequiresCustomerError,
+} from "../../domain/errors.js";
 import type { Sale } from "../../domain/entities/sale.entity.js";
 import { SALE_REPOSITORY, type SaleRepositoryPort } from "../ports/sale-repository.port.js";
 import {
   AUDIT_LOG_REPOSITORY,
   type AuditLogRepositoryPort,
 } from "../../../audit/application/ports/audit-log-repository.port.js";
+import {
+  CUSTOMER_REPOSITORY,
+  type CustomerRepositoryPort,
+} from "../../../customers/application/ports/customer-repository.port.js";
+import { STORE_CREDIT_GATEWAY, type StoreCreditGatewayPort } from "../../../store-credit/application/ports/store-credit-gateway.port.js";
 
 /**
  * V1 não tem TEF/gateway real — o operador declara que a maquininha física
@@ -18,6 +29,8 @@ export class RegisterPaymentUseCase {
   constructor(
     @Inject(SALE_REPOSITORY) private readonly saleRepository: SaleRepositoryPort,
     @Inject(AUDIT_LOG_REPOSITORY) private readonly auditLogRepository: AuditLogRepositoryPort,
+    @Inject(CUSTOMER_REPOSITORY) private readonly customerRepository: CustomerRepositoryPort,
+    @Inject(STORE_CREDIT_GATEWAY) private readonly storeCreditGateway: StoreCreditGatewayPort,
   ) {}
 
   async execute(saleId: string, input: RegisterPaymentInput, actorUserId: string | null): Promise<Sale> {
@@ -55,6 +68,36 @@ export class RegisterPaymentUseCase {
     // sem isso, duas pernas poderiam somar mais que o total da venda.
     if (input.amount > sale.remainingAmount) {
       throw new PaymentExceedsRemainingAmountError(saleId, input.amount, sale.remainingAmount);
+    }
+
+    /**
+     * Vale-Troca (Fase 3, 2026-09-10) — checagem antecipada aqui, mas só
+     * consultiva (feedback rápido pro operador, mesmo espírito das outras
+     * guardas desta tela). O débito de verdade contra o saldo central só
+     * acontece em ConfirmSaleUseCase, no mesmo instante em que o estoque é
+     * debitado (evento central da venda) — nunca aqui, porque cada perna de
+     * pagamento pode ainda ser removida (botão de lixeira em
+     * payment-dialog.tsx) antes de confirmar; debitar o saldo do cliente
+     * numa perna que depois é descartada deixaria crédito real perdido sem
+     * venda nenhuma pra mostrar por trás.
+     */
+    if (input.method === "vale_troca") {
+      if (!sale.customerId) {
+        throw new StoreCreditRedemptionRequiresCustomerError(saleId);
+      }
+      const customer = await this.customerRepository.findById(sale.customerId);
+      if (!customer?.document) {
+        throw new StoreCreditRedemptionRequiresCustomerError(saleId);
+      }
+      const balance = await this.storeCreditGateway.getBalance(customer.document);
+      if (balance !== null) {
+        const alreadyRedeemed = sale.payments
+          .filter((p) => p.status === "aprovado" && p.method === "vale_troca")
+          .reduce((sum, p) => sum + p.amount, 0);
+        if (alreadyRedeemed + input.amount > balance + 0.001) {
+          throw new InsufficientStoreCreditError(customer.document);
+        }
+      }
     }
 
     const updated = await this.saleRepository.registerPayment({

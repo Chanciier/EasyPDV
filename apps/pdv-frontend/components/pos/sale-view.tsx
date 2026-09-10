@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, Plus, Minus, Trash2, ShoppingCart, Lock, Percent } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Lock, Percent, Gift } from 'lucide-react'
 import type { Payment, PaymentMethod, Product, ReceiptPrintPayload, Sale, SaleItem } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
@@ -26,6 +26,7 @@ import {
   useSale,
   useStartSale,
 } from '@/hooks/use-sales'
+import { useStoreCreditBalance } from '@/hooks/use-store-credit'
 import { formatCpf } from '@easypdv/shared-validation'
 import { CpfGateDialog } from './cpf-gate-dialog'
 import { PaymentDialog } from './payment-dialog'
@@ -74,6 +75,10 @@ export function SaleView() {
   const { saleId, selectedProductId, setSaleId, setSelectedProductId, reset } = useCartStore()
   const { data: sale } = useSale(saleId)
   const { data: saleCustomer } = useCustomer(sale?.customerId ?? null)
+  // Fase 3 (2026-09-10) — saldo de Vale-Troca visível assim que o CPF é
+  // anexado à venda; validação de verdade acontece no payment-dialog.tsx.
+  const { data: creditBalanceData } = useStoreCreditBalance(saleCustomer?.document ?? null)
+  const creditBalance = creditBalanceData?.balance ?? null
 
   const startSale = useStartSale()
   const addItem = useAddSaleItem()
@@ -644,8 +649,14 @@ export function SaleView() {
           <>
         {sale && (
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
               {saleCustomer?.document ? `CPF: ${formatCpf(saleCustomer.document)}` : 'Venda sem CPF'}
+              {creditBalance !== null && creditBalance > 0 && (
+                <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-primary">
+                  <Gift className="size-3" />
+                  Vale-Troca: {formatBRL(creditBalance)}
+                </span>
+              )}
             </span>
             <button
               onClick={() =>
@@ -981,6 +992,7 @@ export function SaleView() {
       <PaymentDialog
         open={paymentOpen}
         sale={sale}
+        customerDocument={saleCustomer?.document ?? null}
         submitting={paymentSubmitting}
         error={paymentError}
         onClose={() => {

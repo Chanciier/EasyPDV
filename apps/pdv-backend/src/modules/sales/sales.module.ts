@@ -3,6 +3,7 @@ import { AuditModule } from "../audit/audit.module.js";
 import { CatalogModule } from "../catalog/catalog.module.js";
 import { CustomersModule } from "../customers/customers.module.js";
 import { ClubModule } from "../club/club.module.js";
+import { StoreCreditModule } from "../store-credit/store-credit.module.js";
 import { InventoryModule } from "../inventory/inventory.module.js";
 import { RealtimeModule } from "../realtime/realtime.module.js";
 import { CashController } from "./infrastructure/controllers/cash.controller.js";
@@ -38,7 +39,7 @@ import { VoidConfirmedSaleUseCase } from "./application/use-cases/void-confirmed
 import { AttachCustomerToSaleUseCase } from "./application/use-cases/attach-customer-to-sale.use-case.js";
 
 @Module({
-  imports: [CatalogModule, InventoryModule, AuditModule, RealtimeModule, CustomersModule, ClubModule],
+  imports: [CatalogModule, InventoryModule, AuditModule, RealtimeModule, CustomersModule, ClubModule, StoreCreditModule],
   controllers: [CashController, SalesController],
   providers: [
     CreateCashRegisterUseCase,

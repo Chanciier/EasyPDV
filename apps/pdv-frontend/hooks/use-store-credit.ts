@@ -33,6 +33,15 @@ export function useStoreCreditCustomer(document: string | null) {
   })
 }
 
+/** Fase 3 (2026-09-10) — portão de CPF de uma venda normal e passo "Vale-Troca" do pagamento. `balance: null` = não deu pra saber (terminal não ativado/rede indisponível) — nunca trata como bloqueio, só "sem saldo visível". */
+export function useStoreCreditBalance(document: string | null) {
+  return useQuery({
+    queryKey: ['store-credit', 'balance', document ?? ''],
+    queryFn: () => apiRequest<{ balance: number | null }>(`/store-credit/balance/${document}`),
+    enabled: !!document,
+  })
+}
+
 export function useGrantStoreCredit() {
   return useMutation({
     mutationFn: (input: {

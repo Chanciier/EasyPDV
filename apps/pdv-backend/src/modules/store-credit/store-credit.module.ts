@@ -10,6 +10,7 @@ import { HttpStoreCreditGateway } from "./infrastructure/gateways/http-store-cre
 import { STORE_CREDIT_GATEWAY } from "./application/ports/store-credit-gateway.port.js";
 import { FindStoreCreditCustomerUseCase } from "./application/use-cases/find-store-credit-customer.use-case.js";
 import { GrantStoreCreditUseCase } from "./application/use-cases/grant-store-credit.use-case.js";
+import { GetStoreCreditBalanceUseCase } from "./application/use-cases/get-store-credit-balance.use-case.js";
 
 /**
  * NÃO importa ProvisioningModule — mesmo motivo documentado em ClubModule
@@ -27,9 +28,18 @@ import { GrantStoreCreditUseCase } from "./application/use-cases/grant-store-cre
  *
  * Fase 2 (2026-09-10): geração de crédito (GrantStoreCreditUseCase) — acha/
  * cria Customer, resolve produto+preço no servidor, chama o Intermediador,
- * devolve ao estoque os itens `restock: true`. Resgate na venda normal
- * ainda é Fase 3. Ver Planejamento - Vale-Troca (Crédito por CPF).md no
- * cofre Obsidian.
+ * devolve ao estoque os itens `restock: true`.
+ *
+ * Fase 3 (2026-09-10): resgate na venda normal. SalesModule importa este
+ * módulo (só pelo STORE_CREDIT_GATEWAY exportado, mesmo padrão de
+ * ClubModule/CLUB_GATEWAY) — RegisterPaymentUseCase valida saldo de forma
+ * consultiva a cada perna "vale_troca", ConfirmSaleUseCase debita de
+ * verdade no mesmo instante em que debita o estoque. Sem risco de ciclo:
+ * StoreCreditModule não importa SalesModule (nem nada que importe).
+ * GetStoreCreditBalanceUseCase (local, distinto do use-case de mesmo nome
+ * no Intermediador) expõe o saldo pro frontend mostrar no portão de CPF e
+ * na tela de pagamento. Ver Planejamento - Vale-Troca (Crédito por CPF).md
+ * no cofre Obsidian.
  */
 @Module({
   imports: [AuditModule, CatalogModule, InventoryModule, CustomersModule],
@@ -39,6 +49,7 @@ import { GrantStoreCreditUseCase } from "./application/use-cases/grant-store-cre
     { provide: STORE_CREDIT_GATEWAY, useClass: HttpStoreCreditGateway },
     FindStoreCreditCustomerUseCase,
     GrantStoreCreditUseCase,
+    GetStoreCreditBalanceUseCase,
   ],
   exports: [STORE_CREDIT_GATEWAY],
 })

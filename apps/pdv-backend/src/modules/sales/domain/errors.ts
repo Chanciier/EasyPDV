@@ -152,3 +152,19 @@ export class InsufficientStockError extends DomainError {
     super(`Estoque insuficiente para o produto ${productId}: disponível ${available}, solicitado ${requested}`);
   }
 }
+
+/** Vale-Troca (Fase 3, 2026-09-10) — resgate precisa saber de quem debitar o saldo central. */
+export class StoreCreditRedemptionRequiresCustomerError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(id: string) {
+    super(`Venda ${id} não tem cliente (CPF) anexado — não é possível pagar com Vale-Troca`);
+  }
+}
+
+/** Espelha InsufficientStoreCreditError do módulo store-credit (mesmo app) — duplicado aqui de propósito, mesma convenção de não acoplar módulos via import cruzado de domínio (ver docs/MODULES.md). */
+export class InsufficientStoreCreditError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(document: string) {
+    super(`Saldo de vale-troca insuficiente para o CPF ${document}.`);
+  }
+}

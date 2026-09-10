@@ -7,6 +7,7 @@ import { Modal } from './ui/modal'
 import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
 import { useRegisterPayment, useRemovePayment } from '@/hooks/use-sales'
+import { useStoreCreditBalance } from '@/hooks/use-store-credit'
 
 /**
  * Fluxo em etapas (2026-09-01, pedido direto do usuário) — F4 abre direto na
@@ -81,6 +82,7 @@ function describeError(e: unknown, fallback: string) {
 export function PaymentDialog({
   open,
   sale,
+  customerDocument = null,
   submitting = false,
   error = null,
   onClose,
@@ -89,6 +91,8 @@ export function PaymentDialog({
 }: {
   open: boolean
   sale: Sale | null | undefined
+  /** CPF do cliente anexado à venda (ver CpfGateDialog em sale-view.tsx) — usado só pra mostrar/validar o saldo de Vale-Troca aqui; `null` = venda sem CPF, opção "Vale-Troca" fica bloqueada. */
+  customerDocument?: string | null
   /** Submitting/error aqui são só da confirmação FINAL (confirmar venda) — cada perna de pagamento tem seu próprio estado, gerenciado internamente. */
   submitting?: boolean
   error?: string | null
@@ -100,6 +104,11 @@ export function PaymentDialog({
 }) {
   const registerPayment = useRegisterPayment()
   const removePayment = useRemovePayment()
+  // Fase 3 (2026-09-10) — saldo de verdade, consultado só quando a forma
+  // "Vale-Troca" está selecionada (sem CPF a query nem dispara, `enabled`
+  // cuida disso em useStoreCreditBalance).
+  const { data: creditBalanceData, isLoading: creditBalanceLoading } = useStoreCreditBalance(customerDocument)
+  const creditBalance = creditBalanceData?.balance ?? null
 
   const [step, setStep] = useState<Step>('method')
   const [selectedKey, setSelectedKey] = useState<MethodKey>('dinheiro')
@@ -150,12 +159,24 @@ export function PaymentDialog({
   const appliedAmount = Math.round((isCash ? Math.min(receivedNum, remaining) : amountNum) * 100) / 100
   const change = isCash ? Math.max(0, Math.round((receivedNum - remaining) * 100) / 100) : 0
 
+  const isValeTroca = selectedKey === 'vale_troca'
+  // Fase 3 (2026-09-10) — achado crítico do plano original: até aqui
+  // "Vale-Troca" aceitava qualquer valor digitado, sem saldo nenhum por
+  // trás. A validação de verdade (contra o saldo central) roda no backend
+  // em ConfirmSaleUseCase de qualquer forma — isto aqui é só pra não deixar
+  // o operador adicionar uma perna que o backend vai recusar na hora de
+  // confirmar.
+  const valeTrocaBlocked = isValeTroca && (!customerDocument || creditBalanceLoading || creditBalance === null)
+  const valeTrocaExceedsBalance = isValeTroca && creditBalance !== null && amountNum > creditBalance + 0.001
+
   const canAddLeg =
     !fullyPaid &&
     !registerPayment.isPending &&
     appliedAmount > 0 &&
     appliedAmount <= remaining + 0.001 &&
-    (isCash ? receivedNum > 0 : amountNum > 0 && amountNum <= remaining + 0.001)
+    (isCash ? receivedNum > 0 : amountNum > 0 && amountNum <= remaining + 0.001) &&
+    !valeTrocaBlocked &&
+    !valeTrocaExceedsBalance
 
   const canConfirm = fullyPaid && !submitting
 
@@ -422,7 +443,7 @@ export function PaymentDialog({
               </div>
             )}
 
-            {(selectedKey === 'pix' || selectedKey === 'vale_troca') && (
+            {selectedKey === 'pix' && (
               <div>
                 <label htmlFor="other-amount" className="mb-1.5 block text-sm font-medium">
                   Valor desta perna
@@ -439,6 +460,50 @@ export function PaymentDialog({
                 />
                 {amountNum > remaining + 0.001 && (
                   <p className="mt-1 text-xs text-destructive">Valor maior que o restante ({formatBRL(remaining)}).</p>
+                )}
+              </div>
+            )}
+
+            {isValeTroca && (
+              <div className="space-y-2">
+                {!customerDocument ? (
+                  <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                    Venda sem CPF — anexe o CPF do cliente antes de pagar com Vale-Troca.
+                  </p>
+                ) : creditBalanceLoading ? (
+                  <p className="text-sm text-muted-foreground">Consultando saldo…</p>
+                ) : creditBalance === null ? (
+                  <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                    Não foi possível consultar o saldo de Vale-Troca agora. Tente de novo em instantes.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between rounded-lg bg-primary/10 px-4 py-2.5 text-sm text-primary">
+                      <span>Saldo disponível</span>
+                      <span className="font-mono font-semibold">{formatBRL(creditBalance)}</span>
+                    </div>
+                    <div>
+                      <label htmlFor="vale-troca-amount" className="mb-1.5 block text-sm font-medium">
+                        Valor desta perna
+                      </label>
+                      <input
+                        id="vale-troca-amount"
+                        ref={inputRef}
+                        inputMode="decimal"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        disabled={registerPayment.isPending}
+                        placeholder="0,00"
+                        className="w-full rounded-lg border border-input bg-background px-4 py-3 font-mono text-2xl font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-ring/40 disabled:opacity-50"
+                      />
+                      {amountNum > remaining + 0.001 && (
+                        <p className="mt-1 text-xs text-destructive">Valor maior que o restante ({formatBRL(remaining)}).</p>
+                      )}
+                      {valeTrocaExceedsBalance && (
+                        <p className="mt-1 text-xs text-destructive">Valor maior que o saldo disponível ({formatBRL(creditBalance)}).</p>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             )}

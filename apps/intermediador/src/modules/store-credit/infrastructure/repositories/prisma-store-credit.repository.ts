@@ -76,6 +76,30 @@ export class PrismaStoreCreditRepository implements StoreCreditRepositoryPort {
    */
   async redeem(data: RedeemStoreCreditData): Promise<{ balance: number } | null> {
     return this.prisma.$transaction(async (tx) => {
+      /**
+       * Idempotência de retry (Fase 3, 2026-09-10) — ConfirmSaleUseCase (pdv-backend)
+       * chama este redeem ANTES de confirmar a venda localmente (mesma lógica de
+       * "o que é mais difícil de desfazer roda primeiro" já usada em
+       * GrantStoreCreditUseCase). Se o redeem for bem-sucedido aqui mas a
+       * confirmação local falhar depois (rede, ou qualquer erro), a venda continua
+       * "draft" e o operador clica "Confirmar" de novo — sem essa checagem,
+       * debitaria o saldo do cliente DUAS vezes pela mesma venda. Mesma classe do
+       * bug real de pagamento duplicado em retry já documentado em
+       * register-payment.use-case.ts (pdv-backend); fechado aqui, na origem do
+       * saldo, não só confiando em lógica do lado do terminal.
+       */
+      if (data.saleReference) {
+        const existing = await tx.storeCreditRedemption.findFirst({
+          where: { organizationId: data.organizationId, saleReference: data.saleReference },
+        });
+        if (existing) {
+          const current = await tx.storeCreditBalance.findUnique({
+            where: { organizationId_customerCpf: { organizationId: data.organizationId, customerCpf: data.customerCpf } },
+          });
+          return { balance: current?.balance ?? 0 };
+        }
+      }
+
       const affected = await tx.$executeRaw`
         UPDATE "StoreCreditBalance"
         SET balance = ROUND((balance - ${data.amount}::float8)::numeric, 2)::float8,
