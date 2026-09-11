@@ -53,8 +53,21 @@ export interface SaleRepositoryPort {
    * o que resolve a race condition de concorrência documentada desde a Sprint 3.
    * `actorUserId` grava um AuditLog (action "sale.confirmed") na MESMA
    * transação — único ponto de auditoria com essa garantia (Sprint 13).
+   *
+   * `customerDocument`/`customerName` (2026-09-11) — achatados aqui pro
+   * `syncPayload` que vai pro Bling. Antes o repositório buscava isso
+   * direto de `prisma.customer` (SQLite local); desde que `Customer` virou
+   * central (Intermediador), quem resolve é `ConfirmSaleUseCase` via
+   * `CUSTOMER_REPOSITORY` — o repositório só recebe o resultado já pronto,
+   * nunca faz chamada de rede no meio de uma transação local.
    */
-  confirm(saleId: string, warehouseId: string, actorUserId: string | null): Promise<Sale>;
+  confirm(
+    saleId: string,
+    warehouseId: string,
+    actorUserId: string | null,
+    customerDocument: string | null,
+    customerName: string | null,
+  ): Promise<Sale>;
   /** Soma pagamentos "dinheiro" aprovados de vendas confirmadas na sessão — usado no fechamento de caixa (Sprint 9). */
   sumCashPayments(cashSessionId: string): Promise<number>;
   /**

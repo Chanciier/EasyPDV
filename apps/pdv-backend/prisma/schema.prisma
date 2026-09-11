@@ -306,25 +306,6 @@ enum SaleDiscountSource {
   club
 }
 
-// Cliente da venda — antes da Sprint 15 era só um mock no frontend, sem
-// nenhuma linha de verdade. onDelete: SetNull em Sale.customer: excluir um
-// cliente não pode apagar/travar o histórico de vendas dele — a venda só
-// volta a mostrar "Consumidor Final" (customerId null), mesma convenção já
-// usada pra venda sem cliente vinculado.
-model Customer {
-  id        String   @id @default(cuid())
-  name      String
-  document  String?  @unique
-  phone     String?
-  email     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  sales Sale[]
-
-  @@index([name])
-}
-
 // Sprint 4: só draft/cancelled (sem pagamento ainda). confirmed + débito de
 // estoque + auditoria entram juntos na Sprint 5, numa única transação
 // atômica — ver docs/DATABASE.md "evento central".
@@ -333,8 +314,14 @@ model Sale {
   cashSessionId  String
   cashSession    CashSession @relation(fields: [cashSessionId], references: [id])
   operatorUserId String
+  // Cliente centralizado (2026-09-11) — `Customer` deixou de ser uma tabela
+  // local (ver CustomersModule/HttpCustomerRepository, pdv-backend): agora
+  // vive no Intermediador, compartilhado pela organização inteira, não mais
+  // por terminal. `customerId` aqui é só uma referência solta (id central),
+  // sem FK de verdade — bancos diferentes, mesmo padrão já usado por
+  // `StoreCreditRedemption.saleReference` no Intermediador. Excluir um
+  // cliente central não precisa mais tocar em nada local.
   customerId     String?
-  customer       Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
   status         SaleStatus  @default(draft)
   totalAmount    Float       @default(0)
   discountAmount Float       @default(0)

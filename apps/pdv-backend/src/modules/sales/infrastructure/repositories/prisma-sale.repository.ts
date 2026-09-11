@@ -132,7 +132,13 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
    * reverter, é só trocar de volta pro `updateMany` com o piso e o throw de
    * `InsufficientStockError` (ver histórico do git).
    */
-  async confirm(saleId: string, warehouseId: string, actorUserId: string | null): Promise<Sale> {
+  async confirm(
+    saleId: string,
+    warehouseId: string,
+    actorUserId: string | null,
+    customerDocument: string | null,
+    customerName: string | null,
+  ): Promise<Sale> {
     const sale = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
     const confirmedAt = new Date();
 
@@ -145,18 +151,12 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     });
     const productById = new Map(products.map((product) => [product.id, product]));
 
-    // "CPF na nota" (2026-08-19) — venda sem cliente anexado (caso comum,
-    // anônima) manda os dois campos null, comportamento idêntico a antes.
-    const customer = sale.customerId
-      ? await this.prisma.customer.findUnique({ where: { id: sale.customerId }, select: { document: true, name: true } })
-      : null;
-
     const syncPayload: SaleSyncPayload = {
       saleId,
       totalAmount: sale.totalAmount,
       confirmedAt: confirmedAt.toISOString(),
-      customerDocument: customer?.document ?? null,
-      customerName: customer?.name ?? null,
+      customerDocument,
+      customerName,
       items: sale.items.map((item) => {
         const product = productById.get(item.productId);
         return {

@@ -33,6 +33,14 @@ import { STORE_CREDIT_GATEWAY, type StoreCreditGatewayPort } from "../../../stor
  * entre os que sobram). `PrismaStoreCreditRepository.redeem()` já é
  * idempotente por `saleReference` (mesmo id desta venda) — um retry depois de
  * uma falha na confirmação local não debita o saldo duas vezes.
+ *
+ * Cliente centralizado (2026-09-11): `Customer` deixou de ser uma tabela
+ * local — resolvido aqui via `CUSTOMER_REPOSITORY` (agora um gateway HTTP
+ * pro Intermediador) sempre que `sale.customerId` existe, reaproveitado
+ * tanto pro resgate de Vale-Troca acima quanto pro `syncPayload` do Bling
+ * (document/name), repassado como parâmetro pra `saleRepository.confirm()`
+ * — o repositório não busca cliente sozinho, pra não fazer chamada de rede
+ * no meio da transação local atômica.
  */
 @Injectable()
 export class ConfirmSaleUseCase {
@@ -64,11 +72,12 @@ export class ConfirmSaleUseCase {
       throw new NoWarehouseAvailableError();
     }
 
+    const customer = sale.customerId ? await this.customerRepository.findById(sale.customerId) : null;
+
     const valeTrocaTotal = sale.payments
       .filter((p) => p.status === "aprovado" && p.method === "vale_troca")
       .reduce((sum, p) => sum + p.amount, 0);
     if (valeTrocaTotal > 0) {
-      const customer = sale.customerId ? await this.customerRepository.findById(sale.customerId) : null;
       if (!customer?.document) {
         throw new StoreCreditRedemptionRequiresCustomerError(saleId);
       }
@@ -79,6 +88,6 @@ export class ConfirmSaleUseCase {
       });
     }
 
-    return this.saleRepository.confirm(saleId, warehouse.id, actorUserId);
+    return this.saleRepository.confirm(saleId, warehouse.id, actorUserId, customer?.document ?? null, customer?.name ?? null);
   }
 }

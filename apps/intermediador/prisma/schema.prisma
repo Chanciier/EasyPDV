@@ -33,6 +33,7 @@ model Organization {
   storeCreditBalances    StoreCreditBalance[]
   storeCreditGrants      StoreCreditGrant[]
   storeCreditRedemptions StoreCreditRedemption[]
+  customers              Customer[]
 }
 
 // Mesmos valores de UserRole em apps/pdv-backend/prisma/schema.prisma (enum
@@ -352,6 +353,30 @@ model StoreCreditRedemption {
   createdAt      DateTime     @default(now())
 
   @@index([organizationId, customerCpf])
+}
+
+// Cliente centralizado (2026-09-11) — até aqui `Customer` era só uma tabela
+// local por terminal no pdv-backend (SQLite), sem relação nenhuma com outros
+// terminais nem com o Bling. Pedido direto do usuário: "eu não gosto de nada
+// local, leva tudo para o intermediador e deixa o pdv buscar lá. todos os
+// terminais precisam ser comunicaveis" — mesmo padrão já usado pra
+// ClubMembership e StoreCreditBalance, agora pro cadastro de cliente em si.
+// De propósito SEM relação com os contatos do Bling (`resolveContactByCpf`
+// em bling-sync-target.adapter.ts) — são dois cadastros paralelos, sem
+// tentativa de fundir os dois aqui.
+model Customer {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  document       String?
+  phone          String?
+  email          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, document])
+  @@index([organizationId, name])
 }
 
 enum SyncStatus {
