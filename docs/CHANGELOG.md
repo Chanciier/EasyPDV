@@ -1,6 +1,15 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Importar clientes do Bling — botão recorrente na tela Clientes (2026-09-11)
+Depois de centralizar `Customer` (ver entrada abaixo), ficou claro que o cadastro "de verdade" já existe no Bling (68 contatos reais) — o CPF do usuário nunca virou `Customer` (nem local, nem central) porque só foi adicionado ao Clube, que não toca em `Customer`. Pedido do usuário: trazer os dados DO Bling, como ação recorrente (não um script de uma vez só) — mirror exato do botão "Sincronizar com Bling" que já existe em Produtos.
+
+- **`ImportCustomersFromBlingUseCase`** (Intermediador, módulo `customers`) — pagina `GET /contatos` inteiro (sem filtro de tipo, diferente de `listContactsByTipo` usado pelo Clube), busca telefone por contato via `getContactById` (não vem na listagem), faz upsert em `Customer` por `(organizationId, document)`. Bling sempre sobrescreve nome/telefone em conflito (mesma decisão já confirmada pro sync de Produtos: "produtos nascem no Bling" → aqui, "cliente nasce no Bling"); `email` nunca é tocado. Contato sem CPF/CNPJ é ignorado. Mesmo padrão de paginação/rate-limit de `ListBlingProductsUseCase` (`PAGE_SIZE`/`MAX_PAGES`/delay entre chamadas).
+- **`ErpIntegrationModule`** passou a exportar `BlingApiClient`/`BlingTokenProviderService`/`ERP_INTEGRATION_REPOSITORY` (antes só `BlingSyncTargetAdapter`/`CLUB_MEMBERSHIP_REPOSITORY`) — aditivo, `CustomersModule` importa pra montar o use-case novo, mesma direção de dependência de `ClubModule→ErpIntegrationModule`.
+- **`POST /customers/import-from-bling`** novo nos dois lados (Intermediador atrás de `TerminalApiKeyGuard`; pdv-backend atrás de `@Roles("administrador", "gerente")`, mesma restrição de `POST /products/sync-bling`) — `HttpCustomerRepository` ganhou um segundo port (`CustomerBlingImportGatewayPort`) só pra repassar o gatilho, sem escrever nada localmente (a escrita já é toda central).
+- **Botão "Sincronizar com Bling"** na tela Clientes (`customers-view.tsx`) — visual e comportamento idênticos ao de Produtos (ícone girando enquanto sincroniza, mensagem de resultado com contagem).
+- Boot testado localmente nos dois apps (Intermediador + pdv-backend) depois da mudança de módulos — sem erro de dependência. Teste funcional de verdade (contagem batendo com os 68 contatos reais) só é possível contra a conexão Bling de produção — sem conexão Bling no ambiente de dev local.
+
 ### Cliente centralizado no Intermediador (2026-09-11)
 Achado real usando o app instalado (v1.5.14): o usuário é sócio do Clube (central, ligado ao Bling) mas a tela "Clientes" aparecia vazia e o Vale-Troca o tratava como "cliente novo" — porque `Customer` era uma tabela 100% local por terminal (SQLite), nunca populada nesse terminal específico. Pedido direto do usuário: "eu não gosto de nada local, leva tudo para o intermediador e deixa o pdv buscar lá. todos os terminais precisam ser comunicaveis".
 

@@ -57,6 +57,12 @@ import { ListBlingProductsUseCase } from "./application/use-cases/list-bling-pro
   // (que vive em ClubModule) também precisa resolver esse provider direto —
   // bug real de boot corrigido (2026-08-25): sem isso o Nest derruba a
   // aplicação inteira na subida com UnknownDependenciesException.
-  exports: [BlingSyncTargetAdapter, CLUB_MEMBERSHIP_REPOSITORY],
+  //
+  // BlingApiClient/BlingTokenProviderService/ERP_INTEGRATION_REPOSITORY
+  // exportados também (2026-09-11) — mesmo trio que ListBlingProductsUseCase
+  // já usa direto aqui dentro; CustomersModule importa este módulo pra montar
+  // ImportCustomersFromBlingUseCase com o mesmo padrão (resolver token,
+  // paginar, respeitar rate limit), sem duplicar a lógica de token/paginação.
+  exports: [BlingSyncTargetAdapter, CLUB_MEMBERSHIP_REPOSITORY, BlingApiClient, BlingTokenProviderService, ERP_INTEGRATION_REPOSITORY],
 })
 export class ErpIntegrationModule {}

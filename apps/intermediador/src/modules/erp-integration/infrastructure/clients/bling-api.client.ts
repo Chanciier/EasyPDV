@@ -281,6 +281,19 @@ export class BlingApiClient {
     return result.data ?? [];
   }
 
+  /**
+   * Uma página de `GET /contatos` (`pagina`/`limite`, mesma paginação padrão
+   * da API v3 já usada em `listProductsPage`), SEM filtro de tipo — diferente
+   * de `listContactsByTipo` (só Clube), esta traz todos os contatos da conta.
+   * Usada pelo import de clientes (2026-09-11): a listagem não traz `celular`
+   * (só o detalhe, `getContactById`) — chamador busca telefone à parte.
+   */
+  async listContactsPage(accessToken: string, pagina: number, limite = 100): Promise<BlingContact[]> {
+    const query = new URLSearchParams({ pagina: String(pagina), limite: String(limite) });
+    const result = await this.request<BlingListEnvelope<BlingContact>>(accessToken, "GET", `/contatos?${query.toString()}`);
+    return result.data ?? [];
+  }
+
   async findContactByName(accessToken: string, nome: string): Promise<BlingContact | null> {
     const result = await this.request<BlingListEnvelope<BlingContact>>(accessToken, "GET", `/contatos?pesquisa=${encodeURIComponent(nome)}`);
     return result.data?.find((contact) => contact.nome === nome) ?? result.data?.[0] ?? null;

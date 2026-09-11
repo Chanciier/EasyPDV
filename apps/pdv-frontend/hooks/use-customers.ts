@@ -47,3 +47,15 @@ export function useDeleteCustomer() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['customers'] }),
   })
 }
+
+/** Botão "Sincronizar com Bling" na tela Clientes — mirror de useSyncProductsFromBling (use-catalog.ts). A escrita toda acontece no Intermediador (Customer é central); aqui só dispara e invalida a busca local. */
+export function useImportCustomersFromBling() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      apiRequest<{ created: number; updated: number; skipped: number; total: number }>('/customers/import-from-bling', {
+        method: 'POST',
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['customers'] }),
+  })
+}

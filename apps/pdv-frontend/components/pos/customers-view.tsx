@@ -1,10 +1,16 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Search, Plus, Pencil, Trash2, Users } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, Users, RefreshCw } from 'lucide-react'
 import type { Customer } from '@easypdv/shared-types'
 import { ApiError } from '@/lib/api-client'
-import { useCreateCustomer, useCustomerSearch, useDeleteCustomer, useUpdateCustomer } from '@/hooks/use-customers'
+import {
+  useCreateCustomer,
+  useCustomerSearch,
+  useDeleteCustomer,
+  useImportCustomersFromBling,
+  useUpdateCustomer,
+} from '@/hooks/use-customers'
 import { Modal } from './ui/modal'
 
 type FormState = { name: string; document: string; phone: string; email: string }
@@ -17,11 +23,13 @@ export function CustomersView() {
   const createCustomer = useCreateCustomer()
   const updateCustomer = useUpdateCustomer()
   const deleteCustomer = useDeleteCustomer()
+  const importFromBling = useImportCustomersFromBling()
 
   const [editingId, setEditingId] = useState<string | 'new' | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [formError, setFormError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedTerm(term), 250)
@@ -97,6 +105,23 @@ export function CustomersView() {
     }
   }
 
+  const handleImportFromBling = async () => {
+    setSyncMessage(null)
+    try {
+      const result = await importFromBling.mutateAsync()
+      const skippedText = result.skipped > 0 ? `, ${result.skipped} sem CPF/CNPJ ignorado(s)` : ''
+      setSyncMessage({
+        ok: true,
+        text: `Sincronizado: ${result.created} novo(s), ${result.updated} atualizado(s)${skippedText} de ${result.total} contato(s) no Bling.`,
+      })
+    } catch (e) {
+      setSyncMessage({
+        ok: false,
+        text: e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Falha ao sincronizar com o Bling.',
+      })
+    }
+  }
+
   return (
     <div className="flex h-full flex-col p-4">
       <div className="mb-4 flex items-center gap-3">
@@ -110,6 +135,14 @@ export function CustomersView() {
           />
         </div>
         <button
+          onClick={handleImportFromBling}
+          disabled={importFromBling.isPending}
+          className="flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-semibold transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+        >
+          <RefreshCw className={`size-4 ${importFromBling.isPending ? 'animate-spin' : ''}`} />
+          {importFromBling.isPending ? 'Sincronizando...' : 'Sincronizar com Bling'}
+        </button>
+        <button
           onClick={openNew}
           className="flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
         >
@@ -117,6 +150,15 @@ export function CustomersView() {
           <kbd className="rounded bg-primary-foreground/20 px-1 font-mono text-[10px]">F2</kbd>
         </button>
       </div>
+      {syncMessage && (
+        <div
+          className={`mb-4 rounded-lg px-3 py-2 text-sm ${
+            syncMessage.ok ? 'bg-emerald-500/10 text-emerald-600' : 'bg-destructive/10 text-destructive'
+          }`}
+        >
+          {syncMessage.text}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card">
         <div className="grid grid-cols-[1fr_12rem_10rem_5rem] items-center gap-3 border-b border-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

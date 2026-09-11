@@ -10,6 +10,10 @@ import type {
   CustomerRepositoryPort,
   UpdateCustomerData,
 } from "../../application/ports/customer-repository.port.js";
+import type {
+  CustomerBlingImportGatewayPort,
+  ImportCustomersFromBlingResult,
+} from "../../application/ports/customer-bling-import-gateway.port.js";
 
 /**
  * Cliente centralizado (2026-09-11) — mesmo padrão de HttpStoreCreditGateway/
@@ -22,7 +26,7 @@ import type {
  * de propósito, mesma característica que Vale-Troca já tem desde a Fase 1.
  */
 @Injectable()
-export class HttpCustomerRepository implements CustomerRepositoryPort {
+export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerBlingImportGatewayPort {
   private readonly baseUrl: string;
 
   constructor(
@@ -132,5 +136,25 @@ export class HttpCustomerRepository implements CustomerRepositoryPort {
       headers: { "X-Terminal-Api-Key": apiKey },
     });
     if (!response.ok) throw new Error(`Intermediador respondeu ${response.status} para DELETE /customers/${id}`);
+  }
+
+  /**
+   * Pagina o cadastro inteiro do Bling do lado do Intermediador (uma
+   * chamada de detalhe por contato com documento, rate-limited) — pode
+   * levar dezenas de segundos com um cadastro grande. Timeout bem mais
+   * folgado que os outros métodos desta classe, de propósito.
+   */
+  async importFromBling(): Promise<ImportCustomersFromBlingResult> {
+    const { apiKey } = await this.headers();
+    const response = await fetch(`${this.baseUrl}/customers/import-from-bling`, {
+      method: "POST",
+      headers: { "X-Terminal-Api-Key": apiKey },
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { message?: string } | null;
+      throw new Error(body?.message ?? `Intermediador respondeu ${response.status} para POST /customers/import-from-bling`);
+    }
+    return (await response.json()) as ImportCustomersFromBlingResult;
   }
 }

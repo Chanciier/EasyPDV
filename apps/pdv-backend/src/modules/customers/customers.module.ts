@@ -4,11 +4,13 @@ import { STORE_IDENTITY_REPOSITORY } from "../provisioning/application/ports/sto
 import { CustomersController } from "./infrastructure/controllers/customers.controller.js";
 import { HttpCustomerRepository } from "./infrastructure/repositories/http-customer.repository.js";
 import { CUSTOMER_REPOSITORY } from "./application/ports/customer-repository.port.js";
+import { CUSTOMER_BLING_IMPORT_GATEWAY } from "./application/ports/customer-bling-import-gateway.port.js";
 import { CreateCustomerUseCase } from "./application/use-cases/create-customer.use-case.js";
 import { UpdateCustomerUseCase } from "./application/use-cases/update-customer.use-case.js";
 import { DeleteCustomerUseCase } from "./application/use-cases/delete-customer.use-case.js";
 import { GetCustomerUseCase } from "./application/use-cases/get-customer.use-case.js";
 import { SearchCustomersUseCase } from "./application/use-cases/search-customers.use-case.js";
+import { ImportCustomersFromBlingUseCase } from "./application/use-cases/import-customers-from-bling.use-case.js";
 
 /**
  * Cliente centralizado (2026-09-11) — CUSTOMER_REPOSITORY passou de
@@ -32,8 +34,12 @@ import { SearchCustomersUseCase } from "./application/use-cases/search-customers
     DeleteCustomerUseCase,
     GetCustomerUseCase,
     SearchCustomersUseCase,
+    ImportCustomersFromBlingUseCase,
     { provide: STORE_IDENTITY_REPOSITORY, useClass: PrismaStoreIdentityRepository },
     { provide: CUSTOMER_REPOSITORY, useClass: HttpCustomerRepository },
+    // Mesma classe HttpCustomerRepository, um segundo token — ela implementa
+    // os dois ports (CustomerRepositoryPort e CustomerBlingImportGatewayPort).
+    { provide: CUSTOMER_BLING_IMPORT_GATEWAY, useExisting: CUSTOMER_REPOSITORY },
   ],
   // Consumido por AttachCustomerToSaleUseCase (Sales) pro fluxo "CPF na
   // nota" — busca-ou-cria por documento é acesso a dado simples, não

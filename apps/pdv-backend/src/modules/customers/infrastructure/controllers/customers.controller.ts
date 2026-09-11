@@ -14,6 +14,7 @@ import { UpdateCustomerUseCase } from "../../application/use-cases/update-custom
 import { DeleteCustomerUseCase } from "../../application/use-cases/delete-customer.use-case.js";
 import { GetCustomerUseCase } from "../../application/use-cases/get-customer.use-case.js";
 import { SearchCustomersUseCase } from "../../application/use-cases/search-customers.use-case.js";
+import { ImportCustomersFromBlingUseCase } from "../../application/use-cases/import-customers-from-bling.use-case.js";
 
 /**
  * list/get/create/update sem @Roles — cadastrar/editar cliente é ação de
@@ -29,11 +30,19 @@ export class CustomersController {
     private readonly deleteCustomerUseCase: DeleteCustomerUseCase,
     private readonly getCustomerUseCase: GetCustomerUseCase,
     private readonly searchCustomersUseCase: SearchCustomersUseCase,
+    private readonly importCustomersFromBlingUseCase: ImportCustomersFromBlingUseCase,
   ) {}
 
   @Get()
   search(@Query("query") query?: string) {
     return this.searchCustomersUseCase.execute(query);
+  }
+
+  /** Botão "Sincronizar com Bling" — mesma restrição de POST /products/sync-bling. */
+  @Post("import-from-bling")
+  @Roles("administrador", "gerente")
+  importFromBling() {
+    return this.importCustomersFromBlingUseCase.execute();
   }
 
   @Get(":id")

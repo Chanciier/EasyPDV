@@ -17,6 +17,7 @@ import { SearchCustomersUseCase } from "../../application/use-cases/search-custo
 import { CreateCustomerUseCase } from "../../application/use-cases/create-customer.use-case.js";
 import { UpdateCustomerUseCase } from "../../application/use-cases/update-customer.use-case.js";
 import { DeleteCustomerUseCase } from "../../application/use-cases/delete-customer.use-case.js";
+import { ImportCustomersFromBlingUseCase } from "../../application/use-cases/import-customers-from-bling.use-case.js";
 
 /**
  * Cliente centralizado (2026-09-11) — chamado pelo PDV local, mesma
@@ -35,7 +36,14 @@ export class CustomersController {
     private readonly createCustomerUseCase: CreateCustomerUseCase,
     private readonly updateCustomerUseCase: UpdateCustomerUseCase,
     private readonly deleteCustomerUseCase: DeleteCustomerUseCase,
+    private readonly importCustomersFromBlingUseCase: ImportCustomersFromBlingUseCase,
   ) {}
+
+  /** Botão "Sincronizar com Bling" na tela Clientes — mesma fronteira do resto deste controller, escopado pela organização do terminal. */
+  @Post("import-from-bling")
+  importFromBling(@CurrentTerminal() terminal: AuthenticatedTerminal) {
+    return this.importCustomersFromBlingUseCase.execute(terminal.organizationId);
+  }
 
   @Get()
   search(@Query("query") query: string | undefined, @CurrentTerminal() terminal: AuthenticatedTerminal) {
