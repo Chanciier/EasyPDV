@@ -1,6 +1,15 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Bug real: telefone vazio do Bling quebrava Vale-Troca com 500 opaco (2026-09-11)
+Achado testando o import de clientes em produção pela primeira vez de verdade: o Bling devolve `celular: ""` (string vazia, não ausente) pra contato sem telefone — `ImportCustomersFromBlingUseCase` só tratava `null`/`undefined` como "sem telefone" (`?? null`), então uma string vazia virava `Customer.phone = ""`. Isso quebrava `GrantStoreCreditUseCase` (Vale-Troca): `customerPhone` exige pelo menos 1 caractere quando enviado, `""` é rejeitado com 400 — e o pdv-backend transformava essa rejeição num "Internal Server Error" genérico, sem mostrar o motivo real (achado só depurando os logs de produção e reproduzindo a chamada manualmente).
+
+- **`ImportCustomersFromBlingUseCase`** (Intermediador) — trata telefone vazio/só-espaço como ausente na origem (`detail.celular?.trim() ? detail.celular : null`), não só `null`/`undefined`.
+- **`GrantStoreCreditUseCase`** (pdv-backend) — mesma defesa em profundidade do lado de quem CONSOME `Customer.phone`, não só de quem grava.
+- **`HttpStoreCreditGateway`** (pdv-backend) — passou a extrair `fieldErrors`/`formErrors` do corpo de erro do Intermediador quando não vem `message` (caso do `ZodValidationPipe`) — sem isso, um 400 de validação virava só "Intermediador respondeu 400", sem dizer qual campo, dificultando diagnosticar da próxima vez.
+- **Dado já gravado corrigido**: 39 `Customer` com `phone = ""` (do import anterior) tiveram o telefone normalizado pra `NULL` direto no Postgres de produção.
+- **Dois créditos de teste (R$9,99 cada) criados durante a depuração no CPF do usuário foram revertidos** (grant + item + saldo apagados) — não eram transação real.
+
 ### Importar clientes do Bling — botão recorrente na tela Clientes (2026-09-11)
 Depois de centralizar `Customer` (ver entrada abaixo), ficou claro que o cadastro "de verdade" já existe no Bling (68 contatos reais) — o CPF do usuário nunca virou `Customer` (nem local, nem central) porque só foi adicionado ao Clube, que não toca em `Customer`. Pedido do usuário: trazer os dados DO Bling, como ação recorrente (não um script de uma vez só) — mirror exato do botão "Sincronizar com Bling" que já existe em Produtos.
 

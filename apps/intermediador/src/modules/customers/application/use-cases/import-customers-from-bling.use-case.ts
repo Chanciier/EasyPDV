@@ -84,11 +84,20 @@ export class ImportCustomersFromBlingUseCase {
         await sleep(DETAIL_DELAY_MS);
         const detail = await this.blingApiClient.getContactById(accessToken, contact.id);
 
+        // Bug real achado testando de verdade (2026-09-11): o Bling devolve
+        // `celular: ""` (string vazia, não ausente) pra contato sem telefone
+        // cadastrado — `?? null` não pega isso (só trata null/undefined).
+        // Uma string vazia virava `Customer.phone = ""`, que depois quebrava
+        // com 400 em GrantStoreCreditUseCase (customerPhone exige pelo menos
+        // 1 caractere quando enviado) — o pdv-backend transformava isso num
+        // 500 opaco, sem mostrar o motivo real.
+        const phone = detail.celular?.trim() ? detail.celular : null;
+
         const existing = await this.customerRepository.findByDocument(organizationId, contact.numeroDocumento);
         if (existing) {
           await this.customerRepository.update(organizationId, existing.id, {
             name: detail.nome,
-            phone: detail.celular ?? null,
+            phone,
           });
           updated++;
         } else {
@@ -96,7 +105,7 @@ export class ImportCustomersFromBlingUseCase {
             organizationId,
             name: detail.nome,
             document: contact.numeroDocumento,
-            phone: detail.celular ?? null,
+            phone,
             email: null,
           });
           created++;

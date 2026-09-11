@@ -101,7 +101,12 @@ export class GrantStoreCreditUseCase {
     const result = await this.storeCreditGateway.grant({
       document,
       customerName: customer.name,
-      customerPhone: customer.phone ?? undefined,
+      // Nunca confia que "sem telefone" só aparece como null/undefined —
+      // achado real (2026-09-11): um Customer importado do Bling com
+      // telefone vazio chegava aqui como "" (string vazia), e o
+      // Intermediador rejeita com 400 (customerPhone exige >=1 caractere
+      // quando enviado). Trata string vazia igual a ausente.
+      customerPhone: customer.phone?.trim() ? customer.phone : undefined,
       items: gatewayItems,
     });
 

@@ -55,8 +55,15 @@ export class HttpStoreCreditGateway implements StoreCreditGatewayPort {
       // com preço resolvido no servidor. Se ainda assim o Intermediador
       // recusar, repassa a mensagem dele em vez de um "500 genérico" opaco —
       // defesa em profundidade, não o caminho esperado.
-      const body = (await response.json().catch(() => null)) as { message?: string } | null;
-      throw new Error(body?.message ?? `Intermediador respondeu ${response.status} para POST /store-credit/grants`);
+      //
+      // 400 (falha de validação do ZodValidationPipe) NÃO tem `message` no
+      // corpo — vem como `{fieldErrors, formErrors}` (achado real, 2026-09-11:
+      // um telefone vazio virando 400 gerava só "Intermediador respondeu 400",
+      // sem dizer QUAL campo, e o pdv-backend ainda embrulhava isso num 500
+      // opaco pro operador — nada logado dava pra diagnosticar sem reproduzir
+      // a chamada manualmente). describeHttpError extrai fieldErrors quando
+      // message não vem.
+      throw new Error(await describeHttpError(response, "POST /store-credit/grants"));
     }
     return (await response.json()) as StoreCreditGrantResult;
   }
@@ -75,8 +82,34 @@ export class HttpStoreCreditGateway implements StoreCreditGatewayPort {
       throw new InsufficientStoreCreditError(input.document);
     }
     if (!response.ok) {
-      throw new Error(`Intermediador respondeu ${response.status} para POST /store-credit/redemptions`);
+      throw new Error(await describeHttpError(response, "POST /store-credit/redemptions"));
     }
     return (await response.json()) as { balance: number };
   }
+}
+
+/**
+ * Corpo de erro do Intermediador pode vir de dois jeitos: um DomainError
+ * mapeado (`{message}`, ver DomainExceptionFilter) ou uma falha do
+ * ZodValidationPipe (`{fieldErrors, formErrors}`, sem `message` nenhum — ver
+ * zod-validation.pipe.ts). Sem tratar o segundo caso, a mensagem que sobe
+ * pro operador (e pro log, quando o pdv-backend não sabe mapear o erro e cai
+ * pra 500 opaco) é só "Intermediador respondeu 400", sem dizer qual campo.
+ */
+async function describeHttpError(response: Response, requestLabel: string): Promise<string> {
+  const body = (await response.json().catch(() => null)) as
+    | { message?: string; fieldErrors?: Record<string, string[]>; formErrors?: string[] }
+    | null;
+  if (body?.message) {
+    return body.message;
+  }
+  const fieldIssues = body?.fieldErrors
+    ? Object.entries(body.fieldErrors)
+        .map(([field, issues]) => `${field}: ${issues.join(", ")}`)
+        .join("; ")
+    : "";
+  if (fieldIssues || body?.formErrors?.length) {
+    return [fieldIssues, ...(body?.formErrors ?? [])].filter(Boolean).join("; ");
+  }
+  return `Intermediador respondeu ${response.status} para ${requestLabel}`;
 }
