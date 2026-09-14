@@ -36,6 +36,7 @@
     "eslint": "^9.18.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "postcss": "^8.5",
+    "serve": "^14.2.4",
     "tailwindcss": "^4.3.3",
     "typescript": "5.7.3"
   },

@@ -9,6 +9,10 @@ ruvector.db
 .env
 .env.local
 
+# Railway IaC — `railway config pull --include-variables` decripta segredos
+# (JWT_SECRET, BLING_CLIENT_SECRET, ...) pro authoring file local. Nunca commitar.
+.railway/
+
 # Dependencies
 node_modules/
 
