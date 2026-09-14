@@ -70,6 +70,14 @@ model OrgUser {
   role           UserRole
   active         Boolean      @default(true)
   employeeCode   Int
+  // Bloqueio de conta por tentativa (2026-09-14, endurecimento de login pedido
+  // pelo usuário) — camada independente do throttle por IP+e-mail
+  // (OrgLoginThrottlerGuard/VerifyLoginThrottlerGuard): protege contra um
+  // ataque distribuído por vários IPs, que o throttle por IP sozinho não pega.
+  // Vale pros dois logins que passam por VerifyOrgUserLoginUseCase (terminal
+  // E painel admin) — "segurança do sistema", não só do painel.
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 

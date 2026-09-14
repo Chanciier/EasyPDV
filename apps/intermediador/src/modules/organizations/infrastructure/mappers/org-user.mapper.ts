@@ -11,5 +11,7 @@ export function toDomainOrgUser(record: PrismaOrgUser): OrgUser {
     role: record.role,
     active: record.active,
     employeeCode: record.employeeCode,
+    failedLoginAttempts: record.failedLoginAttempts,
+    lockedUntil: record.lockedUntil,
   });
 }

@@ -4,6 +4,10 @@ import type { OrgUser } from "../../domain/entities/org-user.entity.js";
 import { PASSWORD_HASHER, type PasswordHasherPort } from "../ports/password-hasher.port.js";
 import { ORG_USER_REPOSITORY, type OrgUserRepositoryPort } from "../ports/org-user-repository.port.js";
 
+/** Bloqueio de conta por tentativa (2026-09-14) — camada independente do throttle por IP+e-mail (OrgLoginThrottlerGuard/VerifyLoginThrottlerGuard), protege contra ataque distribuído por vários IPs. */
+const LOCKOUT_THRESHOLD = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+
 /**
  * `POST /organizations/:id/users/verify-login` (login único entre terminais,
  * 2026-08-21) — chamado pelo pdv-backend de qualquer terminal, autenticado
@@ -30,6 +34,12 @@ import { ORG_USER_REPOSITORY, type OrgUserRepositoryPort } from "../ports/org-us
  * terminal autenticado já consegue ver a lista completa de e-mails via
  * `GET /organizations/:id/users`, então 404-vs-401 não vaza nada que essa
  * rota já não exponha pro mesmo chamador.
+ *
+ * **Bloqueio de conta por tentativa (2026-09-14)** — pedido explícito do
+ * usuário ("segurança e privacidade do sistema"), camada adicional além do
+ * throttle por IP+e-mail já existente (que sozinho não pega um ataque
+ * distribuído por vários IPs). `failedLoginAttempts`/`lockedUntil` vivem no
+ * `OrgUser`, resetados a cada login bem-sucedido.
  */
 @Injectable()
 export class VerifyOrgUserLoginUseCase {
@@ -44,9 +54,23 @@ export class VerifyOrgUserLoginUseCase {
       throw new OrgUserNotFoundError(email);
     }
 
+    // Conta bloqueada — mesmo erro genérico de senha errada, nunca revela o
+    // bloqueio pra quem está tentando (só o dono de verdade sabe que errou
+    // demais e precisa esperar; um atacante só vê "credenciais inválidas").
+    if (user.isLocked) {
+      throw new InvalidOrgUserCredentialsError();
+    }
+
     const passwordMatches = await this.passwordHasher.compare(password, user.passwordHash);
     if (!passwordMatches || !user.active) {
+      const attempts = user.failedLoginAttempts + 1;
+      const lockedUntil = attempts >= LOCKOUT_THRESHOLD ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null;
+      await this.orgUserRepository.update(user.id, { failedLoginAttempts: attempts, lockedUntil });
       throw new InvalidOrgUserCredentialsError();
+    }
+
+    if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+      await this.orgUserRepository.update(user.id, { failedLoginAttempts: 0, lockedUntil: null });
     }
     return user;
   }

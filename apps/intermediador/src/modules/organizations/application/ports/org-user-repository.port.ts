@@ -13,6 +13,9 @@ export interface CreateOrgUserData {
 export interface UpdateOrgUserData {
   role?: UserRole;
   active?: boolean;
+  /** Bloqueio de conta por tentativa (2026-09-14) — ver VerifyOrgUserLoginUseCase. */
+  failedLoginAttempts?: number;
+  lockedUntil?: Date | null;
 }
 
 /** Porta — implementação concreta fica em infrastructure/repositories. */

@@ -8,6 +8,7 @@ import {
   type OrgAuthSessionRepositoryPort,
 } from "../ports/org-auth-session-repository.port.js";
 import { PASSWORD_HASHER, type PasswordHasherPort } from "../ports/password-hasher.port.js";
+import { InvalidOrgUserCredentialsError } from "../../domain/errors.js";
 import { VerifyOrgUserLoginUseCase } from "./verify-org-user-login.use-case.js";
 import { toOrgUserPayload } from "../mappers/org-user-payload.mapper.js";
 
@@ -29,6 +30,15 @@ export interface OrgLoginResult {
  * Reaproveita VerifyOrgUserLoginUseCase pro check de credencial (mesma
  * distinção 404 e-mail inexistente / 401 senha errada ou inativo, já
  * corrigida ali) em vez de duplicar a lógica.
+ *
+ * **Allowlist de e-mail (2026-09-14)** — pedido explícito do usuário: só
+ * quem estiver em `ADMIN_PANEL_ALLOWED_EMAILS` (env, lista separada por
+ * vírgula) consegue logar no painel, mesmo com credencial válida no
+ * `OrgUser`. Checado só aqui, nunca em `verify-login`/`VerifyOrgUserLoginUseCase`
+ * — o operador de caixa no terminal continua livre pra logar com a própria
+ * conta, essa restrição é só do painel admin. Sem a env configurada, sem
+ * restrição extra nenhuma (conveniência de dev local) — produção PRECISA
+ * dela configurada.
  */
 @Injectable()
 export class OrgLoginUseCase {
@@ -41,6 +51,14 @@ export class OrgLoginUseCase {
   ) {}
 
   async execute(organizationId: string, email: string, password: string): Promise<OrgLoginResult> {
+    if (!this.isEmailAllowed(email)) {
+      // Mesmo erro genérico de senha errada — não revela que o e-mail existe
+      // mas não está na lista (mesma filosofia de InvalidOrgUserCredentialsError,
+      // ver VerifyOrgUserLoginUseCase). Checado ANTES de tocar o banco/bcrypt:
+      // mais barato e evita até timing de resposta diferente pro caso comum.
+      throw new InvalidOrgUserCredentialsError();
+    }
+
     const user = await this.verifyOrgUserLoginUseCase.execute(organizationId, email, password);
 
     const accessToken = this.jwtService.sign({ sub: user.id, organizationId: user.organizationId, role: user.role });
@@ -63,5 +81,15 @@ export class OrgLoginUseCase {
         expiresAt: expiresAt.toISOString(),
       },
     };
+  }
+
+  private isEmailAllowed(email: string): boolean {
+    const raw = this.configService.get<string>("ADMIN_PANEL_ALLOWED_EMAILS");
+    if (!raw) return true;
+    const allowlist = raw
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    return allowlist.includes(email.trim().toLowerCase());
   }
 }

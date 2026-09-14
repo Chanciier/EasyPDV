@@ -9,6 +9,8 @@ export interface OrgUserProps {
   role: UserRole;
   active: boolean;
   employeeCode: number;
+  failedLoginAttempts: number;
+  lockedUntil: Date | null;
 }
 
 /**
@@ -24,6 +26,8 @@ export class OrgUser {
   readonly role: UserRole;
   readonly active: boolean;
   readonly employeeCode: number;
+  readonly failedLoginAttempts: number;
+  readonly lockedUntil: Date | null;
 
   constructor(props: OrgUserProps) {
     this.id = props.id;
@@ -34,5 +38,12 @@ export class OrgUser {
     this.role = props.role;
     this.active = props.active;
     this.employeeCode = props.employeeCode;
+    this.failedLoginAttempts = props.failedLoginAttempts;
+    this.lockedUntil = props.lockedUntil;
+  }
+
+  /** Bloqueio de conta por tentativa (2026-09-14) — ver docblock do campo no schema.prisma. */
+  get isLocked(): boolean {
+    return this.lockedUntil !== null && this.lockedUntil.getTime() > Date.now();
   }
 }
