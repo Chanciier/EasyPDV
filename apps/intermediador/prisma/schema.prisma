@@ -34,6 +34,7 @@ model Organization {
   storeCreditGrants      StoreCreditGrant[]
   storeCreditRedemptions StoreCreditRedemption[]
   customers              Customer[]
+  clubReminderLogs       ClubReminderLog[]
 }
 
 // Mesmos valores de UserRole em apps/pdv-backend/prisma/schema.prisma (enum
@@ -417,4 +418,27 @@ model SyncJob {
 
   @@unique([entityType, entityId])
   @@index([status])
+}
+
+// Idempotência do motor de lembrete do Clube (Fase 3, 2026-09-14) — ver
+// "Planejamento - Lembrete de Renovação do Clube.md" no cofre Obsidian.
+// `validUntil` faz parte da chave única de propósito: uma renovação muda
+// `ClubMembership.validUntil` (mesma linha, id igual — upsert já existente),
+// então um sócio renovado volta a ser elegível pro mesmo `daysBeforeExpiry`
+// sem precisar apagar histórico nenhum. "Mensagem duplicada" é o pior
+// defeito possível aqui (mesma lição do Saldão da Reversa) — por isso a
+// constraint única é o que garante isso de verdade, não só a checagem
+// prévia em SweepClubRemindersUseCase (que evita enfileirar de novo, mas
+// não é a fonte da garantia).
+model ClubReminderLog {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  customerCpf      String
+  daysBeforeExpiry Int
+  validUntil       DateTime
+  createdAt        DateTime     @default(now())
+
+  @@unique([organizationId, customerCpf, daysBeforeExpiry, validUntil])
+  @@index([organizationId, customerCpf])
 }

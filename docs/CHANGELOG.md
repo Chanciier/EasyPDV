@@ -1,6 +1,17 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Fase 3 do lembrete de renovação do Clube — motor de lembrete, sem canal ainda (2026-09-14)
+Novo módulo `club-reminders` (Intermediador, sem controller — só `@Cron` produtor e `@Processor` consumidor do BullMQ). Varre `ClubMembership` diariamente (9h horário de Brasília) procurando vencimentos em D-7 e D-1, respeita consentimento de WhatsApp (Fase 1/2) e nunca repete o mesmo lembrete — sem tocar em canal nenhum ainda (isso fica pra Fase 4): o "envio" aqui é só um log estruturado, valida a lógica inteira (janela, consentimento, idempotência) antes de existir qualquer coisa pra quebrar de verdade.
+
+- **`ClubReminderLog`** (Postgres) — chave única `(organizationId, customerCpf, daysBeforeExpiry, validUntil)`. `validUntil` faz parte da chave de propósito: uma renovação muda o valor (mesma linha de `ClubMembership`, upsert já existente), então o sócio renovado volta a ser elegível pro mesmo D-7/D-1 sem precisar apagar histórico.
+- **`SweepClubRemindersUseCase`** (produtor, `@Cron("0 9 * * *", { timeZone: "America/Sao_Paulo" })`) — calcula a janela D-7/D-1 em calendário de São Paulo (não no fuso do processo, Railway roda em UTC — mesma classe do bug de fuso já corrigido no Clube em v1.5.13), busca `ClubMembership` cross-organização (`findExpiringBetween`, novo método no port) e enfileira um job por sócio ainda não avisado.
+- **`SendClubReminderUseCase`** (consumidor da fila `club-reminders`) — único ponto que decide "pode mandar" (`Customer.canReceiveWhatsapp`, nunca ignora `whatsappOptOutAt`) e único que grava a idempotência de verdade (constraint única faz a garantia real, a checagem prévia do sweep só evita enfileirar de novo). Sem consentimento, pula sem gravar log — não fabrica uma tentativa "enviada" pra quem nunca pôde receber.
+- **Testado ponta a ponta de verdade** (script standalone via `NestFactory.createApplicationContext`, sem precisar do Bling — diferente das Fases 1/2, este pedaço é 100% testável localmente): sócio com consentimento ativo e `validUntil` em D-7 → enfileirado, processado, log `[LEMBRETE] Enviaria WhatsApp pra ... — clube vence em 7 dia(s), ...` certo; segunda varredura idêntica → 0 enfileirado, 1 já enviado (idempotência confirmada); sócio sem consentimento em D-1 → enfileirado (sweep não filtra consentimento) mas pulado no processamento, sem gravar `ClubReminderLog` (confirmado direto no Postgres).
+- **Dias de antecedência (D-7/D-1) continuam sugestão, não decisão fechada** — `REMINDER_DAYS_BEFORE` isolado numa constante, fácil de mudar quando o usuário decidir.
+- Boot testado localmente (nova classe de bug pega nesta rodada: `nest start --watch` de instâncias de teste anteriores não morreram limpo com `taskkill //T`, travando o arquivo do Prisma Client pro próximo build — resolvido identificando os PIDs órfãos via `wmic` antes de tentar de novo, mesma cautela já padrão de nunca matar processo sem confirmar a porta antes). `pnpm typecheck`/`lint`/`build` 23/23.
+- **Não implantado ainda** — só rodou local.
+
 ### Fase 2 do lembrete de renovação do Clube — painel admin `/admin/*` (2026-09-14)
 Novo grupo de rotas no export estático existente do `pdv-frontend` (Opção B do planejamento) — login de admin direto no Intermediador (Fase 0), lista de sócios do Clube com telefone/consentimento (Fase 1) e um toggle manual pra ativar/desativar o WhatsApp por sócio, fechando o gap que a Fase 1 deixou de propósito ("opt-out sem UI própria").
 

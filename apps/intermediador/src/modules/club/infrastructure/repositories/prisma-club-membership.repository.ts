@@ -42,4 +42,11 @@ export class PrismaClubMembershipRepository implements ClubMembershipRepositoryP
     const result = await this.prisma.clubMembership.deleteMany({ where: { validUntil: { lt: before } } });
     return result.count;
   }
+
+  async findExpiringBetween(start: Date, end: Date): Promise<ClubMembership[]> {
+    const records = await this.prisma.clubMembership.findMany({
+      where: { validUntil: { gte: start, lte: end } },
+    });
+    return records.map(toDomainClubMembership);
+  }
 }

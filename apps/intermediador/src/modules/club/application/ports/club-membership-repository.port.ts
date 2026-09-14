@@ -13,6 +13,8 @@ export interface ClubMembershipRepositoryPort {
   upsert(data: UpsertClubMembershipData): Promise<ClubMembership>;
   delete(organizationId: string, provider: ErpProviderCode, customerCpf: string): Promise<void>;
   deleteExpired(before: Date): Promise<number>;
+  /** Sem escopo de organização de propósito — motor de lembrete (Fase 3) varre TODAS as organizações num único job periódico, não é chamado por requisição. */
+  findExpiringBetween(start: Date, end: Date): Promise<ClubMembership[]>;
 }
 
 export const CLUB_MEMBERSHIP_REPOSITORY = Symbol("CLUB_MEMBERSHIP_REPOSITORY");
