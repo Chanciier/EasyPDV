@@ -4,6 +4,7 @@ import {
   STORE_IDENTITY_REPOSITORY,
   type StoreIdentityRepositoryPort,
 } from "../../../provisioning/application/ports/store-identity-repository.port.js";
+import { throwDescriptiveHttpError } from "../../../../common/describe-http-error.js";
 import type { AddClubMemberInput, ClubGatewayPort, ClubMember } from "../../application/ports/club-gateway.port.js";
 
 /** Mesmo padrão de HttpFiscalGateway — apiKey de terminal lida do StoreIdentity local a cada chamada. */
@@ -43,7 +44,7 @@ export class HttpClubGateway implements ClubGatewayPort {
       headers: { "X-Terminal-Api-Key": identity.apiKey },
     });
     if (!response.ok) {
-      throw new Error(`Intermediador respondeu ${response.status} para GET /club/members`);
+      await throwDescriptiveHttpError(response, "GET /club/members");
     }
     return (await response.json()) as ClubMember[];
   }
@@ -59,7 +60,7 @@ export class HttpClubGateway implements ClubGatewayPort {
       body: JSON.stringify(input),
     });
     if (!response.ok) {
-      throw new Error(`Intermediador respondeu ${response.status} para POST /club/members`);
+      await throwDescriptiveHttpError(response, "POST /club/members");
     }
     return (await response.json()) as ClubMember;
   }
@@ -74,7 +75,7 @@ export class HttpClubGateway implements ClubGatewayPort {
       headers: { "X-Terminal-Api-Key": identity.apiKey },
     });
     if (!response.ok) {
-      throw new Error(`Intermediador respondeu ${response.status} para DELETE /club/members/${document}`);
+      await throwDescriptiveHttpError(response, `DELETE /club/members/${document}`);
     }
   }
 }

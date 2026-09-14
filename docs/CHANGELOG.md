@@ -1,6 +1,16 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Fecha vazamento de CPF real sem autenticação em `/sync/jobs*` — achado C1 da auditoria de segurança (2026-09-14)
+Auditoria de segurança completa (cofre Obsidian, "Auditoria de Segurança Completa — EasyPDV") encontrou 6 achados Critical; usuário confirmou corrigir este primeiro por ser o único com exploração ativa confirmada contra dado real.
+
+- **`GET /sync/jobs`, `GET /sync/jobs/:id`, `POST /sync/jobs/:id/retry`** (Intermediador) estavam sem NENHUM guard desde sempre — o comentário original dizia "precisa de auth de admin, ainda não implementada", mas essa auth (`OrgJwtAuthGuard`) existe desde 2026-09-10 e já é usada em `AdminClubController`/`AdminWhatsappController`; ninguém tinha fechado o loop aqui. O payload de cada `SyncJob` (`SaleSyncPayload`) carrega CPF/nome/venda real do cliente — ficou exposto sem credencial nenhuma pra qualquer um na internet até esta correção. Confirmado por grep que nenhum consumidor real (pdv-backend/pdv-frontend) chama esses 3 endpoints hoje — seguro adicionar auth sem quebrar nada existente.
+- `SyncJob` ainda não tem coluna `organizationId` (só `storeId?` opcional) — não dá pra escopar por organização ainda (achado C3 da mesma auditoria, correção maior/separada). Por ora, exigir login de admin já fecha o vazamento público; aceitável hoje porque só existe 1 organização em produção.
+- `pnpm typecheck`/`lint`/`build` 23/23. Verificado direto em produção após deploy: `curl /sync/jobs` sem token responde 401 (antes respondia 200 com dados reais).
+
+### `HttpClubGateway` também ganha mensagem de erro descritiva (2026-09-14)
+Achado testando "Adicionar ao clube" na loja de verdade: uma falha de rede pontual entre o terminal e o Intermediador apareceu pro operador só como "Internal Server Error" — investigado (nenhuma requisição chegou a bater no Intermediador nos logs do Railway, confirmando falha de rede transitória, não bug de lógica), mas achado de passagem que `HttpClubGateway` era o único gateway que falava com o Intermediador ainda usando `throw new Error(...)` genérico em vez do `throwDescriptiveHttpError` já usado em `HttpCustomerRepository`/`HttpStoreCreditGateway`. Alinhado nos três métodos (`listMembers`/`addMember`/`removeMember`) — daqui pra frente, um erro de verdade do Intermediador (ex: Bling rejeitando o contato) chega com mensagem útil, não um 500 opaco.
+
 ### Motor de lembrete vira disparo manual + erro do Intermediador chega de verdade no operador (2026-09-14)
 Dois pedidos do usuário depois de revisar o plano do WhatsApp.
 
