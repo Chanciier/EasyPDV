@@ -1,6 +1,13 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Motor de lembrete vira disparo manual + erro do Intermediador chega de verdade no operador (2026-09-14)
+Dois pedidos do usuário depois de revisar o plano do WhatsApp.
+
+- **Sem `@Cron` automático** — pedido explícito: "não deve rodar o motor todo dia às 9h" (sistema novo demais, quase ninguém com consentimento real ainda). `ClubReminderSweepWorker` removido; `SweepClubRemindersUseCase` agora só dispara via `POST /admin/club-reminders/sweep` (`AdminClubRemindersController`, atrás de `OrgJwtAuthGuard`) — escopado pela organização de quem chamou (nunca deixa um admin disparar lembrete de outra organização, `findExpiringBetween` ganhou `organizationId` opcional). Botão "Rodar varredura de lembretes agora" novo na tela `/admin/clube`.
+- **`throwDescriptiveHttpError`** (novo, `apps/pdv-backend/src/common/`) — achado real revisando o fix de 2026-09-11 (Vale-Troca): mesmo extraindo a mensagem certa do Intermediador, `HttpStoreCreditGateway`/`HttpCustomerRepository` lançavam `Error` simples, e o `DomainExceptionFilter` do pdv-backend descarta qualquer `Error` não mapeado — loga no servidor, devolve 500 opaco SEM CORPO pro cliente. O fix de 2026-09-11 nunca chegou a aparecer pro operador, só melhorou o log. Corrigido lançando `HttpException` de verdade (preserva o status real do Intermediador) — helper compartilhado, usado nos dois gateways.
+- Boot testado localmente (mudança de módulo — controller novo). `pnpm typecheck`/`lint`/`build` 23/23.
+
 ### Telefone obrigatório no cadastro manual de cliente (2026-09-14)
 Pedido do usuário, junto com o pareamento do WhatsApp: sem telefone, um cliente nunca pode receber lembrete nenhum.
 

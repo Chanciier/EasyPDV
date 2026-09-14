@@ -1,12 +1,12 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Award, MessageCircle, MessageCircleOff } from 'lucide-react'
+import { Award, MessageCircle, MessageCircleOff, PlayCircle } from 'lucide-react'
 import { formatCpf } from '@easypdv/shared-validation'
 import { useAdminAuthStore } from '@/lib/admin-auth-store'
 import { AdminApiError } from '@/lib/admin-api-client'
-import { useAdminClubMembers, useSetWhatsappConsent } from '@/hooks/use-admin-club'
+import { useAdminClubMembers, useSetWhatsappConsent, useSweepClubReminders } from '@/hooks/use-admin-club'
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—'
@@ -23,6 +23,8 @@ export default function AdminClubePage() {
   const isAuthenticated = useAdminAuthStore((s) => s.isAuthenticated)
   const { data: members, isLoading, error } = useAdminClubMembers()
   const setConsent = useSetWhatsappConsent()
+  const sweep = useSweepClubReminders()
+  const [sweepMessage, setSweepMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
     if (!isAuthenticated) router.replace('/admin/login')
@@ -30,12 +32,44 @@ export default function AdminClubePage() {
 
   if (!isAuthenticated) return null
 
+  const runSweep = async () => {
+    setSweepMessage(null)
+    try {
+      const result = await sweep.mutateAsync()
+      setSweepMessage({
+        ok: true,
+        text: `Varredura concluída: ${result.enqueued} lembrete(s) enfileirado(s), ${result.skipped} já enviado(s) antes.`,
+      })
+    } catch (e) {
+      setSweepMessage({ ok: false, text: e instanceof AdminApiError ? e.message : 'Falha ao rodar a varredura.' })
+    }
+  }
+
   return (
     <div className="p-4">
-      <div className="mb-4 flex items-center gap-2">
-        <Award className="size-5 text-muted-foreground" />
-        <h1 className="text-lg font-semibold">Sócios do Clube — telefone e consentimento de WhatsApp</h1>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Award className="size-5 text-muted-foreground" />
+          <h1 className="text-lg font-semibold">Sócios do Clube — telefone e consentimento de WhatsApp</h1>
+        </div>
+        <button
+          onClick={runSweep}
+          disabled={sweep.isPending}
+          className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <PlayCircle className="size-3.5" /> {sweep.isPending ? 'Rodando...' : 'Rodar varredura de lembretes agora'}
+        </button>
       </div>
+
+      {sweepMessage && (
+        <p
+          className={`mb-4 rounded-lg px-3 py-2 text-sm ${
+            sweepMessage.ok ? 'bg-emerald-500/10 text-emerald-600' : 'bg-destructive/10 text-destructive'
+          }`}
+        >
+          {sweepMessage.text}
+        </p>
+      )}
 
       {error && (
         <p className="mb-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">

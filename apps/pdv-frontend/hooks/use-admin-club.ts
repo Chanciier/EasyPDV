@@ -9,6 +9,13 @@ export function useAdminClubMembers() {
   })
 }
 
+/** Disparo manual do motor de lembrete (2026-09-14) — sem @Cron automático de propósito, ver SweepClubRemindersUseCase. */
+export function useSweepClubReminders() {
+  return useMutation({
+    mutationFn: () => adminApiRequest<{ enqueued: number; skipped: number }>('/admin/club-reminders/sweep', { method: 'POST' }),
+  })
+}
+
 export function useSetWhatsappConsent() {
   const queryClient = useQueryClient()
   return useMutation({

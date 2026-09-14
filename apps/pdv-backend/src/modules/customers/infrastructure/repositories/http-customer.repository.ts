@@ -4,6 +4,7 @@ import {
   STORE_IDENTITY_REPOSITORY,
   type StoreIdentityRepositoryPort,
 } from "../../../provisioning/application/ports/store-identity-repository.port.js";
+import { throwDescriptiveHttpError } from "../../../../common/describe-http-error.js";
 import { Customer } from "../../domain/entities/customer.entity.js";
 import type {
   CreateCustomerData,
@@ -109,8 +110,12 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
       body: JSON.stringify(body),
     });
     if (!response.ok) {
-      const body = (await response.json().catch(() => null)) as { message?: string } | null;
-      throw new Error(body?.message ?? `Intermediador respondeu ${response.status} para POST /customers`);
+      // Achado real, 2026-09-14: telefone ausente vira 400 do ZodValidationPipe
+      // desde que createCustomerSchema passou a exigir telefone no cadastro —
+      // throwDescriptiveHttpError extrai qual campo e lança HttpException
+      // (não Error simples) pra mensagem sobreviver ao DomainExceptionFilter
+      // e chegar de verdade na tela do operador.
+      await throwDescriptiveHttpError(response, "POST /customers");
     }
     return this.toCustomer(await response.json());
   }
@@ -123,8 +128,7 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
       body: JSON.stringify(data),
     });
     if (!response.ok) {
-      const body = (await response.json().catch(() => null)) as { message?: string } | null;
-      throw new Error(body?.message ?? `Intermediador respondeu ${response.status} para PATCH /customers/${id}`);
+      await throwDescriptiveHttpError(response, `PATCH /customers/${id}`);
     }
     return this.toCustomer(await response.json());
   }

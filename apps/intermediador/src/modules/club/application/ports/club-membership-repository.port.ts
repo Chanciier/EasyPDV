@@ -13,8 +13,15 @@ export interface ClubMembershipRepositoryPort {
   upsert(data: UpsertClubMembershipData): Promise<ClubMembership>;
   delete(organizationId: string, provider: ErpProviderCode, customerCpf: string): Promise<void>;
   deleteExpired(before: Date): Promise<number>;
-  /** Sem escopo de organização de propósito — motor de lembrete (Fase 3) varre TODAS as organizações num único job periódico, não é chamado por requisição. */
-  findExpiringBetween(start: Date, end: Date): Promise<ClubMembership[]>;
+  /**
+   * `organizationId` opcional (2026-09-14) — o gatilho manual do painel
+   * admin (`AdminClubRemindersController`) sempre escopa pela organização
+   * de quem chamou (nunca deixa um admin disparar lembrete de outra
+   * organização). Omitido = sem filtro, varre TODAS (uso original, pensado
+   * pra um cron global único — hoje sem gatilho automático, ver
+   * `SweepClubRemindersUseCase`).
+   */
+  findExpiringBetween(start: Date, end: Date, organizationId?: string): Promise<ClubMembership[]>;
 }
 
 export const CLUB_MEMBERSHIP_REPOSITORY = Symbol("CLUB_MEMBERSHIP_REPOSITORY");

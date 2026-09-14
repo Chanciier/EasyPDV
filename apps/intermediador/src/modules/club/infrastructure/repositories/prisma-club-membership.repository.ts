@@ -43,9 +43,9 @@ export class PrismaClubMembershipRepository implements ClubMembershipRepositoryP
     return result.count;
   }
 
-  async findExpiringBetween(start: Date, end: Date): Promise<ClubMembership[]> {
+  async findExpiringBetween(start: Date, end: Date, organizationId?: string): Promise<ClubMembership[]> {
     const records = await this.prisma.clubMembership.findMany({
-      where: { validUntil: { gte: start, lte: end } },
+      where: { validUntil: { gte: start, lte: end }, ...(organizationId ? { organizationId } : {}) },
     });
     return records.map(toDomainClubMembership);
   }
