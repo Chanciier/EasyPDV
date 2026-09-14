@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Dois bugs reais no deploy do painel admin: raiz mostrando o PDV, e cache do Turbo servindo chunk errado (2026-09-14)
+Achados testando de verdade contra produção depois do painel já estar no ar.
+
+- **Raiz do domínio do painel mostrava a tela do PDV** ("PDV Express"), não o painel — o build `admin-web` empacota o `pdv-frontend` inteiro, `/` continua sendo a rota do PDV (que nem funciona ali, tentaria falar com `127.0.0.1:4001`). Corrigido com um redirect condicional (`NEXT_PUBLIC_BUILD_TARGET === 'admin-web'`) de `/` pra `/admin/`.
+- **Esse redirect quebrou com `ChunkLoadError`** na primeira tentativa: `router.replace()` do Next, disparado num `useEffect` no primeiro render, tentava buscar os chunks JS da rota de destino com caminho relativo à rota atual (`/admin/_next/...` em vez de `/_next/...`) — 404 em tudo, página em branco. Corrigido trocando por `window.location.href` (navegação de página inteira, sem depender do runtime de chunk-loading do router).
+- **O MESMO erro voltou depois do fix acima ir pro ar** — mas agora por uma causa diferente e mais séria: `turbo.json` não declarava que o build do `pdv-frontend` depende de `BUILD_TARGET`/`NEXT_PUBLIC_BUILD_TARGET`/`NEXT_PUBLIC_INTERMEDIADOR_URL`, então o Turbo não sabia invalidar o cache quando essas envs mudavam — o HTML servido em produção referenciava um chunk que o build de verdade daquele deploy não gerou (reaproveitou artefato de cache de uma build anterior, com env diferente). Corrigido declarando essas 3 envs na task `@easypdv/pdv-frontend#build` do `turbo.json`.
+- Ambos os bugs de runtime foram testados localmente (build real + static server, não `next dev`) antes de reenviar — o segundo só apareceu em produção porque só lá o cache do Turbo persiste entre deploys.
+
 ### Login do painel admin endurecido — bloqueio de conta e allowlist de e-mail (2026-09-14)
 Pedido explícito do usuário: "segurança e privacidade do sistema" + acesso ao painel restrito a um único e-mail.
 
