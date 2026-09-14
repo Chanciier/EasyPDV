@@ -6,6 +6,8 @@ export interface CreateCustomerData {
   document: string | null;
   phone: string | null;
   email: string | null;
+  whatsappConsentAt?: Date | null;
+  whatsappOptOutAt?: Date | null;
 }
 
 export interface UpdateCustomerData {
@@ -13,6 +15,8 @@ export interface UpdateCustomerData {
   document?: string | null;
   phone?: string | null;
   email?: string | null;
+  whatsappConsentAt?: Date | null;
+  whatsappOptOutAt?: Date | null;
 }
 
 /**

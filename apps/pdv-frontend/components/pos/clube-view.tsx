@@ -7,8 +7,8 @@ import { ApiError } from '@/lib/api-client'
 import { useAddClubMember, useClubMembers, useRemoveClubMember } from '@/hooks/use-club'
 import { Modal } from './ui/modal'
 
-type FormState = { name: string; document: string; validUntil: string; phone: string }
-const emptyForm: FormState = { name: '', document: '', validUntil: '', phone: '' }
+type FormState = { name: string; document: string; validUntil: string; phone: string; whatsappConsent: boolean }
+const emptyForm: FormState = { name: '', document: '', validUntil: '', phone: '', whatsappConsent: false }
 
 function formatDate(iso: string | null): string {
   if (!iso) return 'validade desconhecida'
@@ -80,6 +80,7 @@ export function ClubeView() {
         document: documentDigits,
         validUntil: endOfDayIso(form.validUntil),
         phone,
+        whatsappConsent: form.whatsappConsent,
       })
       setAdding(false)
     } catch (e) {
@@ -215,6 +216,17 @@ export function ClubeView() {
               onChange={(e) => setForm({ ...form, validUntil: e.target.value })}
               className="pos-input"
             />
+          </label>
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={form.whatsappConsent}
+              onChange={(e) => setForm({ ...form, whatsappConsent: e.target.checked })}
+              className="mt-0.5 size-4"
+            />
+            <span className="text-sm text-muted-foreground">
+              Aceita receber lembrete de renovação por WhatsApp
+            </span>
           </label>
           {formError && <p className="text-xs text-destructive">{formError}</p>}
         </div>

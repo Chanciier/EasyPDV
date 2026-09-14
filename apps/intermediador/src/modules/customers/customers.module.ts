@@ -35,5 +35,9 @@ import { ImportCustomersFromBlingUseCase } from "./application/use-cases/import-
     ImportCustomersFromBlingUseCase,
     { provide: CUSTOMER_REPOSITORY, useClass: PrismaCustomerRepository },
   ],
+  // CUSTOMER_REPOSITORY exportado (2026-09-14) pro ClubModule gravar
+  // nome/telefone/consentimento de WhatsApp no Customer central ao
+  // cadastrar sócio — ver AddClubMemberUseCase do club.
+  exports: [CUSTOMER_REPOSITORY],
 })
 export class CustomersModule {}

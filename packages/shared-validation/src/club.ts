@@ -9,6 +9,11 @@ export const addClubMemberSchema = z.object({
   // do contato no Bling (confirmado na doc oficial da API v3: "celular" é o
   // campo de celular, "telefone" seria fixo — clube usa celular).
   phone: z.string().min(1),
+  // Aceite de lembrete por WhatsApp (2026-09-14, Fase 1 do lembrete de
+  // renovação) — checkbox explícito na tela de cadastro do sócio. Vira
+  // Customer.whatsappConsentAt no Intermediador; desmarcar depois de já ter
+  // aceitado registra revogação (whatsappOptOutAt), ver AddClubMemberUseCase.
+  whatsappConsent: z.boolean(),
 });
 
 export type AddClubMemberInput = z.infer<typeof addClubMemberSchema>;

@@ -1,6 +1,16 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Fase 1 do lembrete de renovação do Clube — telefone e consentimento de WhatsApp no Customer (2026-09-14)
+Retomando "Planejamento - Lembrete de Renovação do Clube.md": desde a centralização do `Customer` (v1.5.15), telefone/nome já existem centralizados via Bling import — faltava só o cadastro de sócio (`AddClubMemberUseCase`, Intermediador) também gravar ali, em vez de só escrever no contato do Bling e descartar o dado localmente (mesmo gap que o import recorrente fechou pros clientes já existentes, agora fechado na origem pra cadastros novos). Consentimento LGPD entra junto, por timestamp (não boolean) — rastro de quando o aceite/revogação aconteceu.
+
+- **`Customer` ganhou `whatsappConsentAt`/`whatsappOptOutAt`** (`DateTime?`, Intermediador) — consentimento efetivo é `whatsappConsentAt != null && whatsappOptOutAt == null` (`Customer.canReceiveWhatsapp`, getter que qualquer disparo futuro — Fase 3/4, ainda não implementadas — deve consultar, nunca ler os timestamps direto).
+- **`AddClubMemberUseCase`** (Intermediador) — depois de escrever no Bling e fazer upsert de `ClubMembership` (como já fazia), agora também faz upsert do `Customer` central (nome/telefone, mesmo "Bling sempre vence" do import recorrente) e resolve o consentimento: aceite marcado → `whatsappConsentAt = now()`; aceite desmarcado só grava `whatsappOptOutAt` se já havia um `whatsappConsentAt` anterior sendo revogado — nunca fabrica uma revogação pra quem nunca deu aceite.
+- **`CustomersModule` passou a exportar `CUSTOMER_REPOSITORY`**, `ClubModule` importa (mesma direção de dependência já usada com `ErpIntegrationModule` — sem ciclo).
+- **Checkbox "Aceita receber lembrete de renovação por WhatsApp"** no formulário de cadastro do sócio (`clube-view.tsx`) — opcional, desmarcado por padrão (LGPD é opt-in). Novo campo `whatsappConsent` propagado por toda a cadeia (`addClubMemberSchema` em `shared-validation` → `ClubGatewayPort`/`HttpClubGateway` no pdv-backend → `POST /club/members` no Intermediador).
+- Opt-out funcional pro disparo respeitar (Fase 3) ainda não tem UI própria — fica pra quando existir painel admin (Fase 2) ou canal com resposta (Fase 4); a revogação via re-submissão do formulário já funciona hoje.
+- Boot testado localmente nos dois apps (Intermediador + pdv-backend) depois da mudança de módulos — sem erro de dependência. `pnpm typecheck`/`lint`/`build` do workspace inteiro (23/23).
+
 ### Bug real: telefone vazio do Bling quebrava Vale-Troca com 500 opaco (2026-09-11)
 Achado testando o import de clientes em produção pela primeira vez de verdade: o Bling devolve `celular: ""` (string vazia, não ausente) pra contato sem telefone — `ImportCustomersFromBlingUseCase` só tratava `null`/`undefined` como "sem telefone" (`?? null`), então uma string vazia virava `Customer.phone = ""`. Isso quebrava `GrantStoreCreditUseCase` (Vale-Troca): `customerPhone` exige pelo menos 1 caractere quando enviado, `""` é rejeitado com 400 — e o pdv-backend transformava essa rejeição num "Internal Server Error" genérico, sem mostrar o motivo real (achado só depurando os logs de produção e reproduzindo a chamada manualmente).
 

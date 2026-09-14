@@ -372,6 +372,14 @@ model Customer {
   document       String?
   phone          String?
   email          String?
+  // Consentimento de WhatsApp (2026-09-14, Fase 1 do lembrete de renovação
+  // do Clube — ver "Planejamento - Lembrete de Renovação do Clube.md" no
+  // cofre Obsidian). Timestamp, não boolean: LGPD pede rastro de QUANDO o
+  // aceite/revogação aconteceu, não só o estado atual. Consentimento efetivo
+  // = whatsappConsentAt != null && whatsappOptOutAt == null. Nenhum disparo
+  // (Fase 3/4, ainda não implementado) pode ignorar whatsappOptOutAt.
+  whatsappConsentAt DateTime?
+  whatsappOptOutAt  DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 

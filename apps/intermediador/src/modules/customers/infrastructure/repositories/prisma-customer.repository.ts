@@ -14,6 +14,8 @@ function toDomain(record: {
   document: string | null;
   phone: string | null;
   email: string | null;
+  whatsappConsentAt: Date | null;
+  whatsappOptOutAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }): Customer {

@@ -9,6 +9,7 @@ export interface AddClubMemberInput {
   document: string;
   validUntil: string;
   phone: string;
+  whatsappConsent: boolean;
 }
 
 export interface ClubGatewayPort {
