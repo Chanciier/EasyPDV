@@ -5,6 +5,21 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**", "out/**"]
     },
+    // pdv-frontend produz saída DIFERENTE conforme essas envs (BUILD_TARGET/
+    // NEXT_PUBLIC_BUILD_TARGET trocam assetPrefix + redirect da raiz;
+    // NEXT_PUBLIC_INTERMEDIADOR_URL é inlinada no bundle) — sem declarar isso
+    // aqui, o Turbo não sabe que precisa invalidar o cache quando elas mudam
+    // e pode servir um build de admin-web com chunks de uma build ANTERIOR
+    // (achado real, 2026-09-14: painel admin em produção quebrava com
+    // ChunkLoadError — o HTML referenciava um chunk que a build de verdade
+    // não gerou, porque o Turbo reaproveitou cache de uma build com env
+    // diferente). "build" genérico acima não precisa saber disso —
+    // intermediador não tem saída condicionada a env nenhuma.
+    "@easypdv/pdv-frontend#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["out/**"],
+      "env": ["BUILD_TARGET", "NEXT_PUBLIC_BUILD_TARGET", "NEXT_PUBLIC_INTERMEDIADOR_URL"]
+    },
     "dev": {
       "cache": false,
       "persistent": true
