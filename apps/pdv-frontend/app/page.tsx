@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/auth-store'
 import { LoginScreen } from '@/components/auth/login-screen'
 import { ForceChangePasswordScreen } from '@/components/auth/force-change-password-screen'
@@ -16,17 +15,24 @@ import { POSShell } from '@/components/pos/pos-shell'
  * Electron) — achado real: usuário abriu a raiz do domínio do painel e viu
  * "isso só é o PDV em web". Redireciona pra /admin nesse build específico;
  * no build do Electron (sem essa env) a raiz continua sendo o PDV normal.
+ *
+ * `window.location.href`, não `router.replace()` — achado real testando em
+ * produção: o router client-side do Next, disparado num useEffect logo no
+ * primeiro render da raiz (antes do runtime de chunk-loading terminar de
+ * inicializar), tentava buscar os chunks JS da rota /admin/ com caminho
+ * relativo à rota atual ("/admin/_next/..." em vez de "/_next/...") — 404 em
+ * tudo, ChunkLoadError, página em branco. Navegação de página inteira não
+ * depende desse runtime, sempre funciona.
  */
 export default function Page() {
-  const router = useRouter()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const mustChangePassword = useAuthStore((s) => s.user?.mustChangePassword)
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_BUILD_TARGET === 'admin-web') {
-      router.replace('/admin/')
+      window.location.href = '/admin/'
     }
-  }, [router])
+  }, [])
 
   if (process.env.NEXT_PUBLIC_BUILD_TARGET === 'admin-web') {
     return null
