@@ -98,6 +98,12 @@ import { GetCurrentOrgUserUseCase } from "./application/use-cases/get-current-or
   // "Nest can't resolve dependencies of the TerminalApiKeyGuard"). SyncModule
   // registra TerminalApiKeyGuard de novo nos próprios providers pelo mesmo
   // motivo. Ver docs/MODULES.md.
-  exports: [TerminalApiKeyGuard, VerifyTerminalApiKeyUseCase],
+  // ORGANIZATION_REPOSITORY exportado (2026-09-14) pro ClubRemindersModule
+  // buscar o nome da organização e personalizar a mensagem de lembrete
+  // (Fase 4). OrgJwtAuthGuard NÃO precisa ser exportado — extends
+  // AuthGuard("jwt") sem dependências próprias de DI, resolve a strategy
+  // "jwt" pelo registro global do Passport, não pelo container do módulo
+  // consumidor (mesmo raciocínio já documentado em club.module.ts).
+  exports: [TerminalApiKeyGuard, VerifyTerminalApiKeyUseCase, ORGANIZATION_REPOSITORY],
 })
 export class OrganizationsModule {}
