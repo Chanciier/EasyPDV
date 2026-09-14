@@ -1,6 +1,15 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Painel admin hospedado em produção no Railway (2026-09-14)
+Fecha o último item em aberto do plano de lembrete de renovação do Clube: o export estático do painel (`BUILD_TARGET=admin-web`) agora está no ar, em `https://easypdv-admin-panel-production.up.railway.app`.
+
+- **Serviço `easypdv-admin-panel`** criado no mesmo projeto Railway do Intermediador — Railpack (não Docker: achado real testando, o Intermediador também já roda via Railpack com `buildCommand`/`startCommand` diretos, não pelo `docker/Dockerfile.intermediador`/`railway.json` da raiz, que são vestigiais). `buildCommand` precisa passar por `turbo run build` (não `pnpm --filter ... build` direto) — sem isso `@easypdv/shared-types`/`shared-validation` não compilam antes e o build quebra com "Module not found" (mesma lição já documentada no Dockerfile do Intermediador, redescoberta aqui).
+- **Bug real de deploy**: `serve -s out` (`-s` = modo SPA) serve `index.html` da raiz pra QUALQUER rota — certo pra uma SPA de arquivo único, errado aqui (cada rota do export tem seu próprio HTML real). Toda rota `/admin/*` caía na tela do PDV (`index.html` raiz) em vez da própria página. Corrigido removendo `-s` (`serve out -l $PORT`).
+- **`railway environment edit --service-config` não persistia as mudanças** nesta versão da CLI (sempre retornava "No changes to apply", mesmo com valores comprovadamente diferentes) — contornado com uma mutation GraphQL direta (`serviceInstanceUpdate`, via `railway api`) pros campos de build/deploy. `railway variable set` funcionou normalmente pra variáveis simples.
+- **`ADMIN_PANEL_ORIGINS`** setado no Intermediador com o domínio real do painel (CORS deixa de ser "libera geral", agora restrito à origem certa).
+- Testado no navegador contra produção: login real, JWT real, guarda de rota, tela de sócios e de WhatsApp carregando.
+
 ### Fase 4 do lembrete de renovação do Clube — canal WhatsApp via Baileys (2026-09-14)
 Conclui o plano: `WhatsappModule` novo (Intermediador) — Baileys (`@whiskeysockets/baileys`, não-oficial, risco aceito conscientemente pelo usuário — ver "API de WhatsApp (Baileys).md" no cofre Obsidian), uma sessão por organização desde o início (namespaced no Redis), tela de pareamento por QR no painel admin, plugado no motor da Fase 3 no lugar do log.
 
