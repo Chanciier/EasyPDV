@@ -23,7 +23,7 @@ export function useCustomer(id: string | null) {
 export function useCreateCustomer() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { name: string; document?: string; phone?: string; email?: string }) =>
+    mutationFn: (input: { name: string; document?: string; phone: string; email?: string }) =>
       apiRequest<Customer>('/customers', { method: 'POST', body: input }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['customers'] }),
   })

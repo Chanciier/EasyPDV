@@ -70,13 +70,20 @@ export function CustomersView() {
       setFormError('Informe o nome.')
       return
     }
+    const phone = form.phone.trim()
+    // Só no cadastro — editar um cliente já existente (ex: importado do
+    // Bling sem celular) não força preencher agora, ver createCustomerSchema.
+    if (editingId === 'new' && !phone) {
+      setFormError('Informe o telefone.')
+      return
+    }
     setFormError(null)
     try {
       if (editingId === 'new') {
         await createCustomer.mutateAsync({
           name,
           document: form.document.trim() || undefined,
-          phone: form.phone.trim() || undefined,
+          phone,
           email: form.email.trim() || undefined,
         })
       } else if (editingId) {

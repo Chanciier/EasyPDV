@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Telefone obrigatório no cadastro manual de cliente (2026-09-14)
+Pedido do usuário, junto com o pareamento do WhatsApp: sem telefone, um cliente nunca pode receber lembrete nenhum.
+
+- **`createCustomerSchema`** (shared-validation) — `phone` passa de opcional pra `min(1)` obrigatório. Só no CADASTRO: `updateCustomerSchema` (edição) continua com telefone opcional/anulável — editar um cliente já existente (ex: importado do Bling sem celular) não força preencher agora. O import do Bling (`ImportCustomersFromBlingUseCase`) e o cadastro de sócio do Clube (`AddClubMemberUseCase`) gravam direto no repositório, sem passar por este schema — não afetados (Bling sem celular continua permitido, Clube já exigia telefone desde sempre).
+- **Tela "Clientes"** (`customers-view.tsx`) — validação no `submit()` bloqueia salvar um cliente NOVO sem telefone, mesma mensagem/padrão já usado na tela Clube.
+- Reforça o schema tanto no pdv-backend (`POST /customers` do terminal) quanto no Intermediador (`POST /customers` central) — os dois controllers já usam o mesmo `createCustomerSchema`, então a mudança vale nos dois de uma vez.
+- Testado: schema rejeita telefone ausente/vazio, aceita quando preenchido. `pnpm typecheck`/`lint`/`build` 23/23.
+
 ### Dois bugs reais no deploy do painel admin: raiz mostrando o PDV, e cache do Turbo servindo chunk errado (2026-09-14)
 Achados testando de verdade contra produção depois do painel já estar no ar.
 
