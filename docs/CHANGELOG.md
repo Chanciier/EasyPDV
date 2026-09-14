@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Login do painel admin endurecido — bloqueio de conta e allowlist de e-mail (2026-09-14)
+Pedido explícito do usuário: "segurança e privacidade do sistema" + acesso ao painel restrito a um único e-mail.
+
+- **`OrgUser` ganha `failedLoginAttempts`/`lockedUntil`** — bloqueio de conta por 15min após 5 tentativas erradas, camada independente do throttle por IP+e-mail já existente (`OrgLoginThrottlerGuard`/`VerifyLoginThrottlerGuard`, que sozinho não pega um ataque distribuído por vários IPs). Vale pros dois logins que passam por `VerifyOrgUserLoginUseCase` (terminal do PDV E painel admin) — reset automático no próximo login bem-sucedido, nunca revela ao atacante se a conta está bloqueada (mesmo erro genérico de sempre).
+- **`OrgLoginUseCase`** (só o login do painel, não o `verify-login` do terminal) ganha allowlist via `ADMIN_PANEL_ALLOWED_EMAILS` (env, lista separada por vírgula) — só quem está lá consegue logar no painel, mesmo com credencial válida no `OrgUser`. Checado antes de tocar banco/bcrypt. Sem a env configurada, sem restrição extra (conveniência de dev local); produção tem `adriansanluz@gmail.com` como único e-mail liberado.
+- **Conta de produção criada**: `adriansanluz@gmail.com`, papel "proprietario", hash bcrypt gerado localmente e inserido direto via `railway ssh` (senha nunca trafegou em texto puro pra produção — só o hash). A conta antiga (`adrian@easypdv.com.br`) continua existindo (não apagada, pode servir outro propósito), mas fica de fora do painel admin pela allowlist.
+- **Testado ponta a ponta de verdade, local E produção**: localmente — 5 tentativas erradas bloqueiam a conta (confirmado direto no Postgres), login certo depois reseta o contador, e-mail fora da allowlist é rejeitado sem afetar o contador de bloqueio de outra conta. Em produção — `adriansanluz@gmail.com` loga normalmente, `adrian@easypdv.com.br` é barrado com 401 mesmo tentando senha nenhuma certa (allowlist bloqueia antes de checar credencial).
+
 ### Painel admin hospedado em produção no Railway (2026-09-14)
 Fecha o último item em aberto do plano de lembrete de renovação do Clube: o export estático do painel (`BUILD_TARGET=admin-web`) agora está no ar, em `https://easypdv-admin-panel-production.up.railway.app`.
 
