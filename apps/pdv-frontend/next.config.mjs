@@ -18,9 +18,13 @@ const nextConfig = {
   // requisitos CONFLITANTES pro mesmo assetPrefix — não dá pra ser "a mesma
   // build" pros dois destinos como o plano original assumia (corrigido em
   // "Planejamento - Lembrete de Renovação do Clube.md" no cofre Obsidian).
-  // `BUILD_TARGET=admin-web` (env só de build, nunca NEXT_PUBLIC_) troca pra
-  // caminho absoluto — funciona sob http:// em qualquer profundidade de rota,
-  // mas quebraria sob file:// do Electron, por isso não é o default.
+  // `BUILD_TARGET=admin-web` troca pra caminho absoluto — funciona sob
+  // http:// em qualquer profundidade de rota, mas quebraria sob file:// do
+  // Electron, por isso não é o default. Existe também `NEXT_PUBLIC_BUILD_TARGET`
+  // (mesmo valor, prefixo NEXT_PUBLIC_ pra ficar visível no bundle do
+  // navegador) — usado em app/page.tsx pra redirecionar "/" pro painel
+  // nesse build; esta variável aqui (sem o prefixo) só importa em build
+  // time, não precisa ir pro bundle do cliente.
   assetPrefix: process.env.BUILD_TARGET === 'admin-web' ? undefined : './',
   trailingSlash: true,
   typescript: {
