@@ -8,7 +8,20 @@ const nextConfig = {
   // pasta do index.html) — bug real, achado testando o instalador de verdade:
   // a tela carregava (HTML estático embutido) mas sem CSS/JS nenhum, então
   // nenhum botão reagia a clique (React nunca hidratava).
-  assetPrefix: './',
+  //
+  // `./` só funciona pra uma página na RAIZ do export (o PDV é single-page,
+  // sempre foi só isso). As rotas /admin/* (painel admin, Fase 2, 2026-09-14)
+  // ficam uma pasta abaixo (out/admin/login/index.html) — a partir dali,
+  // "./_next/..." resolve pra "/admin/login/_next/..." (errado), 404 em tudo.
+  // Achado testando de verdade: a build do Electron (single-page, file://)
+  // e a build hospedada como site comum (múltiplas rotas, http://) têm
+  // requisitos CONFLITANTES pro mesmo assetPrefix — não dá pra ser "a mesma
+  // build" pros dois destinos como o plano original assumia (corrigido em
+  // "Planejamento - Lembrete de Renovação do Clube.md" no cofre Obsidian).
+  // `BUILD_TARGET=admin-web` (env só de build, nunca NEXT_PUBLIC_) troca pra
+  // caminho absoluto — funciona sob http:// em qualquer profundidade de rota,
+  // mas quebraria sob file:// do Electron, por isso não é o default.
+  assetPrefix: process.env.BUILD_TARGET === 'admin-web' ? undefined : './',
   trailingSlash: true,
   typescript: {
     ignoreBuildErrors: false,

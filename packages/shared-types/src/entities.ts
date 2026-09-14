@@ -240,6 +240,19 @@ export interface ClubMember {
   validUntil: string | null;
 }
 
+/**
+ * Versão de `ClubMember` pro painel admin (Fase 2 do lembrete de renovação,
+ * 2026-09-14) — junta com o `Customer` central pra trazer telefone e
+ * consentimento de WhatsApp, dado que só existe ali, nunca em `ClubMember`.
+ * Timestamps `null` = nunca aconteceu (ver Customer.canReceiveWhatsapp no
+ * Intermediador pra semântica completa).
+ */
+export interface ClubMemberAdmin extends ClubMember {
+  phone: string | null;
+  whatsappConsentAt: string | null;
+  whatsappOptOutAt: string | null;
+}
+
 // Outbox local (PDV, SQLite) — fila de sincronização com o Intermediador.
 export interface SyncOutboxEntry {
   id: string;

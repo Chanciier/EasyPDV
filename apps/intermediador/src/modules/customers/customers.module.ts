@@ -12,6 +12,7 @@ import { CreateCustomerUseCase } from "./application/use-cases/create-customer.u
 import { UpdateCustomerUseCase } from "./application/use-cases/update-customer.use-case.js";
 import { DeleteCustomerUseCase } from "./application/use-cases/delete-customer.use-case.js";
 import { ImportCustomersFromBlingUseCase } from "./application/use-cases/import-customers-from-bling.use-case.js";
+import { SetWhatsappConsentUseCase } from "./application/use-cases/set-whatsapp-consent.use-case.js";
 
 // Importa ErpIntegrationModule (2026-09-11) pra ImportCustomersFromBlingUseCase
 // — mesma direção de ClubModule→ErpIntegrationModule (feature puxa de
@@ -33,11 +34,14 @@ import { ImportCustomersFromBlingUseCase } from "./application/use-cases/import-
     UpdateCustomerUseCase,
     DeleteCustomerUseCase,
     ImportCustomersFromBlingUseCase,
+    SetWhatsappConsentUseCase,
     { provide: CUSTOMER_REPOSITORY, useClass: PrismaCustomerRepository },
   ],
   // CUSTOMER_REPOSITORY exportado (2026-09-14) pro ClubModule gravar
   // nome/telefone/consentimento de WhatsApp no Customer central ao
-  // cadastrar sócio — ver AddClubMemberUseCase do club.
-  exports: [CUSTOMER_REPOSITORY],
+  // cadastrar sócio — ver AddClubMemberUseCase do club. SetWhatsappConsentUseCase
+  // exportado no mesmo commit pro AdminClubController (também no ClubModule)
+  // expor o toggle manual de consentimento do painel admin.
+  exports: [CUSTOMER_REPOSITORY, SetWhatsappConsentUseCase],
 })
 export class CustomersModule {}

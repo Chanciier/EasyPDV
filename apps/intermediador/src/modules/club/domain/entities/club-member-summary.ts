@@ -10,3 +10,10 @@ export interface ClubMemberSummary {
   name: string;
   validUntil: string | null;
 }
+
+/** Versão pro painel admin (Fase 2) — ver ListClubMembersForAdminUseCase. */
+export interface ClubMemberAdminSummary extends ClubMemberSummary {
+  phone: string | null;
+  whatsappConsentAt: string | null;
+  whatsappOptOutAt: string | null;
+}
