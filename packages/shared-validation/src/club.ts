@@ -13,7 +13,17 @@ export const addClubMemberSchema = z.object({
   // renovação) — checkbox explícito na tela de cadastro do sócio. Vira
   // Customer.whatsappConsentAt no Intermediador; desmarcar depois de já ter
   // aceitado registra revogação (whatsappOptOutAt), ver AddClubMemberUseCase.
-  whatsappConsent: z.boolean(),
+  //
+  // `.optional().default(false)` (não `z.boolean()` puro) — achado real em
+  // produção no dia em que este campo foi criado: o Intermediador reimplanta
+  // sozinho a cada push (Railway), mas o pdv-backend/pdv-frontend só recebem
+  // esse campo novo quando sai um instalador (ver "Cadência de release" no
+  // cofre Obsidian — só corta release com o plano inteiro pronto). Terminal
+  // de loja rodando build antiga nem manda essa chave — exigi-la sem default
+  // quebrou "Adicionar ao clube" pra TODO terminal ainda não atualizado
+  // (400 do Zod, mascarado como 500 genérico pro operador). Ausente = nunca
+  // perguntou, mesma semântica seguida em Customer.canReceiveWhatsapp.
+  whatsappConsent: z.boolean().optional().default(false),
 });
 
 export type AddClubMemberInput = z.infer<typeof addClubMemberSchema>;

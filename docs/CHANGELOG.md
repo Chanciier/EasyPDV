@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Regressão real: `whatsappConsent` obrigatório quebrou "Adicionar ao clube" em terminal desatualizado (2026-09-14)
+Achado testando de verdade na loja, minutos depois do deploy da Fase 1 do lembrete de renovação — usuário mandou print de "Internal Server Error" tentando cadastrar uma sócia nova.
+
+- **Causa raiz**: `addClubMemberSchema.whatsappConsent` (shared-validation) foi criado hoje como `z.boolean()` obrigatório. O Intermediador reimplanta sozinho a cada push (Railway); o pdv-backend/pdv-frontend só recebem esse campo quando sai um instalador — e nenhum saiu ainda (ver "Cadência de release" no cofre Obsidian: só corta release com o plano inteiro pronto). O terminal da loja, rodando build de antes de hoje, nem manda essa chave no corpo da requisição — o Zod do Intermediador rejeitava com 400, e o `HttpClubGateway` da build antiga (ainda sem `throwDescriptiveHttpError`) transformava isso num "Internal Server Error" genérico, sem pista nenhuma pro operador.
+- **Corrigido** com `whatsappConsent: z.boolean().optional().default(false)` — ausente = "nunca perguntou" (mesma semântica de `Customer.canReceiveWhatsapp`, nunca fabrica consentimento nem revogação pra quem nunca viu a pergunta). Tipo de saída (`AddClubMemberInput`) continua `boolean` obrigatório — nenhum código consumidor precisou mudar.
+- **Diagnosticado com o log real do processo** (`EasyPDV.exe` rodado via `cmd.exe` em vez de clique duplo, pra não perder o stdout que some no app empacotado) — sem isso, o 500 genérico não dava nenhuma pista de que era um 400 de validação por trás.
+- `pnpm typecheck`/`lint`/`build` 23/23. Verificar em produção: repetir "Adicionar ao clube" no mesmo terminal antigo depois do deploy do Intermediador.
+
 ### Fecha vazamento de CPF real sem autenticação em `/sync/jobs*` — achado C1 da auditoria de segurança (2026-09-14)
 Auditoria de segurança completa (cofre Obsidian, "Auditoria de Segurança Completa — EasyPDV") encontrou 6 achados Critical; usuário confirmou corrigir este primeiro por ser o único com exploração ativa confirmada contra dado real.
 
