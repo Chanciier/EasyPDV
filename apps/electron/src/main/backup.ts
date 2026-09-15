@@ -25,6 +25,8 @@ import type { BackupInfo } from "@easypdv/shared-types";
 
 const MAX_BACKUPS = 10;
 const SIDECAR_SUFFIXES = ["-wal", "-shm"];
+/** Mesmo formato exato gerado por `timestampedFileName()` abaixo — usado pra validar `fileName` em `restoreBackup` (achado H2 da auditoria de segurança). */
+const BACKUP_FILE_NAME_PATTERN = /^easypdv-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.db$/;
 
 export function resolveDatabasePath(): string {
   return path.join(app.getPath("userData"), "easypdv.db");
@@ -98,9 +100,28 @@ export function listBackups(): BackupInfo[] {
  */
 export async function restoreBackup(fileName: string): Promise<void> {
   const backupsDir = resolveBackupsDir();
-  const sourcePath = path.join(backupsDir, fileName);
+  // Achado H2 da auditoria de segurança (2026-09-14, cofre Obsidian
+  // "Auditoria de Segurança Completa — EasyPDV"): `fileName` vem do Renderer
+  // via IPC (contextBridge expõe `restoreBackup` pra qualquer script que
+  // rodar ali, confiável ou não — DevTools sem senha, ou um XSS futuro no
+  // Next.js empacotado). Sem validar, um `fileName` tipo
+  // "..\..\..\Windows\win.ini" escapava `backupsDir` via path.join e
+  // sobrescrevia o banco de produção com qualquer arquivo legível do disco.
+  // path.basename() + regex contra o formato real de timestampedFileName()
+  // garante que só um nome de backup de verdade passa; o resolve() abaixo é
+  // defesa extra, não o único cinto de segurança.
+  const safeName = path.basename(fileName);
+  if (!BACKUP_FILE_NAME_PATTERN.test(safeName)) {
+    throw new Error(`Nome de backup inválido: "${fileName}".`);
+  }
+  const sourcePath = path.join(backupsDir, safeName);
+  const resolvedSource = path.resolve(sourcePath);
+  const resolvedBackupsDir = path.resolve(backupsDir);
+  if (resolvedSource !== path.join(resolvedBackupsDir, safeName)) {
+    throw new Error(`Nome de backup inválido: "${fileName}".`);
+  }
   if (!fs.existsSync(sourcePath)) {
-    throw new Error(`Backup "${fileName}" não encontrado.`);
+    throw new Error(`Backup "${safeName}" não encontrado.`);
   }
   const dbPath = resolveDatabasePath();
   fs.copyFileSync(sourcePath, dbPath);
