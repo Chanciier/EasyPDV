@@ -12,6 +12,12 @@ import { RetryFiscalDocumentUseCase } from "../../application/use-cases/retry-fi
  * Chamado pelo PDV local (não um dashboard de admin, por isso guardado
  * como POST /sync — TerminalApiKeyGuard, mesmo padrão do Sprint 10) pra
  * espelhar o status fiscal de uma venda no seu FiscalDocument local (SQLite).
+ *
+ * Achado H1 da auditoria de segurança (2026-09-14) corrigido: `get`/`retry`
+ * não usavam `@CurrentTerminal()` — um terminal de QUALQUER organização
+ * (com apiKey válida seja de qual for) conseguia consultar/reenviar a NFC-e
+ * de uma venda de OUTRA organização, sabendo o `saleId`. Agora os três
+ * endpoints escopam por `terminal.organizationId`, mesmo padrão de `issue`.
  */
 @Controller("fiscal")
 @UseGuards(TerminalApiKeyGuard)
@@ -23,8 +29,8 @@ export class FiscalController {
   ) {}
 
   @Get("sale/:saleId")
-  get(@Param("saleId") saleId: string) {
-    return this.getFiscalStatusUseCase.execute(saleId);
+  get(@Param("saleId") saleId: string, @CurrentTerminal() terminal: AuthenticatedTerminal) {
+    return this.getFiscalStatusUseCase.execute(terminal.organizationId, saleId);
   }
 
   @Post("sale/:saleId/issue")
@@ -33,7 +39,7 @@ export class FiscalController {
   }
 
   @Post("sale/:saleId/retry")
-  retry(@Param("saleId") saleId: string) {
-    return this.retryFiscalDocumentUseCase.execute(saleId);
+  retry(@Param("saleId") saleId: string, @CurrentTerminal() terminal: AuthenticatedTerminal) {
+    return this.retryFiscalDocumentUseCase.execute(terminal.organizationId, saleId);
   }
 }

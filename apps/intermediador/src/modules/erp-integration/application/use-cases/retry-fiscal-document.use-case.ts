@@ -11,8 +11,8 @@ import { BlingSyncTargetAdapter } from "../../infrastructure/adapters/bling/blin
 export class RetryFiscalDocumentUseCase {
   constructor(private readonly blingSyncTargetAdapter: BlingSyncTargetAdapter) {}
 
-  async execute(saleId: string): Promise<FiscalStatusPayload> {
-    const doc = await this.blingSyncTargetAdapter.retryFiscalDocumentManually(saleId);
+  async execute(organizationId: string, saleId: string): Promise<FiscalStatusPayload> {
+    const doc = await this.blingSyncTargetAdapter.retryFiscalDocumentManually(organizationId, saleId);
     return {
       type: doc.type,
       status: doc.status,

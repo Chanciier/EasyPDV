@@ -12,9 +12,14 @@ export interface ErpIntegrationRepositoryPort {
   upsert(data: UpsertErpIntegrationData): Promise<ErpIntegration>;
   findByOrganization(organizationId: string, provider: ErpProviderCode): Promise<ErpIntegration | null>;
   /**
-   * V1 simplificação single-tenant: sem roteamento real por loja ainda
-   * (provisionamento de terminal é Sprint 10) — usado pelo BlingSyncAdapter
-   * pra resolver "a" integração ativa quando o SyncJob não carrega storeId.
+   * Achado C3 da auditoria de segurança (2026-09-14, cofre Obsidian
+   * "Decisões e Riscos Abertos" #20) — este método é a causa raiz do bug de
+   * contaminação cross-organização: resolve "a" integração mais antiga do
+   * sistema INTEIRO, ignorando qual organização deveria usar. 7 dos 9 usos
+   * em BlingSyncTargetAdapter já foram corrigidos pra `findByOrganization`.
+   * Os 2 que restam (`process`/`processVoid`, dirigidos por `SyncJob`, que
+   * ainda não carrega `organizationId`) só podem ser corrigidos depois de
+   * uma migration no schema — não remover este método antes disso.
    */
   findFirstActive(provider: ErpProviderCode): Promise<ErpIntegration | null>;
 }

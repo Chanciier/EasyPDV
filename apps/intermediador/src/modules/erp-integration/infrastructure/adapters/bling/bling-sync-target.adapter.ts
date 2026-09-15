@@ -179,6 +179,13 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       return;
     }
 
+    // Achado C3 da auditoria de segurança (2026-09-14) — AINDA usa
+    // findFirstActive aqui, de propósito por ora: SyncJob não carrega
+    // organizationId (só storeId opcional), e SaleSyncPayload também não —
+    // corrigir isso exige migration no schema pra adicionar a coluna, feito
+    // separado do resto da correção (ver Fase 5 do plano, cofre Obsidian
+    // "Decisões e Riscos Abertos" #20). Os outros 7 usos de findFirstActive
+    // neste arquivo já foram corrigidos pra findByOrganization.
     const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
     if (!integration) {
       throw new ErpIntegrationNotFoundError("(nenhuma organização com Bling conectado)");
@@ -388,7 +395,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * (`ClubMembership`) por CPF depois de ler os contatos.
    */
   async listClubMembers(organizationId: string): Promise<ClubMemberSummary[]> {
-    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+    const integration = await this.erpIntegrationRepository.findByOrganization(organizationId, PROVIDER);
     if (!integration) {
       throw new ErpIntegrationNotFoundError(organizationId);
     }
@@ -426,7 +433,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     validUntil: Date,
     phone: string,
   ): Promise<ClubMemberSummary> {
-    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+    const integration = await this.erpIntegrationRepository.findByOrganization(organizationId, PROVIDER);
     if (!integration) {
       throw new ErpIntegrationNotFoundError(organizationId);
     }
@@ -461,7 +468,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * "Planejamento - Clube Saldão.md" seção 5.4/5.5 no cofre Obsidian).
    */
   async removeClubMember(organizationId: string, document: string): Promise<void> {
-    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+    const integration = await this.erpIntegrationRepository.findByOrganization(organizationId, PROVIDER);
     if (!integration) {
       throw new ErpIntegrationNotFoundError(organizationId);
     }
@@ -497,6 +504,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * `pushStockMovements`).
    */
   private async processVoid(input: SyncTargetInput): Promise<void> {
+    // Mesmo motivo do process() acima — pendente da migration de organizationId no SyncJob.
     const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
     if (!integration) {
       throw new ErpIntegrationNotFoundError("(nenhuma organização com Bling conectado)");
@@ -683,22 +691,22 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * nunca propaga: pior caso é continuar mostrando o status antigo até a
    * próxima tentativa.
    */
-  async refreshFiscalStatus(saleId: string): Promise<FiscalDocument | null> {
-    const doc = await this.fiscalDocumentRepository.findBySale(saleId);
+  async refreshFiscalStatus(organizationId: string, saleId: string): Promise<FiscalDocument | null> {
+    const doc = await this.fiscalDocumentRepository.findBySaleInOrganization(organizationId, saleId);
     const needsRefresh = doc && (doc.status === "pending" || (doc.status === "issued" && !doc.qrCodeUrl));
     if (!doc || !needsRefresh) {
       return doc;
     }
 
     try {
-      const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+      const integration = await this.erpIntegrationRepository.findByOrganization(organizationId, PROVIDER);
       if (!integration) {
         return doc;
       }
       const accessToken = await this.tokenProvider.getValidAccessToken(integration);
       const details = await this.blingApiClient.findNfce(accessToken, Number(doc.externalId));
       await this.updateFiscalDocumentFromBling(doc, details);
-      return this.fiscalDocumentRepository.findBySale(saleId);
+      return this.fiscalDocumentRepository.findBySaleInOrganization(organizationId, saleId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Não foi possível reconsultar status da NFC-e (venda ${saleId}) no Bling: ${message}`);
@@ -725,7 +733,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * que já existe.
    */
   async issueFiscalReceiptManually(organizationId: string, saleId: string): Promise<FiscalDocument> {
-    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+    const integration = await this.erpIntegrationRepository.findByOrganization(organizationId, PROVIDER);
     if (!integration) {
       throw new ErpIntegrationNotFoundError(organizationId);
     }
@@ -735,7 +743,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       throw new SaleNotSyncedError(saleId);
     }
 
-    const existing = await this.fiscalDocumentRepository.findBySale(saleId);
+    const existing = await this.fiscalDocumentRepository.findBySaleInOrganization(organizationId, saleId);
     if (existing && existing.type !== "comprovante_nao_fiscal") {
       return existing;
     }
@@ -746,7 +754,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     const accessToken = await this.tokenProvider.getValidAccessToken(integration);
     await this.ensureFiscalDocument(accessToken, organizationId, saleId, mapping.externalId);
 
-    const doc = await this.fiscalDocumentRepository.findBySale(saleId);
+    const doc = await this.fiscalDocumentRepository.findBySaleInOrganization(organizationId, saleId);
     if (!doc) {
       throw new Error(`ensureFiscalDocument não criou um FiscalDocument pra venda ${saleId}`);
     }
@@ -784,12 +792,12 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * reenvio falhou de novo, não ver um resultado antigo como se tivesse
    * dado certo (mesma lógica de issueFiscalReceiptManually).
    */
-  async retryFiscalDocumentManually(saleId: string): Promise<FiscalDocument> {
-    const doc = await this.fiscalDocumentRepository.findBySale(saleId);
+  async retryFiscalDocumentManually(organizationId: string, saleId: string): Promise<FiscalDocument> {
+    const doc = await this.fiscalDocumentRepository.findBySaleInOrganization(organizationId, saleId);
     if (!doc || doc.type !== "nfce" || doc.status !== "error") {
       throw new Error(`Venda ${saleId} não tem NFC-e rejeitada pra reenviar`);
     }
-    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
+    const integration = await this.erpIntegrationRepository.findByOrganization(organizationId, PROVIDER);
     if (!integration) {
       throw new ErpIntegrationNotFoundError(doc.organizationId);
     }
@@ -806,14 +814,20 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * original (ensureFiscalDocument).
    */
   async retryFailedFiscalDocuments(): Promise<{ attempted: number; succeeded: number }> {
-    const integration = await this.erpIntegrationRepository.findFirstActive(PROVIDER);
-    if (!integration) {
-      return { attempted: 0, succeeded: 0 };
-    }
     const candidates = await this.fiscalDocumentRepository.findRetryable(MAX_AUTO_RETRY_ATTEMPTS);
     let succeeded = 0;
     for (const doc of candidates) {
       try {
+        // Achado C3 da auditoria de segurança (2026-09-14) corrigido: a
+        // integração é resolvida AQUI DENTRO, por doc.organizationId — antes
+        // resolvia "a" integração ativa do sistema todo UMA vez fora do
+        // loop, e reenviava TODA nota pendente (de qualquer organização)
+        // pela conta Bling errada.
+        const integration = await this.erpIntegrationRepository.findByOrganization(doc.organizationId, PROVIDER);
+        if (!integration) {
+          this.logger.warn(`Retry automático de NFC-e pulado (venda ${doc.saleId}): organização ${doc.organizationId} sem Bling conectado`);
+          continue;
+        }
         const accessToken = await this.tokenProvider.getValidAccessToken(integration);
         const updated = await this.resendNfce(accessToken, doc);
         await this.fiscalDocumentRepository.update(doc.id, { retryCount: doc.retryCount + 1 });
@@ -836,7 +850,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     orderExternalId: string,
   ): Promise<void> {
     try {
-      let doc = await this.fiscalDocumentRepository.findBySale(saleId);
+      let doc = await this.fiscalDocumentRepository.findBySaleInOrganization(organizationId, saleId);
       if (!doc) {
         const { nfceId } = await this.blingApiClient.generateNfceFromOrder(accessToken, Number(orderExternalId));
         doc = await this.fiscalDocumentRepository.create({
@@ -857,7 +871,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Falha ao emitir NFC-e pra venda ${saleId}: ${message}`);
-      const existing = await this.fiscalDocumentRepository.findBySale(saleId);
+      const existing = await this.fiscalDocumentRepository.findBySaleInOrganization(organizationId, saleId);
       if (existing) {
         await this.fiscalDocumentRepository.update(existing.id, { status: "error", errorMessage: message });
       }
@@ -873,7 +887,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * de autorização esperando resultado externo.
    */
   private async recordNonFiscalReceipt(organizationId: string, saleId: string): Promise<void> {
-    const existing = await this.fiscalDocumentRepository.findBySale(saleId);
+    const existing = await this.fiscalDocumentRepository.findBySaleInOrganization(organizationId, saleId);
     if (existing) {
       return;
     }

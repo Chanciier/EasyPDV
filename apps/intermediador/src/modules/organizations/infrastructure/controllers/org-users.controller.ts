@@ -76,7 +76,7 @@ export class OrgUsersController {
     @CurrentTerminal() terminal: AuthenticatedTerminal,
   ): Promise<OrgUserPayload> {
     this.assertOwnsOrganization(organizationId, terminal);
-    const user = await this.updateOrgUserUseCase.execute(userId, body);
+    const user = await this.updateOrgUserUseCase.execute(organizationId, userId, body);
     return toOrgUserPayload(user);
   }
 
@@ -89,7 +89,7 @@ export class OrgUsersController {
     @CurrentTerminal() terminal: AuthenticatedTerminal,
   ): Promise<OrgUserPayload> {
     this.assertOwnsOrganization(organizationId, terminal);
-    const user = await this.changeOrgUserPasswordUseCase.execute(userId, body.newPassword);
+    const user = await this.changeOrgUserPasswordUseCase.execute(organizationId, userId, body.newPassword);
     return toOrgUserPayload(user);
   }
 

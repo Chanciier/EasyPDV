@@ -24,6 +24,8 @@ export interface UpdateFiscalDocumentData {
 
 export interface FiscalDocumentRepositoryPort {
   findBySale(saleId: string): Promise<FiscalDocument | null>;
+  /** Achado H1 da auditoria de segurança (2026-09-14) — variante escopada, usada por qualquer caminho que recebe `saleId` de fora (rota HTTP) em vez de já ter o `FiscalDocument`/`organizationId` em mãos. */
+  findBySaleInOrganization(organizationId: string, saleId: string): Promise<FiscalDocument | null>;
   create(data: CreateFiscalDocumentData): Promise<FiscalDocument>;
   update(id: string, data: UpdateFiscalDocumentData): Promise<FiscalDocument>;
   /** Usado só pra emissão manual de NFC-e sobre uma venda que já tem um comprovante não fiscal (placeholder) — precisa sumir antes de criar o documento real, por causa do `@@unique([organizationId, provider, saleId])`. */

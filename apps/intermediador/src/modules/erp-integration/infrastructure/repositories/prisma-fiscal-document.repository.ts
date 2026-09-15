@@ -17,6 +17,11 @@ export class PrismaFiscalDocumentRepository implements FiscalDocumentRepositoryP
     return record ? toDomainFiscalDocument(record) : null;
   }
 
+  async findBySaleInOrganization(organizationId: string, saleId: string): Promise<FiscalDocument | null> {
+    const record = await this.prisma.fiscalDocument.findFirst({ where: { saleId, organizationId } });
+    return record ? toDomainFiscalDocument(record) : null;
+  }
+
   async create(data: CreateFiscalDocumentData): Promise<FiscalDocument> {
     const record = await this.prisma.fiscalDocument.create({ data });
     return toDomainFiscalDocument(record);

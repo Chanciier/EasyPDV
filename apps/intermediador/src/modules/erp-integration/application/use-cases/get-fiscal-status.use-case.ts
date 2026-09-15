@@ -14,8 +14,8 @@ import { BlingSyncTargetAdapter } from "../../infrastructure/adapters/bling/blin
 export class GetFiscalStatusUseCase {
   constructor(private readonly blingSyncTargetAdapter: BlingSyncTargetAdapter) {}
 
-  async execute(saleId: string): Promise<FiscalStatusPayload> {
-    const doc = await this.blingSyncTargetAdapter.refreshFiscalStatus(saleId);
+  async execute(organizationId: string, saleId: string): Promise<FiscalStatusPayload> {
+    const doc = await this.blingSyncTargetAdapter.refreshFiscalStatus(organizationId, saleId);
     if (!doc) {
       throw new FiscalDocumentNotFoundError(saleId);
     }

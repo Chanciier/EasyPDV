@@ -54,4 +54,24 @@ export class PrismaOrgUserRepository implements OrgUserRepositoryPort {
     const record = await this.prisma.orgUser.update({ where: { id }, data: { passwordHash } });
     return toDomainOrgUser(record);
   }
+
+  // Achados C4/C5 da auditoria de segurança (2026-09-14) — mesmo padrão
+  // "extended where unique input" já usado em PrismaCustomerRepository:
+  // `id` sozinho já é @id, mas somar `organizationId` no `where` faz o
+  // Prisma exigir os dois batendo, senão devolve P2025 (tratado como "não
+  // achado" pelo use-case) em vez de mutar um OrgUser de outra organização.
+  async findByIdInOrganization(organizationId: string, id: string): Promise<OrgUser | null> {
+    const record = await this.prisma.orgUser.findFirst({ where: { id, organizationId } });
+    return record ? toDomainOrgUser(record) : null;
+  }
+
+  async updateInOrganization(organizationId: string, id: string, data: UpdateOrgUserData): Promise<OrgUser> {
+    const record = await this.prisma.orgUser.update({ where: { id, organizationId }, data });
+    return toDomainOrgUser(record);
+  }
+
+  async updatePasswordInOrganization(organizationId: string, id: string, passwordHash: string): Promise<OrgUser> {
+    const record = await this.prisma.orgUser.update({ where: { id, organizationId }, data: { passwordHash } });
+    return toDomainOrgUser(record);
+  }
 }
