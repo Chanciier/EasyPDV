@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { APP_INTERCEPTOR } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
@@ -24,6 +25,7 @@ import { RefreshTokenUseCase } from "./application/use-cases/refresh-token.use-c
 import { UpdateUserRoleUseCase } from "./application/use-cases/update-user-role.use-case.js";
 import { ChangePasswordUseCase } from "./application/use-cases/change-password.use-case.js";
 import { ResetUserPasswordUseCase } from "./application/use-cases/reset-user-password.use-case.js";
+import { MustChangePasswordInterceptor } from "./infrastructure/interceptors/must-change-password.interceptor.js";
 
 @Module({
   imports: [
@@ -61,6 +63,11 @@ import { ResetUserPasswordUseCase } from "./application/use-cases/reset-user-pas
     { provide: AUTH_SESSION_REPOSITORY, useClass: PrismaAuthSessionRepository },
     { provide: PASSWORD_HASHER, useClass: BcryptPasswordHasher },
     { provide: USER_VERIFICATION_GATEWAY, useClass: HttpUserVerificationGateway },
+    // Achado C6 da auditoria de segurança (2026-09-14) — global mesmo
+    // registrado aqui: tokens especiais (APP_INTERCEPTOR/APP_GUARD/APP_FILTER)
+    // do Nest valem pro app inteiro não importa em qual módulo são
+    // declarados. Ver must-change-password.interceptor.ts.
+    { provide: APP_INTERCEPTOR, useClass: MustChangePasswordInterceptor },
   ],
   // HttpUserVerificationGateway é usado fora do módulo também — main.ts
   // (`ensureAdminUser`, roda antes de qualquer request HTTP) resolve via

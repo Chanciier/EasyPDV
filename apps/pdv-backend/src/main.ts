@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import * as bcrypt from "bcrypt";
 import { NestFactory } from "@nestjs/core";
@@ -66,7 +67,24 @@ async function ensureAdminUser(prisma: PrismaService, userVerificationGateway: U
   }
 
   const email = process.env.SEED_ADMIN_EMAIL ?? "admin@easypdv.local";
-  const password = process.env.SEED_ADMIN_PASSWORD ?? "troque-esta-senha";
+  // Achado C6 da auditoria de segurança (2026-09-14, cofre Obsidian
+  // "Auditoria de Segurança Completa — EasyPDV"): um literal fixo aqui
+  // (era "troque-esta-senha") fica público pra sempre — este repositório é
+  // público no GitHub. SEED_ADMIN_PASSWORD continua funcionando pra quem
+  // quiser fixar uma senha conhecida de propósito (dev local, debug); sem
+  // ela, gera uma senha aleatória de alta entropia por instalação e só a
+  // exibe UMA VEZ no log deste boot — quem tem acesso ao terminal físico
+  // (Electron captura stdio, ver `startBackend` em apps/electron) consegue
+  // ler dali. `mustChangePassword: true` abaixo agora é aplicado de verdade
+  // no backend (ver MustChangePasswordInterceptor), não só na tela.
+  const generatedPassword = process.env.SEED_ADMIN_PASSWORD ? null : randomBytes(18).toString("base64url");
+  const password = generatedPassword ?? (process.env.SEED_ADMIN_PASSWORD as string);
+  if (generatedPassword) {
+    // Única exibição da senha gerada — boot roda com stdio herdado pelo Electron (ver apps/electron/src/main/index.ts startBackend).
+    console.log(
+      `[EasyPDV] Conta de administrador criada: ${email} / senha gerada: ${generatedPassword} — troque no primeiro login, esta senha não fica salva em nenhum outro lugar.`,
+    );
+  }
   const passwordHash = await bcrypt.hash(password, 12);
   // employeeCode 1 — count()>0 já garantiu acima que não existe nenhum usuário
   // ainda, então este é sempre o primeiro.
@@ -137,12 +155,31 @@ async function bootstrap() {
   await ensureAdminUser(prisma, userVerificationGateway);
   await ensureDefaultWarehouse(prisma);
   await ensureDefaultCashRegister(prisma);
-  // O server só escuta em 127.0.0.1 — a fronteira de segurança real é essa,
-  // não CORS. Liberado geral porque o frontend roda em origem própria
-  // (dev server / protocolo do Electron) e a API usa Bearer token, não
-  // cookie, então não há credencial pra vazar entre origens. Ver
-  // Claude/Projetos/EasyPDV/Arquitetura e Stack.md no cofre Obsidian.
-  app.enableCors();
+  // Achado M3 da auditoria de segurança (2026-09-14): mesmo sem cookie (API
+  // usa Bearer token, sem credencial implícita pra CSRF clássico), um CORS
+  // aberto deixa qualquer página carregada num navegador comum nesse PC
+  // (o PDV normalmente também navega a internet geral) LER a resposta de
+  // POST /auth/login via fetch() — combinado com a senha padrão pública
+  // (achado C6, corrigido acima), isso virava roubo remoto de token de
+  // admin sem acesso físico à máquina. O renderer do Electron carrega via
+  // loadFile() (protocolo file://, sem Origin http(s) real) — permitido
+  // sempre. Em dev, o pdv-frontend roda via `next dev` (localhost:PORT
+  // real) — só liberado fora de produção, pra não travar o fluxo normal
+  // de desenvolvimento local.
+  const isProduction = process.env.NODE_ENV === "production";
+  app.enableCors({
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      if (!origin || origin === "null" || origin.startsWith("file://")) {
+        callback(null, true);
+        return;
+      }
+      if (!isProduction && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error("Origem não permitida"), false);
+    },
+  });
 
   const port = process.env.PORT ? Number(process.env.PORT) : 4001;
   await app.listen(port, "127.0.0.1");

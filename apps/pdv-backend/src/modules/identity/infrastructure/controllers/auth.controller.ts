@@ -15,6 +15,7 @@ import { GetCurrentUserUseCase } from "../../application/use-cases/get-current-u
 import { ChangePasswordUseCase } from "../../application/use-cases/change-password.use-case.js";
 import { toUserResponseDto } from "../../application/dtos/user-response.dto.js";
 import { CurrentUser, type AuthenticatedUser } from "../decorators/current-user.decorator.js";
+import { SkipMustChangePassword } from "../decorators/skip-must-change-password.decorator.js";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
 
 @Controller("auth")
@@ -44,6 +45,7 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @SkipMustChangePassword()
   @Get("me")
   async me(@CurrentUser() currentUser: AuthenticatedUser) {
     const user = await this.getCurrentUserUseCase.execute(currentUser.userId);
@@ -52,6 +54,7 @@ export class AuthController {
 
   /** Troca/reset de senha (2026-08-21) — cada um troca a PRÓPRIA senha, sem restrição de papel. */
   @UseGuards(JwtAuthGuard)
+  @SkipMustChangePassword()
   @Patch("change-password")
   async changePassword(
     @Body(new ZodValidationPipe(changePasswordSchema)) body: ChangePasswordInput,
