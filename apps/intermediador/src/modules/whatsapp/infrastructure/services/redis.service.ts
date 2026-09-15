@@ -18,7 +18,13 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
-    const url = this.configService.get<string>("REDIS_URL") ?? "redis://127.0.0.1:6379";
+    // Achado M6 da auditoria de segurança (2026-09-14): fallback silencioso
+    // pra um Redis local sem senha, se REDIS_URL sumir do ambiente — mesma
+    // pegadinha que JWT_SECRET já evita com getOrThrow em outros módulos.
+    // Isso guarda as credenciais de sessão do WhatsApp (Baileys); é melhor
+    // o boot falhar ruidosamente do que tentar um endpoint errado em
+    // silêncio.
+    const url = this.configService.getOrThrow<string>("REDIS_URL");
     this.client = new Redis(url);
     this.client.on("error", (err: Error) => this.logger.error(`Redis error: ${err.message}`));
   }

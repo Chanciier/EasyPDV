@@ -26,6 +26,21 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       setSession: (user, tokens) => set({ user, tokens, isAuthenticated: true }),
       clear: () => set({ user: null, tokens: null, isAuthenticated: false }),
     }),
-    { name: 'easypdv-admin-auth' },
+    {
+      name: 'easypdv-admin-auth',
+      // Achado M5 da auditoria de segurança (2026-09-14): refreshToken (30
+      // dias de validade) deixa de ir pro localStorage — só o accessToken
+      // (15min) e o resto da sessão persistem. Reduz a janela de roubo de
+      // token (XSS futuro) de 30 dias pra 15min: o refreshToken continua
+      // funcionando normalmente durante a mesma sessão de navegador (o
+      // estado em memória do zustand tem o valor real, só o que É GRAVADO em
+      // disco é que fica sem ele), mas some ao recarregar a página/reabrir o
+      // app — depois que o accessToken expirar, força login de novo em vez
+      // de renovar silenciosamente pra sempre.
+      partialize: (state) => ({
+        ...state,
+        tokens: state.tokens ? { ...state.tokens, refreshToken: '' } : null,
+      }),
+    },
   ),
 )

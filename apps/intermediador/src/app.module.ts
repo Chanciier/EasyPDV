@@ -25,9 +25,12 @@ import { PrismaModule } from "./prisma/prisma.module.js";
         transport: process.env.NODE_ENV !== "production" ? { target: "pino-pretty" } : undefined,
       },
     }),
+    // Achado M6 da auditoria de segurança (2026-09-14) — getOrThrow em vez de
+    // fallback silencioso pra um Redis local sem senha (ver
+    // whatsapp/infrastructure/services/redis.service.ts, mesma correção).
     BullModule.forRootAsync({
       useFactory: (config: ConfigService) => ({
-        connection: { url: config.get<string>("REDIS_URL") ?? "redis://127.0.0.1:6379" },
+        connection: { url: config.getOrThrow<string>("REDIS_URL") },
       }),
       inject: [ConfigService],
     }),

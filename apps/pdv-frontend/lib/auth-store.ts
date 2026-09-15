@@ -28,6 +28,15 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user) => set({ user }),
       clear: () => set({ user: null, tokens: null, isAuthenticated: false }),
     }),
-    { name: "easypdv-auth" },
+    {
+      name: "easypdv-auth",
+      // Achado M5 da auditoria de segurança (2026-09-14) — mesma correção de
+      // admin-auth-store.ts: refreshToken (30 dias) não vai pro localStorage,
+      // só o accessToken (15min). Ver comentário lá pro raciocínio completo.
+      partialize: (state) => ({
+        ...state,
+        tokens: state.tokens ? { ...state.tokens, refreshToken: "" } : null,
+      }),
+    },
   ),
 );
