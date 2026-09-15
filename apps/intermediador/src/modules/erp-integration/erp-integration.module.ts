@@ -8,6 +8,7 @@ import { BlingSyncTargetAdapter } from "./infrastructure/adapters/bling/bling-sy
 import { BlingApiClient } from "./infrastructure/clients/bling-api.client.js";
 import { BlingOAuthClient } from "./infrastructure/clients/bling-oauth.client.js";
 import { BlingTokenProviderService } from "./infrastructure/clients/bling-token-provider.service.js";
+import { BlingOAuthStateStore } from "./infrastructure/services/bling-oauth-state.store.js";
 import { PrismaErpIntegrationRepository } from "./infrastructure/repositories/prisma-erp-integration.repository.js";
 import { PrismaErpSyncMappingRepository } from "./infrastructure/repositories/prisma-erp-sync-mapping.repository.js";
 import { PrismaFiscalDocumentRepository } from "./infrastructure/repositories/prisma-fiscal-document.repository.js";
@@ -37,6 +38,7 @@ import { ListBlingProductsUseCase } from "./application/use-cases/list-bling-pro
     BlingOAuthClient,
     BlingApiClient,
     BlingTokenProviderService,
+    BlingOAuthStateStore,
     BlingSyncTargetAdapter,
     ConnectBlingUseCase,
     HandleBlingCallbackUseCase,

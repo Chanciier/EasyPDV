@@ -1,20 +1,30 @@
 import { Controller, Get, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { TerminalApiKeyGuard } from "../../../organizations/infrastructure/guards/terminal-api-key.guard.js";
+import { OrgJwtAuthGuard } from "../../../organizations/infrastructure/guards/org-jwt-auth.guard.js";
 import {
   CurrentTerminal,
   type AuthenticatedTerminal,
 } from "../../../organizations/infrastructure/decorators/current-terminal.decorator.js";
+import {
+  CurrentOrgUser,
+  type AuthenticatedOrgUser,
+} from "../../../organizations/infrastructure/decorators/current-org-user.decorator.js";
 import { ConnectBlingUseCase } from "../../application/use-cases/connect-bling.use-case.js";
 import { HandleBlingCallbackUseCase } from "../../application/use-cases/handle-bling-callback.use-case.js";
 import { GetBlingConnectionStatusUseCase } from "../../application/use-cases/get-bling-connection-status.use-case.js";
 import { ListBlingProductsUseCase } from "../../application/use-cases/list-bling-products.use-case.js";
 
 /**
- * Sem autenticação por enquanto — mesmo risco aberto desde a Sprint 6
- * (não existe auth de operador nesta API ainda). Ver docs/ERROR-HANDLING.md.
- * Exceção: `GET /products`, chamado pelo terminal (não uma tela de admin),
- * usa o mesmo TerminalApiKeyGuard de /fiscal e /sync.
+ * Achados C2/M1 da auditoria de segurança (2026-09-14) corrigidos: `connect`
+ * e `status` passaram a exigir `OrgJwtAuthGuard` — só um admin autenticado
+ * da própria organização inicia a conexão Bling dela ou consulta o status
+ * dela (organizationId vem do token, nunca de query param solto). `callback`
+ * continua público de propósito — é o redirect_uri do Bling, o próprio
+ * Bling chama essa rota, sem sessão de admin nenhuma — mas agora só aceita
+ * um `state` válido emitido por `connect` (ver BlingOAuthStateStore).
+ * `GET /products` continua com TerminalApiKeyGuard (chamado pelo terminal,
+ * não uma tela de admin — mesma fronteira de /fiscal e /sync).
  */
 @Controller("integrations")
 export class ErpIntegrationController {
@@ -26,8 +36,9 @@ export class ErpIntegrationController {
   ) {}
 
   @Get("bling/connect")
-  connect(@Query("organizationId") organizationId: string, @Res() res: Response) {
-    const url = this.connectBlingUseCase.execute(organizationId);
+  @UseGuards(OrgJwtAuthGuard)
+  connect(@CurrentOrgUser() orgUser: AuthenticatedOrgUser, @Res() res: Response) {
+    const url = this.connectBlingUseCase.execute(orgUser.organizationId);
     res.redirect(url);
   }
 
@@ -42,8 +53,9 @@ export class ErpIntegrationController {
   }
 
   @Get("bling/status")
-  status(@Query("organizationId") organizationId: string) {
-    return this.getBlingConnectionStatusUseCase.execute(organizationId);
+  @UseGuards(OrgJwtAuthGuard)
+  status(@CurrentOrgUser() orgUser: AuthenticatedOrgUser) {
+    return this.getBlingConnectionStatusUseCase.execute(orgUser.organizationId);
   }
 
   /**

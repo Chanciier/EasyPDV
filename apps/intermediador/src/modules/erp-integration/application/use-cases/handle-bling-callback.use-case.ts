@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { ErpIntegration } from "../../domain/entities/erp-integration.entity.js";
+import { InvalidBlingOAuthStateError } from "../../domain/errors.js";
 import { BlingOAuthClient } from "../../infrastructure/clients/bling-oauth.client.js";
+import { BlingOAuthStateStore } from "../../infrastructure/services/bling-oauth-state.store.js";
 import { ERP_INTEGRATION_REPOSITORY, type ErpIntegrationRepositoryPort } from "../ports/erp-integration-repository.port.js";
 import { ERP_SYNC_MAPPING_REPOSITORY, type ErpSyncMappingRepositoryPort } from "../ports/erp-sync-mapping-repository.port.js";
 
@@ -18,6 +20,7 @@ export class HandleBlingCallbackUseCase {
 
   constructor(
     private readonly oauthClient: BlingOAuthClient,
+    private readonly stateStore: BlingOAuthStateStore,
     @Inject(ERP_INTEGRATION_REPOSITORY) private readonly erpIntegrationRepository: ErpIntegrationRepositoryPort,
     @Inject(ERP_SYNC_MAPPING_REPOSITORY) private readonly erpSyncMappingRepository: ErpSyncMappingRepositoryPort,
   ) {}
@@ -33,7 +36,14 @@ export class HandleBlingCallbackUseCase {
    * numa conta DIFERENTE é o caso que isso corrige de verdade.
    */
   async execute(code: string, state: string): Promise<ErpIntegration> {
-    const organizationId = Buffer.from(state, "base64url").toString("utf8");
+    // Achado C2 corrigido: `state` só é aceito se existir no store (gerado
+    // por ConnectBlingUseCase, atrás de auth), ainda não tiver sido
+    // consumido, e não estiver expirado (TTL 10min) — nunca mais decodificado
+    // direto da string recebida.
+    const organizationId = this.stateStore.consume(state);
+    if (!organizationId) {
+      throw new InvalidBlingOAuthStateError();
+    }
     const token = await this.oauthClient.exchangeCode(code);
     const integration = await this.erpIntegrationRepository.upsert({
       organizationId,

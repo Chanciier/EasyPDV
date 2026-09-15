@@ -7,6 +7,14 @@ export class ErpIntegrationNotFoundError extends DomainError {
   }
 }
 
+/** Achado C2 da auditoria de segurança (2026-09-14) — state do OAuth do Bling inválido, expirado (TTL de 10min) ou já consumido. Ver BlingOAuthStateStore. */
+export class InvalidBlingOAuthStateError extends DomainError {
+  readonly kind = "forbidden";
+  constructor() {
+    super("Link de conexão com o Bling inválido ou expirado — inicie a conexão de novo pelo painel admin.");
+  }
+}
+
 export class FiscalDocumentNotFoundError extends DomainError {
   readonly kind = "not_found";
   constructor(saleId: string) {
