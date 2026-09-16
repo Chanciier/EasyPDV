@@ -1,6 +1,13 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### "proprietario" ficava sem acesso a quase tudo no PDV local (2026-09-16)
+Achado real reportado pelo usuário: "meu usuario n tem permissão para nada" logado com `adriansanluz@gmail.com` — conferido direto no banco, o `OrgUser` central já era `proprietario` (o papel mais alto), ativo, sem bloqueio.
+
+- **Causa raiz**: `"proprietario"` não aparecia em NENHUM `@Roles(...)` do pdv-backend, exceto `ReportsController` — Clientes, Vale-Troca, Estoque, Produtos, Usuários, Cancelar venda, Caixa, Sincronização e mais ficavam bloqueados pro dono da loja, mesmo sendo o papel mais alto que existe (acima de administrador).
+- **Corrigido em `RolesGuard`** (um lugar só, não em cada controller): `role === "proprietario"` passa a ser sempre autorizado, qualquer que seja o `@Roles(...)` exigido.
+- `pnpm typecheck`/`lint`/`build` 23/23.
+
 ### Ajuste manual de Vale-Troca na tela Clientes (2026-09-16)
 Pedido do usuário: "alterar o valor de vale troca na conta do cliente" direto pela tela Clientes, sem precisar passar pela aba Vale-Troca (itemizada, pensada pra troca de mercadoria de verdade).
 
