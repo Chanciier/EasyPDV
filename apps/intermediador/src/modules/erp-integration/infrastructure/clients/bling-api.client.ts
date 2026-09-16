@@ -551,12 +551,25 @@ export class BlingApiClient {
       // campo). Achado real (2026-08-18): sem isso, um 400 de verdade fica
       // opaco tanto no log quanto no SyncJob.lastError — inclui o corpo
       // inteiro do erro nos dois lugares agora.
+      //
+      // `fields[].msg` incluído também (achado real 2026-09-16, venda
+      // cmu3dbdpi1tf3mp4saoqtnium): pra um 400 de "gerar-nfce", `description`
+      // vem só o resumo genérico ("...erros de validação"), o motivo
+      // ESPECÍFICO de verdade ("Esta venda possui nota fiscal referenciada")
+      // só existe dentro de `fields`, que já era capturado no `BlingApiError`
+      // pra quem trata código específico, mas nunca virava texto na mensagem
+      // que de fato chega no log/`FiscalDocument.errorMessage`/operador.
       const message = parsed?.error?.message ?? JSON.stringify(parsed);
       const detail = parsed?.error?.description ? ` — ${JSON.stringify(parsed.error.description)}` : "";
+      const fieldMsgs = (parsed?.error?.fields ?? []).map((f) => f.msg.trim()).filter(Boolean);
+      const fieldsDetail = fieldMsgs.length > 0 ? ` (${fieldMsgs.join("; ")})` : "";
       this.logger.error(
-        `Bling API ${method} ${path} falhou (HTTP ${response.status}): ${message}${detail} | corpo completo da resposta: ${JSON.stringify(parsed)} | corpo enviado: ${JSON.stringify(body)}`,
+        `Bling API ${method} ${path} falhou (HTTP ${response.status}): ${message}${detail}${fieldsDetail} | corpo completo da resposta: ${JSON.stringify(parsed)} | corpo enviado: ${JSON.stringify(body)}`,
       );
-      throw new BlingApiError(`Bling API ${method} ${path} falhou (HTTP ${response.status}): ${message}${detail}`, parsed?.error?.fields ?? []);
+      throw new BlingApiError(
+        `Bling API ${method} ${path} falhou (HTTP ${response.status}): ${message}${detail}${fieldsDetail}`,
+        parsed?.error?.fields ?? [],
+      );
     }
     return (parsed ?? ({} as T)) as T;
   }
