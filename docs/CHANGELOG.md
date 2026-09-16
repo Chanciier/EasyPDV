@@ -1,6 +1,12 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### "Não foi possível abrir o caixa" escondia o motivo real do erro (2026-09-16)
+Achado testando o fix do papel "proprietario" — "Abrir caixa" continuou falhando mesmo depois do fix (esse endpoint nunca teve restrição de papel, então era outra causa). `cash-view.tsx` mostrava uma mensagem genérica fixa pra QUALQUER erro, escondendo mensagens reais como "Já existe uma sessão aberta para o caixa X" ou "Caixa X não encontrado" (`CashRegisterAlreadyOpenError`/`CashRegisterNotFoundError`, ambas com mensagem real já mapeada pelo backend).
+
+- Corrigido: mostra `error.code` (mensagem real do backend) quando é um `ApiError`, mesmo padrão já usado em `customers-view.tsx`/`history-view.tsx`.
+- `pnpm typecheck`/`lint`/`build` 23/23.
+
 ### "proprietario" ficava sem acesso a quase tudo no PDV local (2026-09-16)
 Achado real reportado pelo usuário: "meu usuario n tem permissão para nada" logado com `adriansanluz@gmail.com` — conferido direto no banco, o `OrgUser` central já era `proprietario` (o papel mais alto), ativo, sem bloqueio.
 

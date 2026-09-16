@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import type { CashMovementType } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
+import { ApiError } from '@/lib/api-client'
 import { useAppUpdateStore } from '@/lib/app-update-store'
 import {
   useCashRegisters,
@@ -160,7 +161,9 @@ export function CashView() {
           />
           {openMutation.isError && (
             <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              Não foi possível abrir o caixa. Tente novamente.
+              {openMutation.error instanceof ApiError
+                ? openMutation.error.code
+                : 'Não foi possível abrir o caixa. Tente novamente.'}
             </p>
           )}
           <button
