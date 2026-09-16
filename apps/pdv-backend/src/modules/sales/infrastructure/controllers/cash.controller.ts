@@ -23,6 +23,7 @@ import { RegisterCashMovementUseCase } from "../../application/use-cases/registe
 import { GetCurrentCashSessionUseCase } from "../../application/use-cases/get-current-cash-session.use-case.js";
 import { GetCashSessionUseCase } from "../../application/use-cases/get-cash-session.use-case.js";
 import { ListCashMovementsUseCase } from "../../application/use-cases/list-cash-movements.use-case.js";
+import { GetOpenSessionForRegisterUseCase } from "../../application/use-cases/get-open-session-for-register.use-case.js";
 
 @Controller("cash")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -36,6 +37,7 @@ export class CashController {
     private readonly getCurrentCashSessionUseCase: GetCurrentCashSessionUseCase,
     private readonly getCashSessionUseCase: GetCashSessionUseCase,
     private readonly listCashMovementsUseCase: ListCashMovementsUseCase,
+    private readonly getOpenSessionForRegisterUseCase: GetOpenSessionForRegisterUseCase,
     private readonly realtimeGateway: RealtimeGateway,
   ) {}
 
@@ -53,6 +55,21 @@ export class CashController {
   @Get("sessions/current")
   getCurrent(@CurrentUser() user: AuthenticatedUser) {
     return this.getCurrentCashSessionUseCase.execute(user.userId);
+  }
+
+  /**
+   * Achado real (2026-09-16): "Abrir caixa" só enxergava a sessão do
+   * PRÓPRIO operador — quando o caixa já estava aberto por OUTRO login
+   * (turno anterior, troca de conta), o operador atual não tinha como ver
+   * nem fechar essa sessão pela tela, só logando de volta com a conta
+   * antiga. Restrito a quem pode gerenciar caixa (mesmo papel de
+   * "createRegister"/fechamento) — força-fechar o caixa de outra pessoa é
+   * uma ação administrativa.
+   */
+  @Get("registers/:id/open-session")
+  @Roles("administrador", "gerente")
+  getOpenSessionForRegister(@Param("id") id: string) {
+    return this.getOpenSessionForRegisterUseCase.execute(id);
   }
 
   @Get("sessions/:id")

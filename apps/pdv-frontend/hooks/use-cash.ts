@@ -44,6 +44,20 @@ export function useCashSalesTotal(cashSessionId: string | undefined) {
   })
 }
 
+/**
+ * Achado real (2026-09-16): "Abrir caixa" só via a sessão do PRÓPRIO
+ * operador — quando o caixa já estava aberto por outro login (turno
+ * anterior), não tinha como ver nem fechar pela tela. Só é chamada quando
+ * `useOpenCashSession` falha (ver `enabled`), evita um GET solto toda hora.
+ */
+export function useOpenSessionForRegister(cashRegisterId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['cash-session', 'open-for-register', cashRegisterId ?? ''],
+    queryFn: () => apiRequest<CashSession | null>(`/cash/registers/${cashRegisterId}/open-session`),
+    enabled: enabled && !!cashRegisterId,
+  })
+}
+
 export function useOpenCashSession() {
   const queryClient = useQueryClient()
   return useMutation({

@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Forçar fechamento de caixa aberto por outro login (2026-09-16)
+Achado real reportado pelo usuário: caixa da loja travado com "Já existe uma sessão aberta para o caixa X" — a sessão tinha sido aberta mais cedo com outro login (`GetCurrentCashSessionUseCase` só enxerga a sessão do PRÓPRIO operador), sem nenhuma forma de ver/fechar pela tela sem logar de volta com a conta antiga.
+
+- **Novo `GET /cash/registers/:id/open-session`** (pdv-backend, restrito a administrador/gerente/proprietario) — reaproveita `findOpenSessionByRegister`, já existente no repositório, só nunca exposto por endpoint nenhum.
+- **Tela "Abrir caixa"** — quando falha com caixa já aberto, busca a sessão travada (só pra quem tem papel autorizado) e mostra quando foi aberta + valor de abertura, com campo de valor contado e botão "Forçar fechamento" (reaproveita o `PATCH /cash/sessions/:id/close` já existente, sem restrição de dono). Depois de fechar, tenta abrir de novo automaticamente.
+- De passagem, achado o MESMO gap do papel "proprietario" nas checagens de papel do FRONTEND (puramente visual, o backend já garante de verdade) — corrigido aqui; os outros lugares (Vale-Troca, Cancelar venda) ainda têm o mesmo gap, ficam pra depois.
+- `pnpm typecheck`/`lint`/`build` 23/23.
+
 ### "Não foi possível abrir o caixa" escondia o motivo real do erro (2026-09-16)
 Achado testando o fix do papel "proprietario" — "Abrir caixa" continuou falhando mesmo depois do fix (esse endpoint nunca teve restrição de papel, então era outra causa). `cash-view.tsx` mostrava uma mensagem genérica fixa pra QUALQUER erro, escondendo mensagens reais como "Já existe uma sessão aberta para o caixa X" ou "Caixa X não encontrado" (`CashRegisterAlreadyOpenError`/`CashRegisterNotFoundError`, ambas com mensagem real já mapeada pelo backend).
 

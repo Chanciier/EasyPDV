@@ -22,6 +22,7 @@ import { RegisterCashMovementUseCase } from "./application/use-cases/register-ca
 import { GetCurrentCashSessionUseCase } from "./application/use-cases/get-current-cash-session.use-case.js";
 import { GetCashSessionUseCase } from "./application/use-cases/get-cash-session.use-case.js";
 import { ListCashMovementsUseCase } from "./application/use-cases/list-cash-movements.use-case.js";
+import { GetOpenSessionForRegisterUseCase } from "./application/use-cases/get-open-session-for-register.use-case.js";
 import { GetTerminalBusyStatusUseCase } from "./application/use-cases/get-terminal-busy-status.use-case.js";
 import { StartSaleUseCase } from "./application/use-cases/start-sale.use-case.js";
 import { AddSaleItemUseCase } from "./application/use-cases/add-sale-item.use-case.js";
@@ -50,6 +51,7 @@ import { AttachCustomerToSaleUseCase } from "./application/use-cases/attach-cust
     GetCurrentCashSessionUseCase,
     GetCashSessionUseCase,
     ListCashMovementsUseCase,
+    GetOpenSessionForRegisterUseCase,
     GetTerminalBusyStatusUseCase,
     StartSaleUseCase,
     AddSaleItemUseCase,

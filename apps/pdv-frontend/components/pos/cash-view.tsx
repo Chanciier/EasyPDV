@@ -9,9 +9,10 @@ import {
   PlusCircle,
   MinusCircle,
 } from 'lucide-react'
-import type { CashMovementType } from '@easypdv/shared-types'
+import type { CashMovementType, UserRole } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
+import { useAuthStore } from '@/lib/auth-store'
 import { useAppUpdateStore } from '@/lib/app-update-store'
 import {
   useCashRegisters,
@@ -20,9 +21,19 @@ import {
   useCloseCashSession,
   useCurrentCashSession,
   useOpenCashSession,
+  useOpenSessionForRegister,
   useRegisterCashMovement,
 } from '@/hooks/use-cash'
 import { Modal } from './ui/modal'
+
+// Mesma restrição de "Cancelar venda"/Vale-Troca — forçar o fechamento do
+// caixa de OUTRO login é uma ação administrativa. "proprietario" incluído
+// de propósito (achado real, 2026-09-16: o papel mais alto que existe não
+// aparecia em nenhuma checagem de papel do sistema, nem aqui nem no
+// backend — RolesGuard corrigido lá, aqui só uma tela a mais que precisa
+// do mesmo cuidado, já que essa checagem é só de exibição, o backend é
+// quem garante de verdade).
+const FORCE_CLOSE_ROLES: UserRole[] = ['administrador', 'gerente', 'proprietario']
 
 const MOV_LABEL: Record<CashMovementType, string> = {
   sangria: 'Sangria',
@@ -38,6 +49,13 @@ export function CashView() {
   const openMutation = useOpenCashSession()
   const closeMutation = useCloseCashSession(cashSession?.id)
   const movementMutation = useRegisterCashMovement(cashSession?.id)
+
+  const user = useAuthStore((s) => s.user)
+  const canForceClose = !!user && FORCE_CLOSE_ROLES.includes(user.role)
+  const registerId = registers?.[0]?.id
+  const { data: stuckSession } = useOpenSessionForRegister(registerId, openMutation.isError && canForceClose)
+  const forceCloseMutation = useCloseCashSession(stuckSession?.id)
+  const [forceCloseAmount, setForceCloseAmount] = useState('')
 
   const [openAmount, setOpenAmount] = useState('')
   const [movType, setMovType] = useState<'suprimento' | 'sangria' | null>(null)
@@ -111,9 +129,24 @@ export function CashView() {
   }
 
   const openCash = () => {
-    const registerId = registers?.[0]?.id
     if (!registerId) return
     openMutation.mutate({ cashRegisterId: registerId, openingAmount: Number(openAmount.replace(',', '.')) || 0 })
+  }
+
+  /**
+   * Força o fechamento do caixa aberto por OUTRO login (achado real,
+   * 2026-09-16) — depois de fechado, tenta abrir de novo automaticamente
+   * com o valor que o operador atual já tinha digitado.
+   */
+  const forceClose = () => {
+    if (!stuckSession) return
+    const closingAmount = Number(forceCloseAmount.replace(',', '.')) || 0
+    forceCloseMutation.mutate(closingAmount, {
+      onSuccess: () => {
+        setForceCloseAmount('')
+        openCash()
+      },
+    })
   }
 
   /**
@@ -173,6 +206,39 @@ export function CashView() {
           >
             {openMutation.isPending ? 'Abrindo...' : 'Abrir caixa'}
           </button>
+
+          {stuckSession && (
+            <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3 text-left">
+              <p className="text-xs text-muted-foreground">
+                Caixa aberto por outro login em {new Date(stuckSession.openedAt).toLocaleString('pt-BR')}, com
+                abertura de {formatBRL(stuckSession.openingAmount)}. Forçar o fechamento encerra essa sessão sem
+                contagem física — use só se tiver certeza do valor.
+              </p>
+              <div className="mt-2 flex gap-2">
+                <input
+                  value={forceCloseAmount}
+                  onChange={(e) => setForceCloseAmount(e.target.value)}
+                  placeholder="Valor contado (R$)"
+                  inputMode="decimal"
+                  className="pos-input flex-1 font-mono"
+                />
+                <button
+                  onClick={forceClose}
+                  disabled={forceCloseMutation.isPending}
+                  className="rounded-lg border border-destructive px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {forceCloseMutation.isPending ? 'Fechando…' : 'Forçar fechamento'}
+                </button>
+              </div>
+              {forceCloseMutation.isError && (
+                <p className="mt-2 text-xs text-destructive">
+                  {forceCloseMutation.error instanceof ApiError
+                    ? forceCloseMutation.error.code
+                    : 'Erro ao forçar fechamento.'}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     )
