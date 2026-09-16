@@ -69,7 +69,12 @@ async function refreshSession(): Promise<AuthTokens | null> {
   const state = useAdminAuthStore.getState()
   const currentRefreshToken = state.tokens?.refreshToken
   const organizationId = state.user?.organizationId
-  if (!currentRefreshToken || !organizationId) return null
+  if (!currentRefreshToken || !organizationId) {
+    // Mesmo raciocínio do api-client.ts (achado M5): sem refreshToken pra
+    // renovar não é "segue autenticado sem precisar renovar", é sessão morta.
+    useAdminAuthStore.getState().clear()
+    return null
+  }
 
   try {
     // organizationId no path só por convenção do controller (OrgAuthController

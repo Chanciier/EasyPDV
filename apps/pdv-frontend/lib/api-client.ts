@@ -70,7 +70,14 @@ let refreshPromise: Promise<AuthTokens | null> | null = null;
 
 async function refreshSession(): Promise<AuthTokens | null> {
   const currentRefreshToken = useAuthStore.getState().tokens?.refreshToken;
-  if (!currentRefreshToken) return null;
+  if (!currentRefreshToken) {
+    // Reload depois do achado M5 (refreshToken não persiste mais em disco):
+    // accessToken expirado + refreshToken vazio não é "sem sessão para
+    // renovar", é sessão morta - sem isso o app fica com isAuthenticated
+    // true (persistido) mas todo request 401 pra sempre, sem cair pro login.
+    useAuthStore.getState().clear();
+    return null;
+  }
 
   try {
     const tokens = await rawRequest<AuthTokens>("/auth/refresh", {
