@@ -952,7 +952,24 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       const existing = await this.fiscalDocumentRepository.findBySaleInOrganization(organizationId, saleId);
       if (existing) {
         await this.fiscalDocumentRepository.update(existing.id, { status: "error", errorMessage: message });
+        return;
       }
+      // Achado real (2026-09-16, venda cmu3dbdpi1tf3mp4saoqtnium): sem isso,
+      // quando `generateNfceFromOrder` falha (ex: Bling recusa por erro de
+      // validação no pedido) ANTES de criar um doc novo — e `reissueRejectedNfce`
+      // já apagou o antigo antes de chamar esta função —, a venda ficava SEM
+      // NENHUM FiscalDocument. Pior que antes da tentativa: nem o "error"
+      // antigo sobrevivia, o motivo real virava um Error solto que morria no
+      // catch acima sem deixar rastro nenhum no banco. `externalId: saleId`
+      // é só um placeholder (nunca chegou a existir rascunho de verdade no
+      // Bling pra referenciar) — mesmo padrão de `recordNonFiscalReceipt`.
+      const created = await this.fiscalDocumentRepository.create({
+        organizationId,
+        provider: PROVIDER,
+        saleId,
+        externalId: saleId,
+      });
+      await this.fiscalDocumentRepository.update(created.id, { status: "error", errorMessage: message });
     }
   }
 

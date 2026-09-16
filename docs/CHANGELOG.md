@@ -1,6 +1,13 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Regressão do "Emitir nova NFC-e": falha na geração apagava o FiscalDocument inteiro (2026-09-16)
+Achado real usando a própria feature em produção, na mesma venda `cmu3dbdpi1tf3mp4saoqtnium` que motivou a feature: Bling recusou `generateNfceFromOrder` com "A NFC-e da venda não pode ser gerada devido a erros de validação" (HTTP 400) — motivo NOVO e diferente do "704 emissão atrasada" original. `reissueRejectedNfce` apaga o `FiscalDocument` antigo ANTES de chamar `ensureFiscalDocument`; como a geração falhou antes de criar um doc novo, e `ensureFiscalDocument` só atualiza um doc que já existe (`if (existing) update(...)`, sem `else`), a venda ficou **sem nenhum registro fiscal** — pior que antes da reemissão, perdeu até o "error" anterior. Botões "Tentar novamente"/"Emitir nova NFC-e" sumiram da tela (dependem de `type: 'nfce'`+`status: 'error'` existir) e "Reimprimir" passou a emitir comprovante não fiscal.
+
+- **Corrigido**: `ensureFiscalDocument` agora cria um `FiscalDocument` novo (status `error`, com o motivo real) quando a falha acontece e não existe nenhum doc pra atualizar — nunca mais fica "sem nada" depois de uma tentativa falha.
+- `pnpm typecheck`/`lint`/`build` 23/23. Só Intermediador — sem instalador novo.
+- **Motivo real do Bling pra essa venda específica ainda não investigado** — "erros de validação" é genérico, precisa checar o pedido de venda 26883671109 direto no Bling pra saber o campo exato.
+
 ### Forçar fechamento de caixa aberto por outro login (2026-09-16)
 Achado real reportado pelo usuário: caixa da loja travado com "Já existe uma sessão aberta para o caixa X" — a sessão tinha sido aberta mais cedo com outro login (`GetCurrentCashSessionUseCase` só enxerga a sessão do PRÓPRIO operador), sem nenhuma forma de ver/fechar pela tela sem logar de volta com a conta antiga.
 
