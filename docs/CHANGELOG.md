@@ -1,6 +1,13 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### NFC-e rejeitada/denegada pela SEFAZ aparecia sem motivo nenhum pro operador (2026-09-16)
+Achado testando de verdade na loja — venda com NFC-e #005111 (`cmu3dbdpi1tf3mp4saoqtnium`) mostrou "Erro na NFC-e" no cupom, mas o `errorMessage` gravado no banco estava vazio.
+
+- **Causa raiz**: `updateFiscalDocumentFromBling` zerava `errorMessage` incondicionalmente a cada atualização de status, mesmo quando o status calculado era `"error"` (situação 4 Rejeitada / 9 Denegada / 11 Bloqueada, ver `mapSituacaoToStatus`) — o único lugar que gravava uma mensagem de verdade era o `catch` da emissão inicial (`ensureFiscalDocument`), não o polling de status (`refreshFiscalStatus`/reenvio manual), que é o caminho mais comum de uma NFC-e virar "error" depois de já ter sido aceita pelo Bling com um número (como aconteceu aqui — `documentNumber` "005111" preenchido, `errorMessage` vazio).
+- **Corrigido**: `BlingApiClient.findNfce` agora lê (de forma defensiva — nomes de campo não confirmados contra a API real) `justificativa`/`mensagem`/`motivo` do Bling quando presentes; `updateFiscalDocumentFromBling` só zera `errorMessage` quando o status NÃO é erro, e em erro usa esse texto livre ou, na ausência dele, uma descrição fixa por código (`situacaoDescription` — 4 Rejeitada, 9 Denegada, 11 Bloqueada), nunca mais fica vazio.
+- `pnpm typecheck`/`lint`/`build` 23/23. Verificação real pendente: clicar "Tentar novamente" na venda `cmu3dbdpi1tf3mp4saoqtnium` depois do deploy pra confirmar que a mensagem aparece.
+
 ### Regressão real: `whatsappConsent` obrigatório quebrou "Adicionar ao clube" em terminal desatualizado (2026-09-14)
 Achado testando de verdade na loja, minutos depois do deploy da Fase 1 do lembrete de renovação — usuário mandou print de "Internal Server Error" tentando cadastrar uma sócia nova.
 

@@ -130,6 +130,28 @@ function mapSituacaoToStatus(situacao: number | null): FiscalDocumentStatusCode 
 }
 
 /**
+ * Descrição fixa por código (achado 2026-09-16: uma NFC-e "Rejeitada"/
+ * "Denegada"/"Bloqueada" virava errorMessage VAZIO pro operador —
+ * `updateFiscalDocumentFromBling` zerava a mensagem incondicionalmente,
+ * mesmo quando o status calculado era "error". `NfceDetails.message` (texto
+ * livre do Bling, quando ele manda) tem prioridade; isso aqui é só o
+ * fallback garantido, pros mesmos códigos documentados em
+ * `mapSituacaoToStatus`.
+ */
+function situacaoDescription(situacao: number | null): string {
+  switch (situacao) {
+    case 4:
+      return "NFC-e rejeitada pela SEFAZ";
+    case 9:
+      return "NFC-e denegada pela SEFAZ (geralmente irregularidade cadastral do CNPJ emissor)";
+    case 11:
+      return "NFC-e bloqueada";
+    default:
+      return `NFC-e com situação ${situacao ?? "desconhecida"} — sem detalhe adicional do Bling`;
+  }
+}
+
+/**
  * Implementa a mesma SyncTargetPort do NoopSyncTargetAdapter (Sprint 6) —
  * substituição transparente, sem tocar no SyncProcessor nem nos use-cases.
  * Só sabe processar entityType="sale" por enquanto. Além de criar o pedido de
@@ -909,6 +931,7 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       chaveAcesso: string | null;
       linkDanfe: string | null;
       qrCodeUrl: string | null;
+      message: string | null;
     },
   ): Promise<void> {
     const status = mapSituacaoToStatus(details.situacao);
@@ -919,7 +942,13 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       accessKey: details.chaveAcesso,
       danfeUrl: details.linkDanfe,
       qrCodeUrl: details.qrCodeUrl,
-      errorMessage: null,
+      // Achado real (2026-09-16, venda cmu3dbdpi1tf3mp4saoqtnium, NFC-e
+      // #005111): isso aqui SEMPRE zerava a mensagem, mesmo quando o status
+      // calculado era "error" — uma NFC-e rejeitada/denegada pela SEFAZ
+      // aparecia pro operador sem NENHUM motivo, só "Erro na NFC-e". Só limpa
+      // quando o status não é de erro; em erro, usa o texto livre do Bling
+      // (`details.message`) se ele mandar, senão a descrição fixa do código.
+      errorMessage: status === "error" ? (details.message ?? situacaoDescription(details.situacao)) : null,
       // Só grava issuedAt na transição pra "issued" — não sobrescreve um
       // valor já setado numa consulta anterior com null caso a situação
       // volte a ler algo diferente de autorizada/emitida numa nova poll.

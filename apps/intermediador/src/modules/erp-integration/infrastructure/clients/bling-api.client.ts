@@ -138,6 +138,8 @@ export interface NfceDetails {
   chaveAcesso: string | null;
   linkDanfe: string | null;
   qrCodeUrl: string | null;
+  /** Motivo/justificativa em texto livre, quando o Bling manda (rejeição/denegação da SEFAZ) — ver findNfce. */
+  message: string | null;
 }
 
 interface BlingListEnvelope<T> {
@@ -464,7 +466,22 @@ export class BlingApiClient {
    */
   async findNfce(accessToken: string, nfceId: number): Promise<NfceDetails> {
     const result = await this.request<
-      BlingItemEnvelope<{ situacao?: number; numero?: string; chaveAcesso?: string; linkDanfe?: string; xml?: string }>
+      BlingItemEnvelope<{
+        situacao?: number;
+        numero?: string;
+        chaveAcesso?: string;
+        linkDanfe?: string;
+        xml?: string;
+        // Nomes exatos não confirmados contra a API real (achado 2026-09-16:
+        // sem NENHUM desses, uma NFC-e "Rejeitada"/"Denegada" virava
+        // errorMessage vazio pro operador — só o código numérico de
+        // `situacao`, sem dizer o motivo). Lidos de forma defensiva — se o
+        // Bling não mandar nenhum, `NfceDetails.message` cai pra null e quem
+        // chama usa a descrição fixa do código (ver situacaoDescription).
+        justificativa?: string;
+        mensagem?: string;
+        motivo?: string;
+      }>
     >(accessToken, "GET", `/nfce/${nfceId}`);
     return {
       situacao: result.data?.situacao ?? null,
@@ -472,6 +489,7 @@ export class BlingApiClient {
       chaveAcesso: result.data?.chaveAcesso ?? null,
       linkDanfe: result.data?.linkDanfe ?? null,
       qrCodeUrl: await this.fetchQrCodeUrl(result.data?.xml),
+      message: result.data?.justificativa ?? result.data?.mensagem ?? result.data?.motivo ?? null,
     };
   }
 
