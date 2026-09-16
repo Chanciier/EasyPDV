@@ -5,6 +5,7 @@ import {
   STORE_IDENTITY_REPOSITORY,
   type StoreIdentityRepositoryPort,
 } from "../../../provisioning/application/ports/store-identity-repository.port.js";
+import { throwDescriptiveHttpError } from "../../../../common/describe-http-error.js";
 import type { FiscalGatewayPort } from "../../application/ports/fiscal-gateway.port.js";
 
 /** Mesmo padrão de HttpSyncGateway (Sprint 6/10) — apiKey de terminal lida do StoreIdentity local a cada chamada. */
@@ -32,7 +33,7 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
       return null;
     }
     if (!response.ok) {
-      throw new Error(`Intermediador respondeu ${response.status} para GET /fiscal/sale/${saleId}`);
+      await throwDescriptiveHttpError(response, `GET /fiscal/sale/${saleId}`);
     }
     return (await response.json()) as FiscalStatusPayload;
   }
@@ -48,8 +49,7 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
       headers: { "X-Terminal-Api-Key": identity.apiKey },
     });
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`Intermediador respondeu ${response.status} para POST /fiscal/sale/${saleId}/issue: ${body}`);
+      await throwDescriptiveHttpError(response, `POST /fiscal/sale/${saleId}/issue`);
     }
     return (await response.json()) as FiscalStatusPayload;
   }
@@ -65,8 +65,23 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
       headers: { "X-Terminal-Api-Key": identity.apiKey },
     });
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`Intermediador respondeu ${response.status} para POST /fiscal/sale/${saleId}/retry: ${body}`);
+      await throwDescriptiveHttpError(response, `POST /fiscal/sale/${saleId}/retry`);
+    }
+    return (await response.json()) as FiscalStatusPayload;
+  }
+
+  async reissueManually(saleId: string): Promise<FiscalStatusPayload | null> {
+    const identity = await this.storeIdentityRepository.find();
+    if (!identity) {
+      return null;
+    }
+
+    const response = await fetch(`${this.baseUrl}/fiscal/sale/${encodeURIComponent(saleId)}/reissue`, {
+      method: "POST",
+      headers: { "X-Terminal-Api-Key": identity.apiKey },
+    });
+    if (!response.ok) {
+      await throwDescriptiveHttpError(response, `POST /fiscal/sale/${saleId}/reissue`);
     }
     return (await response.json()) as FiscalStatusPayload;
   }

@@ -267,6 +267,28 @@ export function useRetryFiscalReceipt() {
   })
 }
 
+/**
+ * Reemissão manual de NFC-e "error" (Histórico, 2026-09-16) — pra quando
+ * "Tentar novamente" (useRetryFiscalReceipt) não resolve: aquele reenvia o
+ * MESMO rascunho já gerado no Bling, sem tocar em `dhEmi`, então uma rejeição
+ * por código 704 "Data-Hora de emissão atrasada" nunca se recupera sozinha —
+ * cada reenvio só aumenta o atraso (confirmado contra dado real de produção,
+ * venda cmu3dbdpi1tf3mp4saoqtnium). Este botão descarta o rascunho rejeitado
+ * e gera um novo, com `dhEmi` fresco — fiscalmente correto, uma NFC-e nunca
+ * autorizada pela SEFAZ não "existiu" pra fins fiscais, o número só fica
+ * pulado.
+ */
+export function useReissueFiscalReceipt() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (saleId: string) =>
+      apiRequest<FiscalDocument | null>(`/sales/${saleId}/fiscal/reissue`, { method: 'POST' }),
+    onSuccess: (doc, saleId) => {
+      queryClient.setQueryData(['fiscal-status', saleId], doc)
+    },
+  })
+}
+
 export function useCancelSale() {
   const queryClient = useQueryClient()
   return useMutation({

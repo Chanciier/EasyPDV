@@ -784,6 +784,62 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
   }
 
   /**
+   * Descarta uma NFC-e "error" e emite uma NOVA (rascunho novo no Bling,
+   * `dhEmi` fresco) sobre o MESMO pedido de venda — ao contrário de
+   * `resendNfce`/`retryFiscalDocumentManually`, que reenvia o rascunho já
+   * existente sem tocar em `dhEmi`.
+   *
+   * Achado real (2026-09-16, venda cmu3dbdpi1tf3mp4saoqtnium, NFC-e #005111,
+   * rejeição "704 - Data-Hora de emissão atrasada"): confirmado direto contra
+   * a API do Bling que `dhEmi` fica CONGELADO no momento em que
+   * `generateNfceFromOrder` criou o rascunho — `sendNfce`/reenvio manual
+   * NUNCA atualiza esse campo. Pra um documento rejeitado por atraso de
+   * emissão, isso significa que **todo reenvio piora o problema** (o gap
+   * entre `dhEmi` congelado e "agora" só cresce) — `retryFiscalDocumentManually`
+   * está estruturalmente incapaz de recuperar esse caso, não importa quantas
+   * vezes o operador clique em "Tentar novamente". A nota #005111 ficou
+   * rejeitada com o MESMO `dhEmi` mesmo depois de um reenvio manual de
+   * verdade, confirmando isso na prática (não só na teoria).
+   *
+   * Não conflita com o achado de 02/09/2026 no docblock de `resendNfce`
+   * (rejeições da época pareciam instabilidade pontual da SEFAZ, sem relação
+   * com atraso do nosso pipeline) — aquele investigou a causa da PRIMEIRA
+   * rejeição; este resolve como RECUPERAR de qualquer rejeição já
+   * acontecida, incluindo as que o simples reenvio não resolve.
+   *
+   * Fiscalmente correto abandonar o rascunho antigo sem cancelamento: uma
+   * NFC-e rejeitada nunca foi autorizada pela SEFAZ, então nunca "existiu"
+   * pra fins fiscais — o número fica simplesmente pulado, prática normal no
+   * Brasil (cancelamento formal só se aplica a nota JÁ autorizada).
+   */
+  async reissueRejectedNfce(organizationId: string, saleId: string): Promise<FiscalDocument> {
+    const integration = await this.erpIntegrationRepository.findByOrganization(organizationId, PROVIDER);
+    if (!integration) {
+      throw new ErpIntegrationNotFoundError(organizationId);
+    }
+
+    const mapping = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "sale", saleId);
+    if (!mapping) {
+      throw new SaleNotSyncedError(saleId);
+    }
+
+    const existing = await this.fiscalDocumentRepository.findBySaleInOrganization(organizationId, saleId);
+    if (!existing || existing.type !== "nfce" || existing.status !== "error") {
+      throw new Error(`Venda ${saleId} não tem NFC-e rejeitada pra reemitir`);
+    }
+    await this.fiscalDocumentRepository.delete(existing.id);
+
+    const accessToken = await this.tokenProvider.getValidAccessToken(integration);
+    await this.ensureFiscalDocument(accessToken, organizationId, saleId, mapping.externalId);
+
+    const doc = await this.fiscalDocumentRepository.findBySaleInOrganization(organizationId, saleId);
+    if (!doc) {
+      throw new Error(`ensureFiscalDocument não criou um FiscalDocument pra venda ${saleId} (reemissão)`);
+    }
+    return doc;
+  }
+
+  /**
    * Reenvia uma NFC-e que ficou "error" (ex: rejeição transitória da SEFAZ,
    * tipo "704 - Data-Hora de emissão atrasada" — investigado contra dados
    * reais de produção em 02/09/2026: 3 rejeições numa janela de ~3h30,

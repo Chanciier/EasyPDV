@@ -3,6 +3,7 @@ import { JwtAuthGuard } from "../../../identity/infrastructure/guards/jwt-auth.g
 import { GetFiscalStatusUseCase } from "../../application/use-cases/get-fiscal-status.use-case.js";
 import { IssueFiscalReceiptManuallyUseCase } from "../../application/use-cases/issue-fiscal-receipt-manually.use-case.js";
 import { RetryFiscalDocumentUseCase } from "../../application/use-cases/retry-fiscal-document.use-case.js";
+import { ReissueFiscalDocumentUseCase } from "../../application/use-cases/reissue-fiscal-document.use-case.js";
 
 @Controller("sales/:saleId/fiscal")
 @UseGuards(JwtAuthGuard)
@@ -11,6 +12,7 @@ export class FiscalController {
     private readonly getFiscalStatusUseCase: GetFiscalStatusUseCase,
     private readonly issueFiscalReceiptManuallyUseCase: IssueFiscalReceiptManuallyUseCase,
     private readonly retryFiscalDocumentUseCase: RetryFiscalDocumentUseCase,
+    private readonly reissueFiscalDocumentUseCase: ReissueFiscalDocumentUseCase,
   ) {}
 
   @Get()
@@ -26,5 +28,10 @@ export class FiscalController {
   @Post("retry")
   retry(@Param("saleId") saleId: string) {
     return this.retryFiscalDocumentUseCase.execute(saleId);
+  }
+
+  @Post("reissue")
+  reissue(@Param("saleId") saleId: string) {
+    return this.reissueFiscalDocumentUseCase.execute(saleId);
   }
 }

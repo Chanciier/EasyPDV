@@ -12,6 +12,8 @@ export interface FiscalGatewayPort {
   issueManually(saleId: string): Promise<FiscalStatusPayload | null>;
   /** Reenvio manual de NFC-e "error" (botão "Tentar novamente" no Histórico). Mesma semântica de erro/`null` de issueManually. */
   retryManually(saleId: string): Promise<FiscalStatusPayload | null>;
+  /** Descarta uma NFC-e "error" e emite uma nova, com `dhEmi` fresco (botão "Emitir nova NFC-e" no Histórico — recupera casos que `retryManually` não consegue, ex: rejeição "704 - emissão atrasada"). Mesma semântica de erro/`null` de issueManually. */
+  reissueManually(saleId: string): Promise<FiscalStatusPayload | null>;
 }
 
 export const FISCAL_GATEWAY = Symbol("FISCAL_GATEWAY");

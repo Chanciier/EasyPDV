@@ -23,6 +23,7 @@ import { GetBlingConnectionStatusUseCase } from "./application/use-cases/get-bli
 import { GetFiscalStatusUseCase } from "./application/use-cases/get-fiscal-status.use-case.js";
 import { IssueFiscalReceiptManuallyUseCase } from "./application/use-cases/issue-fiscal-receipt-manually.use-case.js";
 import { RetryFiscalDocumentUseCase } from "./application/use-cases/retry-fiscal-document.use-case.js";
+import { ReissueFiscalDocumentUseCase } from "./application/use-cases/reissue-fiscal-document.use-case.js";
 import { RetryFailedFiscalDocumentsUseCase } from "./application/use-cases/retry-failed-fiscal-documents.use-case.js";
 import { ListBlingProductsUseCase } from "./application/use-cases/list-bling-products.use-case.js";
 
@@ -46,6 +47,7 @@ import { ListBlingProductsUseCase } from "./application/use-cases/list-bling-pro
     GetFiscalStatusUseCase,
     IssueFiscalReceiptManuallyUseCase,
     RetryFiscalDocumentUseCase,
+    ReissueFiscalDocumentUseCase,
     RetryFailedFiscalDocumentsUseCase,
     FiscalRetryWorker,
     ListBlingProductsUseCase,

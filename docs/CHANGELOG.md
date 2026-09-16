@@ -1,6 +1,15 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### "Emitir nova NFC-e" — recupera nota rejeitada por emissão atrasada, que "Tentar novamente" nunca resolve (2026-09-16)
+Investigando a NFC-e #005111 (venda `cmu3dbdpi1tf3mp4saoqtnium`) depois do fix do `errorMessage`: o Bling mostrou "704 - Rejeição: NFC-e com Data-Hora de emissão atrasada" no próprio painel (motivo que a API do Bling não expõe — confirmado batendo direto no `GET /nfce/{id}` e no XML linkado, nenhum dos dois carrega o motivo).
+
+- **Causa raiz confirmada contra dado real**: `retryFiscalDocumentManually`/`resendNfce` reenvia o MESMO rascunho já gerado no Bling (`POST /nfce/{id}/enviar`), sem nunca tocar em `dhEmi` (fica congelado no momento em que o rascunho foi criado). Pra uma nota rejeitada por atraso de emissão, isso significa que **todo reenvio piora o problema** — confirmado batendo na API do Bling antes/depois de um reenvio manual de verdade: `dhEmi` idêntico, situação idêntica (4/Rejeitada). O botão "Tentar novamente" é estruturalmente incapaz de recuperar esse caso.
+- **Novo endpoint `POST /fiscal/sale/:saleId/reissue`** (Intermediador, `ReissueFiscalDocumentUseCase`/`BlingSyncTargetAdapter.reissueRejectedNfce`) — descarta o `FiscalDocument` rejeitado e gera um rascunho NOVO no Bling (mesmo pedido de venda, `dhEmi` fresco). Fiscalmente correto: uma NFC-e rejeitada nunca foi autorizada pela SEFAZ, então nunca "existiu" pra fins fiscais — o número simplesmente fica pulado, sem precisar de cancelamento formal.
+- Espelhado em pdv-backend (`FiscalGatewayPort.reissueManually`, `POST /sales/:saleId/fiscal/reissue`) e pdv-frontend (botão "Emitir nova NFC-e" no Histórico, ao lado de "Tentar novamente", quando a NFC-e está em erro). De passagem, `HttpFiscalGateway` (pdv-backend) alinhado ao `throwDescriptiveHttpError` — ainda usava `throw new Error(...)` puro nos 3 métodos existentes.
+- Não substitui o achado de 02/09/2026 (rejeições daquela época pareciam instabilidade pontual da SEFAZ, sem correlação com o nosso pipeline) — aquele investigou a causa da PRIMEIRA rejeição; este resolve como recuperar de QUALQUER rejeição já acontecida, incluindo as que o simples reenvio não resolve.
+- `pnpm typecheck`/`lint`/`build` 23/23. **A ponta pdv-backend/pdv-frontend (botão no Histórico) só chega na loja com um instalador novo** — o endpoint do Intermediador já fica disponível assim que este commit for implantado.
+
 ### NFC-e rejeitada/denegada pela SEFAZ aparecia sem motivo nenhum pro operador (2026-09-16)
 Achado testando de verdade na loja — venda com NFC-e #005111 (`cmu3dbdpi1tf3mp4saoqtnium`) mostrou "Erro na NFC-e" no cupom, mas o `errorMessage` gravado no banco estava vazio.
 

@@ -7,7 +7,7 @@ import { formatCpf } from '@easypdv/shared-validation'
 import { formatBRL, normalize } from '@/lib/pos-data'
 import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/lib/auth-store'
-import { useFiscalStatus, useIssueFiscalReceipt, useProducts, useRetryFiscalReceipt, useSalesList, useVoidSale } from '@/hooks/use-sales'
+import { useFiscalStatus, useIssueFiscalReceipt, useProducts, useReissueFiscalReceipt, useRetryFiscalReceipt, useSalesList, useVoidSale } from '@/hooks/use-sales'
 import { useDashboardReport } from '@/hooks/use-reports'
 import { useCustomer } from '@/hooks/use-customers'
 import { usePrintReceipt } from '@/hooks/use-hardware'
@@ -112,6 +112,7 @@ export function HistoryView() {
   const [voidError, setVoidError] = useState<string | null>(null)
   const issueFiscalReceipt = useIssueFiscalReceipt()
   const retryFiscalReceipt = useRetryFiscalReceipt()
+  const reissueFiscalReceipt = useReissueFiscalReceipt()
   const setPendingFiscalPrint = useFiscalPrintStore((s) => s.setPending)
   // pollWhilePending: emitir manualmente (handleIssueFiscal abaixo) deixa o
   // status "pending" por alguns segundos (SEFAZ é assíncrono) até virar
@@ -207,6 +208,17 @@ export function HistoryView() {
     if (!detail) return
     setPendingFiscalPrint({ saleId: detail.id, basePayload: buildPrintBasePayload(detail) })
     retryFiscalReceipt.mutate(detail.id)
+  }
+
+  /**
+   * Reemissão (2026-09-16) — pra quando "Tentar novamente" não resolve (ex:
+   * rejeição por emissão atrasada, que só piora a cada reenvio). Ver
+   * docblock de useReissueFiscalReceipt.
+   */
+  function handleReissueFiscal() {
+    if (!detail) return
+    setPendingFiscalPrint({ saleId: detail.id, basePayload: buildPrintBasePayload(detail) })
+    reissueFiscalReceipt.mutate(detail.id)
   }
 
   const filtered = useMemo(() => {
@@ -364,11 +376,21 @@ export function HistoryView() {
               {detailFiscal?.type === 'nfce' && detailFiscal?.status === 'error' && (
                 <button
                   onClick={handleRetryFiscal}
-                  disabled={retryFiscalReceipt.isPending}
+                  disabled={retryFiscalReceipt.isPending || reissueFiscalReceipt.isPending}
                   title="Reenvia a NFC-e rejeitada pra SEFAZ"
                   className="rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {retryFiscalReceipt.isPending ? 'Reenviando…' : 'Tentar novamente'}
+                </button>
+              )}
+              {detailFiscal?.type === 'nfce' && detailFiscal?.status === 'error' && (
+                <button
+                  onClick={handleReissueFiscal}
+                  disabled={retryFiscalReceipt.isPending || reissueFiscalReceipt.isPending}
+                  title="Descarta essa NFC-e e emite uma nova, com data de emissão atual — use se 'Tentar novamente' continuar rejeitando"
+                  className="rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {reissueFiscalReceipt.isPending ? 'Emitindo…' : 'Emitir nova NFC-e'}
                 </button>
               )}
               {detailFiscal?.status === 'issued' && (
@@ -414,6 +436,13 @@ export function HistoryView() {
                 {retryFiscalReceipt.error instanceof ApiError
                   ? retryFiscalReceipt.error.code
                   : 'Erro ao reenviar NFC-e. Tente de novo em alguns instantes.'}
+              </div>
+            )}
+            {reissueFiscalReceipt.isError && (
+              <div className="rounded-lg bg-destructive/10 px-3 py-2 font-sans text-xs text-destructive">
+                {reissueFiscalReceipt.error instanceof ApiError
+                  ? reissueFiscalReceipt.error.code
+                  : 'Erro ao emitir nova NFC-e. Tente de novo em alguns instantes.'}
               </div>
             )}
             <div className="border-t border-dashed border-border" />

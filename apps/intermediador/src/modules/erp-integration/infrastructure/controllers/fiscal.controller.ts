@@ -7,6 +7,7 @@ import {
 import { GetFiscalStatusUseCase } from "../../application/use-cases/get-fiscal-status.use-case.js";
 import { IssueFiscalReceiptManuallyUseCase } from "../../application/use-cases/issue-fiscal-receipt-manually.use-case.js";
 import { RetryFiscalDocumentUseCase } from "../../application/use-cases/retry-fiscal-document.use-case.js";
+import { ReissueFiscalDocumentUseCase } from "../../application/use-cases/reissue-fiscal-document.use-case.js";
 
 /**
  * Chamado pelo PDV local (não um dashboard de admin, por isso guardado
@@ -26,6 +27,7 @@ export class FiscalController {
     private readonly getFiscalStatusUseCase: GetFiscalStatusUseCase,
     private readonly issueFiscalReceiptManuallyUseCase: IssueFiscalReceiptManuallyUseCase,
     private readonly retryFiscalDocumentUseCase: RetryFiscalDocumentUseCase,
+    private readonly reissueFiscalDocumentUseCase: ReissueFiscalDocumentUseCase,
   ) {}
 
   @Get("sale/:saleId")
@@ -41,5 +43,10 @@ export class FiscalController {
   @Post("sale/:saleId/retry")
   retry(@Param("saleId") saleId: string, @CurrentTerminal() terminal: AuthenticatedTerminal) {
     return this.retryFiscalDocumentUseCase.execute(terminal.organizationId, saleId);
+  }
+
+  @Post("sale/:saleId/reissue")
+  reissue(@Param("saleId") saleId: string, @CurrentTerminal() terminal: AuthenticatedTerminal) {
+    return this.reissueFiscalDocumentUseCase.execute(terminal.organizationId, saleId);
   }
 }

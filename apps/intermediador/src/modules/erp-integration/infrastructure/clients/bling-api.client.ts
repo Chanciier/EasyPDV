@@ -472,12 +472,19 @@ export class BlingApiClient {
         chaveAcesso?: string;
         linkDanfe?: string;
         xml?: string;
-        // Nomes exatos não confirmados contra a API real (achado 2026-09-16:
-        // sem NENHUM desses, uma NFC-e "Rejeitada"/"Denegada" virava
-        // errorMessage vazio pro operador — só o código numérico de
-        // `situacao`, sem dizer o motivo). Lidos de forma defensiva — se o
-        // Bling não mandar nenhum, `NfceDetails.message` cai pra null e quem
-        // chama usa a descrição fixa do código (ver situacaoDescription).
+        // Checado contra a resposta real do GET /nfce/{id} pra uma NFC-e
+        // "Rejeitada" (2026-09-16, venda cmu3dbdpi1tf3mp4saoqtnium): NENHUM
+        // desses três campos existe — o payload real tem só o que já tá
+        // tipado acima (situacao/numero/chaveAcesso/xml/...), sem NENHUM
+        // texto de motivo. O `<protNFe>`/`<xMotivo>` do protocolo SEFAZ
+        // também não vem no `xml` linkado (esse XML é só o NFe emitido,
+        // sem protocolo — rejeição acontece ANTES da SEFAZ atribuir um
+        // protocolo pra embutir). Ou seja: **o Bling não expõe o motivo da
+        // rejeição/denegação por nenhum endpoint público da API v3** — só
+        // aparece no dashboard web do Bling (login manual). Mantidos aqui,
+        // sem custo, só pro caso de uma conta/plano diferente mandar algo;
+        // `NfceDetails.message` cai pra null na prática e quem chama usa a
+        // descrição fixa do código (ver situacaoDescription).
         justificativa?: string;
         mensagem?: string;
         motivo?: string;
