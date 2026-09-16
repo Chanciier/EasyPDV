@@ -39,9 +39,34 @@ export const redeemStoreCreditSchema = z.object({
   saleReference: z.string().optional(),
 });
 
+/**
+ * Ajuste manual de saldo (2026-09-16, pedido do usuário: "alterar o valor de
+ * vale troca na conta do cliente" direto pela tela Clientes) — diferente de
+ * `grant` (troca de mercadoria, itemizada) e `redeem` (débito numa venda):
+ * aqui é uma correção administrativa solta, sem item nem venda por trás.
+ * `amount` é relativo (positivo soma, negativo subtrai) — decisão do
+ * usuário, mantém o ledger como um lançamento a mais em vez de reconciliar
+ * um "novo saldo" contra o valor no exato instante do save. `reason`
+ * obrigatório (mesma decisão do usuário) — é crédito sendo criado/removido
+ * fora do fluxo normal, precisa de rastro pra auditoria.
+ */
+export const adjustStoreCreditSchema = z.object({
+  document: z.string().refine(isValidCpf, { message: "CPF inválido" }),
+  amount: z.number().refine((v) => v !== 0, { message: "Valor não pode ser zero" }),
+  reason: z.string().min(1, "Informe o motivo"),
+  // Nunca vem do operador/frontend — pdv-backend sobrescreve sempre com
+  // user.userId (JWT) antes de repassar ao Intermediador, mesmo padrão de
+  // não confiar em client pra dado sensível (ver docblock de
+  // AdjustStoreCreditUseCase, Intermediador). Só existe aqui porque Zod
+  // descarta campo não declarado no schema por padrão — sem isso o
+  // Intermediador nunca veria o valor, mesmo vindo certo no corpo.
+  actorUserId: z.string().nullable().optional(),
+});
+
 export type GrantStoreCreditItemInput = z.infer<typeof grantStoreCreditItemSchema>;
 export type GrantStoreCreditInput = z.infer<typeof grantStoreCreditSchema>;
 export type RedeemStoreCreditInput = z.infer<typeof redeemStoreCreditSchema>;
+export type AdjustStoreCreditInput = z.infer<typeof adjustStoreCreditSchema>;
 
 /**
  * Variante LOCAL (Fase 2, pdv-backend) — distinta de `grantStoreCreditSchema`

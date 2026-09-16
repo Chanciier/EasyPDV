@@ -7,6 +7,7 @@ import { STORE_CREDIT_REPOSITORY } from "./application/ports/store-credit-reposi
 import { GetStoreCreditBalanceUseCase } from "./application/use-cases/get-store-credit-balance.use-case.js";
 import { GrantStoreCreditUseCase } from "./application/use-cases/grant-store-credit.use-case.js";
 import { RedeemStoreCreditUseCase } from "./application/use-cases/redeem-store-credit.use-case.js";
+import { AdjustStoreCreditUseCase } from "./application/use-cases/adjust-store-credit.use-case.js";
 
 @Module({
   imports: [OrganizationsModule],
@@ -20,6 +21,7 @@ import { RedeemStoreCreditUseCase } from "./application/use-cases/redeem-store-c
     GetStoreCreditBalanceUseCase,
     GrantStoreCreditUseCase,
     RedeemStoreCreditUseCase,
+    AdjustStoreCreditUseCase,
     { provide: STORE_CREDIT_REPOSITORY, useClass: PrismaStoreCreditRepository },
   ],
 })

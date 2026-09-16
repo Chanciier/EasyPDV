@@ -35,6 +35,17 @@ export interface RedeemStoreCreditData {
   saleReference: string | null;
 }
 
+export interface AdjustStoreCreditData {
+  organizationId: string;
+  customerCpf: string;
+  /** Relativo — positivo soma, negativo subtrai. Nunca zero (validado no schema/use case). */
+  amount: number;
+  reason: string;
+  actorUserId: string | null;
+  storeId: string | null;
+  terminalId: string | null;
+}
+
 /**
  * Porta do saldo de Vale-Troca — projeção (`StoreCreditBalance`) + ledger de
  * auditoria (`StoreCreditGrant`/`StoreCreditRedemption`), mesmo espírito de
@@ -56,6 +67,15 @@ export interface StoreCreditRepositoryPort {
    * fica na camada de aplicação.
    */
   redeem(data: RedeemStoreCreditData): Promise<{ balance: number } | null>;
+
+  /**
+   * Ajuste manual (tela Clientes, 2026-09-16) — cria o registro de auditoria
+   * (`StoreCreditAdjustment`) + atualiza a projeção, tudo numa transação.
+   * `amount` positivo soma sem restrição; negativo usa o MESMO decremento
+   * atômico condicional de `redeem` (nunca deixa saldo negativo) — retorna
+   * `null` nesse caso quando insuficiente, mesma semântica de `redeem`.
+   */
+  adjust(data: AdjustStoreCreditData): Promise<{ balance: number } | null>;
 }
 
 export const STORE_CREDIT_REPOSITORY = Symbol("STORE_CREDIT_REPOSITORY");

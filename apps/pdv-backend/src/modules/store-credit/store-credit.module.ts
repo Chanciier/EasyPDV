@@ -11,6 +11,7 @@ import { STORE_CREDIT_GATEWAY } from "./application/ports/store-credit-gateway.p
 import { FindStoreCreditCustomerUseCase } from "./application/use-cases/find-store-credit-customer.use-case.js";
 import { GrantStoreCreditUseCase } from "./application/use-cases/grant-store-credit.use-case.js";
 import { GetStoreCreditBalanceUseCase } from "./application/use-cases/get-store-credit-balance.use-case.js";
+import { AdjustStoreCreditUseCase } from "./application/use-cases/adjust-store-credit.use-case.js";
 
 /**
  * NÃO importa ProvisioningModule — mesmo motivo documentado em ClubModule
@@ -50,6 +51,7 @@ import { GetStoreCreditBalanceUseCase } from "./application/use-cases/get-store-
     FindStoreCreditCustomerUseCase,
     GrantStoreCreditUseCase,
     GetStoreCreditBalanceUseCase,
+    AdjustStoreCreditUseCase,
   ],
   exports: [STORE_CREDIT_GATEWAY],
 })

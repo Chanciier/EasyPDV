@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
 import type {
+  AdjustStoreCreditData,
   CreateStoreCreditGrantData,
   RedeemStoreCreditData,
   StoreCreditGrantResult,
@@ -120,6 +121,56 @@ export class PrismaStoreCreditRepository implements StoreCreditRepositoryPort {
           storeId: data.storeId,
           terminalId: data.terminalId,
           saleReference: data.saleReference,
+        },
+      });
+
+      const balanceRecord = await tx.storeCreditBalance.findUniqueOrThrow({
+        where: { organizationId_customerCpf: { organizationId: data.organizationId, customerCpf: data.customerCpf } },
+      });
+      return { balance: balanceRecord.balance };
+    });
+  }
+
+  /**
+   * `amount` relativo, positivo ou negativo — um único caminho pros dois
+   * sinais em vez de duplicar a lógica de `grant`/`redeem`: a guarda
+   * `balance + amount >= 0` do UPDATE é sempre satisfeita quando `amount`
+   * é positivo (o saldo nunca é negativo por invariante), e vira exatamente
+   * o mesmo floor-em-zero de `redeem` quando `amount` é negativo. Upsert
+   * primeiro (garante a linha existir) igual a `grant` — cobre o caso de
+   * CPF sem nenhum lançamento ainda ganhar uma soma manual como primeiro
+   * registro. Mesmo arredondamento explícito dentro do UPDATE que `redeem`
+   * já documenta (bug real de ponto flutuante, 2026-09-10).
+   */
+  async adjust(data: AdjustStoreCreditData): Promise<{ balance: number } | null> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.storeCreditBalance.upsert({
+        where: { organizationId_customerCpf: { organizationId: data.organizationId, customerCpf: data.customerCpf } },
+        create: { organizationId: data.organizationId, customerCpf: data.customerCpf, balance: 0 },
+        update: {},
+      });
+
+      const affected = await tx.$executeRaw`
+        UPDATE "StoreCreditBalance"
+        SET balance = ROUND((balance + ${data.amount}::float8)::numeric, 2)::float8,
+            "updatedAt" = now()
+        WHERE "organizationId" = ${data.organizationId}
+          AND "customerCpf" = ${data.customerCpf}
+          AND balance + ${data.amount}::float8 >= 0
+      `;
+      if (affected === 0) {
+        return null;
+      }
+
+      await tx.storeCreditAdjustment.create({
+        data: {
+          organizationId: data.organizationId,
+          customerCpf: data.customerCpf,
+          amount: data.amount,
+          reason: data.reason,
+          actorUserId: data.actorUserId,
+          storeId: data.storeId,
+          terminalId: data.terminalId,
         },
       });
 

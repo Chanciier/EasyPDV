@@ -33,6 +33,7 @@ model Organization {
   storeCreditBalances    StoreCreditBalance[]
   storeCreditGrants      StoreCreditGrant[]
   storeCreditRedemptions StoreCreditRedemption[]
+  storeCreditAdjustments StoreCreditAdjustment[]
   customers              Customer[]
   clubReminderLogs       ClubReminderLog[]
 }
@@ -359,6 +360,29 @@ model StoreCreditRedemption {
   storeId        String?
   terminalId     String?
   saleReference  String?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, customerCpf])
+}
+
+// Ajuste manual (2026-09-16, tela Clientes) — correção administrativa solta,
+// sem item de troca nem venda por trás (diferente de StoreCreditGrant/
+// StoreCreditRedemption). `amount` relativo: positivo soma, negativo
+// subtrai — decisão do usuário, mantém o ledger como lançamento a mais em
+// vez de reconciliar um "novo saldo" contra o valor no instante do save.
+// `reason` obrigatório (mesma decisão) e `actorUserId` sem FK (User vive no
+// SQLite de cada terminal, sem tabela própria aqui) — só auditoria/rastro de
+// quem fez, mesmo padrão de `saleReference` em StoreCreditRedemption.
+model StoreCreditAdjustment {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  customerCpf    String
+  amount         Float
+  reason         String
+  actorUserId    String?
+  storeId        String?
+  terminalId     String?
   createdAt      DateTime     @default(now())
 
   @@index([organizationId, customerCpf])

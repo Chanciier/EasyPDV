@@ -1,6 +1,15 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Ajuste manual de Vale-Troca na tela Clientes (2026-09-16)
+Pedido do usuário: "alterar o valor de vale troca na conta do cliente" direto pela tela Clientes, sem precisar passar pela aba Vale-Troca (itemizada, pensada pra troca de mercadoria de verdade).
+
+- **Novo `StoreCreditAdjustment`** (Intermediador, migration `20260916172756_store_credit_adjustment`) — ledger de correção administrativa solta, paralelo a `StoreCreditGrant`/`StoreCreditRedemption`. `amount` relativo (positivo soma, negativo subtrai — decisão do usuário, evita reconciliar contra um "novo saldo" digitado) e `reason` sempre obrigatório (é crédito sendo criado/removido fora do fluxo normal, precisa de rastro).
+- **`POST /store-credit/adjustments`** (Intermediador, `TerminalApiKeyGuard`) — decremento atômico condicional único cobrindo os dois sinais (`balance + amount >= 0`, sempre satisfeito quando `amount` é positivo, vira o mesmo floor-em-zero de `redeem` quando negativo), mesmo arredondamento explícito dentro do `UPDATE` que `redeem` já documenta (bug real de ponto flutuante, 2026-09-10).
+- **Restrito a administrador/gerente** (decisão do usuário, mesmo padrão de "Cancelar venda") — `StoreCreditController` (pdv-backend) ganhou `RolesGuard`/`@Roles` só nesta rota; as rotas de sempre continuam abertas a qualquer operador. Testado ponta a ponta local (Docker Postgres + Redis, boot real dos 3 apps): saldo visível pra qualquer papel, controles de ajuste escondidos pra "operador" — e confirmado que a restrição é de verdade no servidor (403 direto via curl com o token de um operador), não só escondida na UI.
+- **Tela Clientes** — seção "Vale-Troca" no modal de editar cliente (só aparece pra CPF válido — Vale-Troca é vinculado a CPF), mostra saldo atual e, pra quem tem permissão, campos de valor/motivo + botões "Adicionar"/"Remover".
+- `pnpm typecheck`/`lint`/`build` 23/23. **A ponta pdv-backend/pdv-frontend só chega na loja com um instalador novo** — o endpoint do Intermediador fica disponível assim que este commit for implantado.
+
 ### "Emitir nova NFC-e" — recupera nota rejeitada por emissão atrasada, que "Tentar novamente" nunca resolve (2026-09-16)
 Investigando a NFC-e #005111 (venda `cmu3dbdpi1tf3mp4saoqtnium`) depois do fix do `errorMessage`: o Bling mostrou "704 - Rejeição: NFC-e com Data-Hora de emissão atrasada" no próprio painel (motivo que a API do Bling não expõe — confirmado batendo direto no `GET /nfce/{id}` e no XML linkado, nenhum dos dois carrega o motivo).
 

@@ -7,6 +7,7 @@ import {
 import { throwDescriptiveHttpError } from "../../../../common/describe-http-error.js";
 import { InsufficientStoreCreditError } from "../../domain/errors.js";
 import type {
+  AdjustStoreCreditInput,
   GrantStoreCreditInput,
   RedeemStoreCreditInput,
   StoreCreditGatewayPort,
@@ -80,6 +81,25 @@ export class HttpStoreCreditGateway implements StoreCreditGatewayPort {
     }
     if (!response.ok) {
       await throwDescriptiveHttpError(response, "POST /store-credit/redemptions");
+    }
+    return (await response.json()) as { balance: number };
+  }
+
+  async adjust(input: AdjustStoreCreditInput): Promise<{ balance: number }> {
+    const identity = await this.storeIdentityRepository.find();
+    if (!identity) {
+      throw new Error("Terminal não ativado — sem identidade de loja pra ajustar vale-troca.");
+    }
+    const response = await fetch(`${this.baseUrl}/store-credit/adjustments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
+      body: JSON.stringify(input),
+    });
+    if (response.status === 409) {
+      throw new InsufficientStoreCreditError(input.document);
+    }
+    if (!response.ok) {
+      await throwDescriptiveHttpError(response, "POST /store-credit/adjustments");
     }
     return (await response.json()) as { balance: number };
   }

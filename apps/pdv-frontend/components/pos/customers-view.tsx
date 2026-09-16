@@ -1,9 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Search, Plus, Pencil, Trash2, Users, RefreshCw } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, Users, RefreshCw, Wallet, PlusCircle, MinusCircle } from 'lucide-react'
 import type { Customer } from '@easypdv/shared-types'
+import { isValidCpf, onlyDigits } from '@easypdv/shared-validation'
 import { ApiError } from '@/lib/api-client'
+import { useAuthStore } from '@/lib/auth-store'
+import { formatBRL } from '@/lib/pos-data'
 import {
   useCreateCustomer,
   useCustomerSearch,
@@ -11,10 +14,112 @@ import {
   useImportCustomersFromBling,
   useUpdateCustomer,
 } from '@/hooks/use-customers'
+import { useAdjustStoreCredit, useStoreCreditBalance } from '@/hooks/use-store-credit'
 import { Modal } from './ui/modal'
 
 type FormState = { name: string; document: string; phone: string; email: string }
 const emptyForm: FormState = { name: '', document: '', phone: '', email: '' }
+
+// Mesma restrição de "Cancelar venda" (Histórico) — ajuste manual de saldo é
+// uma correção administrativa fora do fluxo normal, pedido explícito do
+// usuário pra restringir a quem gerencia a loja. A restrição real é sempre
+// no backend (RolesGuard); isso aqui só esconde o controle pro mesmo público.
+const STORE_CREDIT_ADJUST_ROLES = ['administrador', 'gerente'] as const
+
+/**
+ * Ajuste manual de Vale-Troca (2026-09-16, pedido do usuário: "alterar o
+ * valor de vale troca na conta do cliente" direto pela tela Clientes) —
+ * só aparece pra cliente com CPF válido (Vale-Troca é vinculado a CPF, ver
+ * adjustStoreCreditSchema) e operador com papel autorizado. Ajuste sempre
+ * relativo (soma/subtrai um valor, nunca "define saldo") e motivo sempre
+ * obrigatório — decisões explícitas do usuário, mesmo padrão de auditoria
+ * de "Cancelar venda".
+ */
+function StoreCreditAdjustSection({ document }: { document: string }) {
+  const canAdjust = useAuthStore((s) => {
+    const role = s.user?.role
+    return !!role && (STORE_CREDIT_ADJUST_ROLES as readonly string[]).includes(role)
+  })
+  const digits = onlyDigits(document)
+  const validCpf = isValidCpf(digits)
+  const { data: balanceData, isLoading: balanceLoading } = useStoreCreditBalance(validCpf ? digits : null)
+  const adjustStoreCredit = useAdjustStoreCredit()
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const [adjustError, setAdjustError] = useState<string | null>(null)
+
+  if (!validCpf) return null
+
+  const apply = async (sign: 1 | -1) => {
+    setAdjustError(null)
+    const parsed = Number(amount.replace(',', '.'))
+    if (!parsed || parsed <= 0) {
+      setAdjustError('Informe um valor maior que zero.')
+      return
+    }
+    if (!reason.trim()) {
+      setAdjustError('Informe o motivo.')
+      return
+    }
+    try {
+      await adjustStoreCredit.mutateAsync({ document: digits, amount: parsed * sign, reason: reason.trim() })
+      setAmount('')
+      setReason('')
+    } catch (e) {
+      setAdjustError(e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Erro ao ajustar saldo.')
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 p-3">
+      <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+        <Wallet className="size-4 text-muted-foreground" />
+        Vale-Troca
+        <span className="ml-auto font-mono text-base">
+          {balanceLoading ? '…' : formatBRL(balanceData?.balance ?? 0)}
+        </span>
+      </div>
+      {canAdjust && (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <input
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="Valor (R$)"
+              inputMode="decimal"
+              className="pos-input flex-1 font-mono"
+            />
+            <input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Motivo do ajuste"
+              className="pos-input flex-[2]"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => apply(1)}
+              disabled={adjustStoreCredit.isPending}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-primary px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <PlusCircle className="size-3.5" /> Adicionar
+            </button>
+            <button
+              type="button"
+              onClick={() => apply(-1)}
+              disabled={adjustStoreCredit.isPending}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-destructive px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <MinusCircle className="size-3.5" /> Remover
+            </button>
+          </div>
+          {adjustError && <p className="text-xs text-destructive">{adjustError}</p>}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function CustomersView() {
   const [term, setTerm] = useState('')
@@ -275,6 +380,7 @@ export function CustomersView() {
             />
           </label>
           {formError && <p className="text-xs text-destructive">{formError}</p>}
+          {editingId !== 'new' && <StoreCreditAdjustSection document={form.document} />}
         </div>
       </Modal>
 

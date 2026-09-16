@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import {
+  adjustStoreCreditSchema,
   grantStoreCreditSchema,
   redeemStoreCreditSchema,
+  type AdjustStoreCreditInput,
   type GrantStoreCreditInput,
   type RedeemStoreCreditInput,
 } from "@easypdv/shared-validation";
@@ -14,6 +16,7 @@ import {
 import { GetStoreCreditBalanceUseCase } from "../../application/use-cases/get-store-credit-balance.use-case.js";
 import { GrantStoreCreditUseCase } from "../../application/use-cases/grant-store-credit.use-case.js";
 import { RedeemStoreCreditUseCase } from "../../application/use-cases/redeem-store-credit.use-case.js";
+import { AdjustStoreCreditUseCase } from "../../application/use-cases/adjust-store-credit.use-case.js";
 
 /**
  * Vale-Troca (2026-09-10) — chamado pelo PDV local, mesma fronteira de
@@ -30,6 +33,7 @@ export class StoreCreditController {
     private readonly getStoreCreditBalanceUseCase: GetStoreCreditBalanceUseCase,
     private readonly grantStoreCreditUseCase: GrantStoreCreditUseCase,
     private readonly redeemStoreCreditUseCase: RedeemStoreCreditUseCase,
+    private readonly adjustStoreCreditUseCase: AdjustStoreCreditUseCase,
   ) {}
 
   @Get("balance/:document")
@@ -56,6 +60,22 @@ export class StoreCreditController {
   ) {
     return this.redeemStoreCreditUseCase.execute(
       { organizationId: terminal.organizationId, storeId: terminal.storeId, terminalId: terminal.terminalId },
+      body,
+    );
+  }
+
+  @Post("adjustments")
+  adjust(
+    @Body(new ZodValidationPipe(adjustStoreCreditSchema)) body: AdjustStoreCreditInput,
+    @CurrentTerminal() terminal: AuthenticatedTerminal,
+  ) {
+    return this.adjustStoreCreditUseCase.execute(
+      {
+        organizationId: terminal.organizationId,
+        storeId: terminal.storeId,
+        terminalId: terminal.terminalId,
+        actorUserId: body.actorUserId ?? null,
+      },
       body,
     );
   }

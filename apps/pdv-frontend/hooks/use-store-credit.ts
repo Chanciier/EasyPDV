@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Customer } from '@easypdv/shared-types'
 import { apiRequest } from '@/lib/api-client'
 
@@ -50,5 +50,22 @@ export function useGrantStoreCredit() {
       customerPhone?: string
       items: StoreCreditGrantItemInput[]
     }) => apiRequest<GrantStoreCreditResult>('/store-credit/grants', { method: 'POST', body: input }),
+  })
+}
+
+/**
+ * Ajuste manual de saldo (tela Clientes, 2026-09-16, pedido do usuário) —
+ * correção administrativa fora do fluxo normal de troca. Restrito a
+ * administrador/gerente no backend (RolesGuard); a tela some o botão pro
+ * mesmo público, mas a restrição real é sempre no servidor.
+ */
+export function useAdjustStoreCredit() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { document: string; amount: number; reason: string }) =>
+      apiRequest<{ balance: number }>('/store-credit/adjustments', { method: 'POST', body: input }),
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['store-credit', 'balance', variables.document] })
+    },
   })
 }
