@@ -17,6 +17,7 @@ import {
 } from "../../../application/ports/erp-integration-repository.port.js";
 import {
   ERP_SYNC_MAPPING_REPOSITORY,
+  type ErpSyncMappingEntityType,
   type ErpSyncMappingRepositoryPort,
 } from "../../../application/ports/erp-sync-mapping-repository.port.js";
 import {
@@ -152,8 +153,8 @@ function situacaoDescription(situacao: number | null): string {
 }
 
 /**
- * Implementa a mesma SyncTargetPort do NoopSyncTargetAdapter (Sprint 6) —
- * substituição transparente, sem tocar no SyncProcessor nem nos use-cases.
+ * Implementa SyncTargetPort — plugado no SyncProcessor sem acoplar o
+ * processor/use-cases ao Bling especificamente.
  * Só sabe processar entityType="sale" por enquanto. Além de criar o pedido de
  * venda, também baixa o estoque vendido no Bling (`pushStockMovements`,
  * 2026-08-19) — a metade PDV→Bling do sync bidirecional de estoque; a
@@ -345,31 +346,50 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
   }
 
   /**
+   * Cache-aside genérico contra `ErpSyncMapping` — extraído (2026-09-17)
+   * depois de repetido quase idêntico em 7 pontos deste arquivo (o maior do
+   * projeto): busca no cache, se não achou resolve na API do Bling e grava
+   * de volta. `resolvePaymentMethodId` não usa este helper — tem um fallback
+   * (env var) que não deve ser cacheado, fluxo genuinamente diferente.
+   */
+  private async resolveCached(
+    organizationId: string,
+    type: ErpSyncMappingEntityType,
+    key: string,
+    resolve: () => Promise<number>,
+  ): Promise<number> {
+    const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, type, key);
+    if (cached) {
+      return Number(cached.externalId);
+    }
+
+    const resolved = await resolve();
+
+    await this.erpSyncMappingRepository.upsert({
+      organizationId,
+      provider: PROVIDER,
+      localEntityType: type,
+      localEntityId: key,
+      externalId: String(resolved),
+    });
+    return resolved;
+  }
+
+  /**
    * Resolve o id da situação "Atendido" pro módulo de Pedidos de Venda —
    * NUNCA hardcoded: o id é específico da conta (confirmado real: "Em
    * aberto"=6, "Atendido"=9 na conta do usuário, sem garantia documentada de
    * valer pra outra conta), só o id do MÓDULO "Vendas" (98310) é fixo.
    */
   private async resolveAtendidoSituacaoId(accessToken: string, organizationId: string): Promise<number> {
-    const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "order_situacao", "atendido");
-    if (cached) {
-      return Number(cached.externalId);
-    }
-
-    const situacoes = await this.blingApiClient.listSalesOrderSituacoes(accessToken);
-    const atendido = situacoes.find((s) => s.nome === "Atendido");
-    if (!atendido) {
-      throw new Error('Conta Bling não tem situação "Atendido" cadastrada pro módulo de Pedidos de Venda.');
-    }
-
-    await this.erpSyncMappingRepository.upsert({
-      organizationId,
-      provider: PROVIDER,
-      localEntityType: "order_situacao",
-      localEntityId: "atendido",
-      externalId: String(atendido.id),
+    return this.resolveCached(organizationId, "order_situacao", "atendido", async () => {
+      const situacoes = await this.blingApiClient.listSalesOrderSituacoes(accessToken);
+      const atendido = situacoes.find((s) => s.nome === "Atendido");
+      if (!atendido) {
+        throw new Error('Conta Bling não tem situação "Atendido" cadastrada pro módulo de Pedidos de Venda.');
+      }
+      return atendido.id;
     });
-    return atendido.id;
   }
 
   /**
@@ -378,25 +398,14 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * acima). Confirmado ao vivo, 2026-08-25: id `14584712737` só nesta conta.
    */
   private async resolveClubTipoContatoId(accessToken: string, organizationId: string): Promise<number> {
-    const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "contact_type", "clube_saldao");
-    if (cached) {
-      return Number(cached.externalId);
-    }
-
-    const tipos = await this.blingApiClient.listContactTypes(accessToken);
-    const clube = tipos.find((t) => t.descricao === "Clube Saldão");
-    if (!clube) {
-      throw new ClubTipoContatoNotFoundError();
-    }
-
-    await this.erpSyncMappingRepository.upsert({
-      organizationId,
-      provider: PROVIDER,
-      localEntityType: "contact_type",
-      localEntityId: "clube_saldao",
-      externalId: String(clube.id),
+    return this.resolveCached(organizationId, "contact_type", "clube_saldao", async () => {
+      const tipos = await this.blingApiClient.listContactTypes(accessToken);
+      const clube = tipos.find((t) => t.descricao === "Clube Saldão");
+      if (!clube) {
+        throw new ClubTipoContatoNotFoundError();
+      }
+      return clube.id;
     });
-    return clube.id;
   }
 
   /**
@@ -586,33 +595,22 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
    * com um depósito padrão).
    */
   private async resolveWarehouseId(accessToken: string, organizationId: string): Promise<number> {
-    const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "warehouse", DEFAULT_WAREHOUSE_KEY);
-    if (cached) {
-      return Number(cached.externalId);
-    }
-
-    const warehouses = await this.blingApiClient.listWarehouses(accessToken);
-    if (warehouses.length === 0) {
-      throw new Error("Conta Bling não tem nenhum depósito cadastrado — não é possível baixar estoque.");
-    }
-    const active = warehouses.filter((w) => w.situacao === undefined || w.situacao === "A");
-    const pool = active.length > 0 ? active : warehouses;
-    // `pool` nunca é vazio aqui (deriva de `warehouses`, já checado acima) —
-    // `?? pool[0]` é só pra satisfazer `noUncheckedIndexedAccess`.
-    const resolved = pool.find((w) => w.padrao)?.id ?? pool[0]?.id;
-    if (resolved === undefined) {
-      throw new Error("Conta Bling não tem nenhum depósito cadastrado — não é possível baixar estoque.");
-    }
-
-    await this.erpSyncMappingRepository.upsert({
-      organizationId,
-      provider: PROVIDER,
-      localEntityType: "warehouse",
-      localEntityId: DEFAULT_WAREHOUSE_KEY,
-      externalId: String(resolved),
+    return this.resolveCached(organizationId, "warehouse", DEFAULT_WAREHOUSE_KEY, async () => {
+      const warehouses = await this.blingApiClient.listWarehouses(accessToken);
+      if (warehouses.length === 0) {
+        throw new Error("Conta Bling não tem nenhum depósito cadastrado — não é possível baixar estoque.");
+      }
+      const active = warehouses.filter((w) => w.situacao === undefined || w.situacao === "A");
+      const pool = active.length > 0 ? active : warehouses;
+      // `pool` nunca é vazio aqui (deriva de `warehouses`, já checado acima) —
+      // `?? pool[0]` é só pra satisfazer `noUncheckedIndexedAccess`.
+      const resolved = pool.find((w) => w.padrao)?.id ?? pool[0]?.id;
+      if (resolved === undefined) {
+        throw new Error("Conta Bling não tem nenhum depósito cadastrado — não é possível baixar estoque.");
+      }
+      this.logger.log(`Depósito Bling resolvido pra baixa de estoque: id=${resolved}`);
+      return resolved;
     });
-    this.logger.log(`Depósito Bling resolvido pra baixa de estoque: id=${resolved}`);
-    return resolved;
   }
 
   private async resolveSalesOrder(
@@ -915,7 +913,13 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(`Retry automático de NFC-e falhou pra venda ${doc.saleId}: ${message}`);
-        await this.fiscalDocumentRepository.update(doc.id, { retryCount: doc.retryCount + 1 }).catch(() => {});
+        // Se ISSO falhar também, o documento nunca atinge MAX_AUTO_RETRY_ATTEMPTS
+        // e o worker tenta reenviar pra sempre — logar em vez de engolir, senão
+        // o motivo de um retry infinito fica invisível.
+        await this.fiscalDocumentRepository.update(doc.id, { retryCount: doc.retryCount + 1 }).catch((updateError: unknown) => {
+          const updateMessage = updateError instanceof Error ? updateError.message : String(updateError);
+          this.logger.error(`Falha ao persistir retryCount da venda ${doc.saleId} após retry automático: ${updateMessage}`);
+        });
       }
     }
     return { attempted: candidates.length, succeeded };
@@ -1034,45 +1038,23 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
   }
 
   private async resolveProduct(accessToken: string, organizationId: string, sku: string, name: string): Promise<number> {
-    const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "product", sku);
-    if (cached) {
-      return Number(cached.externalId);
-    }
-
-    const product = await this.blingApiClient.findProductByCode(accessToken, sku);
-    if (!product) {
-      throw new Error(`Produto SKU "${sku}" (${name}) não encontrado no Bling — catálogo precisa estar sincronizado manualmente na V1.`);
-    }
-
-    await this.erpSyncMappingRepository.upsert({
-      organizationId,
-      provider: PROVIDER,
-      localEntityType: "product",
-      localEntityId: sku,
-      externalId: String(product.id),
+    return this.resolveCached(organizationId, "product", sku, async () => {
+      const product = await this.blingApiClient.findProductByCode(accessToken, sku);
+      if (!product) {
+        throw new Error(`Produto SKU "${sku}" (${name}) não encontrado no Bling — catálogo precisa estar sincronizado manualmente na V1.`);
+      }
+      return product.id;
     });
-    return product.id;
   }
 
   private async resolveDefaultContact(accessToken: string, organizationId: string): Promise<number> {
-    const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "contact", DEFAULT_CONTACT_KEY);
-    if (cached) {
-      return Number(cached.externalId);
-    }
-
-    let contact = await this.blingApiClient.findContactByName(accessToken, DEFAULT_CONTACT_NAME);
-    if (!contact) {
-      contact = await this.blingApiClient.createContact(accessToken, DEFAULT_CONTACT_NAME);
-    }
-
-    await this.erpSyncMappingRepository.upsert({
-      organizationId,
-      provider: PROVIDER,
-      localEntityType: "contact",
-      localEntityId: DEFAULT_CONTACT_KEY,
-      externalId: String(contact.id),
+    return this.resolveCached(organizationId, "contact", DEFAULT_CONTACT_KEY, async () => {
+      let contact = await this.blingApiClient.findContactByName(accessToken, DEFAULT_CONTACT_NAME);
+      if (!contact) {
+        contact = await this.blingApiClient.createContact(accessToken, DEFAULT_CONTACT_NAME);
+      }
+      return contact.id;
     });
-    return contact.id;
   }
 
   /**
@@ -1090,24 +1072,13 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     cpf: string,
     name: string | null,
   ): Promise<number> {
-    const cached = await this.erpSyncMappingRepository.find(organizationId, PROVIDER, "contact", cpf);
-    if (cached) {
-      return Number(cached.externalId);
-    }
-
-    let contact = await this.blingApiClient.findContactByDocument(accessToken, cpf);
-    if (!contact) {
-      contact = await this.blingApiClient.createContact(accessToken, name ?? `Consumidor CPF ${cpf}`, cpf);
-    }
-
-    await this.erpSyncMappingRepository.upsert({
-      organizationId,
-      provider: PROVIDER,
-      localEntityType: "contact",
-      localEntityId: cpf,
-      externalId: String(contact.id),
+    return this.resolveCached(organizationId, "contact", cpf, async () => {
+      let contact = await this.blingApiClient.findContactByDocument(accessToken, cpf);
+      if (!contact) {
+        contact = await this.blingApiClient.createContact(accessToken, name ?? `Consumidor CPF ${cpf}`, cpf);
+      }
+      return contact.id;
     });
-    return contact.id;
   }
 
   /**
@@ -1230,6 +1201,10 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
           "pegue o id em Configurações > Formas de Pagamento no painel do Bling.",
       );
     }
-    return Number(id);
+    const parsed = Number(id);
+    if (!Number.isFinite(parsed)) {
+      throw new Error(`BLING_DEFAULT_PAYMENT_METHOD_ID inválido: "${id}" não é um número.`);
+    }
+    return parsed;
   }
 }

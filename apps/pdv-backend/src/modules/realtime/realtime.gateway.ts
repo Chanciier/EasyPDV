@@ -1,6 +1,7 @@
 import { Logger } from "@nestjs/common";
 import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketServer } from "@nestjs/websockets";
 import type { Server, Socket } from "socket.io";
+import { isAllowedOrigin } from "../../common/allowed-origin.js";
 
 export interface SaleConfirmedEvent {
   saleId: string;
@@ -26,8 +27,18 @@ export interface CashSessionEvent {
  * cliente não já veria via REST autenticado). É só "algo mudou, revalida" —
  * nenhum cliente depende disso pra funcionar corretamente sem ele (o polling
  * via TanStack Query já cobre o próprio tab que fez a mutação).
+ *
+ * CORS igual ao REST (main.ts) — antes era `origin: true` (libera geral),
+ * o que reabria pra qualquer página no navegador do PC do PDV o vetor que o
+ * hardening do REST já tinha fechado (achado M3 da auditoria de segurança).
  */
-@WebSocketGateway({ cors: { origin: true } })
+@WebSocketGateway({
+  cors: {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      callback(null, isAllowedOrigin(origin));
+    },
+  },
+})
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(RealtimeGateway.name);
 

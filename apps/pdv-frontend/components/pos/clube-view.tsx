@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Search, Plus, Trash2, Award } from 'lucide-react'
 import { formatCpf, onlyDigits, isValidCpf } from '@easypdv/shared-validation'
-import { ApiError } from '@/lib/api-client'
+import { describeError } from '@/lib/api-client'
 import { useAddClubMember, useClubMembers, useRemoveClubMember } from '@/hooks/use-club'
 import { Modal } from './ui/modal'
 
@@ -84,7 +84,7 @@ export function ClubeView() {
       })
       setAdding(false)
     } catch (e) {
-      setFormError(e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Erro ao adicionar ao clube.')
+      setFormError(describeError(e, 'Erro ao adicionar ao clube.'))
     }
   }
 

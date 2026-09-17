@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { getIntermediadorUrl } from "../../../../common/intermediador-config.js";
 import type { CreateUserInput } from "@easypdv/shared-validation";
 import type { OrgUserPayload, UserRole } from "@easypdv/shared-types";
 import {
@@ -26,7 +27,7 @@ export class HttpUserVerificationGateway implements UserVerificationGatewayPort 
     configService: ConfigService,
     @Inject(STORE_IDENTITY_REPOSITORY) private readonly storeIdentityRepository: StoreIdentityRepositoryPort,
   ) {
-    this.baseUrl = configService.get<string>("INTERMEDIADOR_URL") ?? "http://127.0.0.1:4002";
+    this.baseUrl = getIntermediadorUrl(configService);
   }
 
   async verifyLogin(email: string, password: string): Promise<CentralLoginResult> {

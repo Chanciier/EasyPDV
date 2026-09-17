@@ -16,6 +16,17 @@ import { HttpException } from "@nestjs/common";
  * pelo filtro (`instanceof HttpException` é o primeiro `if`), preservando o
  * status de verdade que o Intermediador respondeu.
  *
+ * **Corpo é `{ message }`, não a string pura** (achado real, 2026-09-17):
+ * `HttpException` do Nest só monta o envelope `{statusCode, message, error}`
+ * automaticamente nas subclasses de atalho (`BadRequestException` etc.) — o
+ * construtor base usado aqui, com uma string crua, faz `getResponse()`
+ * devolver a STRING pura, e o `DomainExceptionFilter` manda essa string como
+ * corpo inteiro da resposta. O cliente (`api-client.ts` do pdv-frontend)
+ * espera um objeto com `.message` — sem o wrap, a mensagem extraída aqui com
+ * tanto cuidado nunca chega no operador, que só via um "Bad Request"
+ * genérico (`response.statusText`) em qualquer erro vindo de club/fiscal/
+ * store-credit/customer/sync.
+ *
  * Extraído pra cá (2026-09-14) depois de duplicado em HttpStoreCreditGateway
  * e HttpCustomerRepository — qualquer gateway novo que fale com o
  * Intermediador deveria usar este helper em vez de repetir.
@@ -39,5 +50,5 @@ export async function throwDescriptiveHttpError(response: Response, requestLabel
     }
   }
 
-  throw new HttpException(message, response.status);
+  throw new HttpException({ message }, response.status);
 }

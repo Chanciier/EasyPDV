@@ -26,6 +26,7 @@ import { UpdateUserRoleUseCase } from "./application/use-cases/update-user-role.
 import { ChangePasswordUseCase } from "./application/use-cases/change-password.use-case.js";
 import { ResetUserPasswordUseCase } from "./application/use-cases/reset-user-password.use-case.js";
 import { MustChangePasswordInterceptor } from "./infrastructure/interceptors/must-change-password.interceptor.js";
+import { TokenIssuerService } from "./application/services/token-issuer.service.js";
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { MustChangePasswordInterceptor } from "./infrastructure/interceptors/mus
   controllers: [AuthController, UsersController],
   providers: [
     JwtStrategy,
+    TokenIssuerService,
     LoginUseCase,
     RefreshTokenUseCase,
     LogoutUseCase,

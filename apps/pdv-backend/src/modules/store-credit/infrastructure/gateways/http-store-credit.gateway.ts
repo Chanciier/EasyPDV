@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { DEFAULT_INTERMEDIADOR_TIMEOUT_MS, getIntermediadorUrl } from "../../../../common/intermediador-config.js";
 import {
   STORE_IDENTITY_REPOSITORY,
   type StoreIdentityRepositoryPort,
@@ -23,7 +24,7 @@ export class HttpStoreCreditGateway implements StoreCreditGatewayPort {
     configService: ConfigService,
     @Inject(STORE_IDENTITY_REPOSITORY) private readonly storeIdentityRepository: StoreIdentityRepositoryPort,
   ) {
-    this.baseUrl = configService.get<string>("INTERMEDIADOR_URL") ?? "http://127.0.0.1:4002";
+    this.baseUrl = getIntermediadorUrl(configService);
   }
 
   async getBalance(document: string): Promise<number | null> {
@@ -33,6 +34,7 @@ export class HttpStoreCreditGateway implements StoreCreditGatewayPort {
     }
     const response = await fetch(`${this.baseUrl}/store-credit/balance/${encodeURIComponent(document)}`, {
       headers: { "X-Terminal-Api-Key": identity.apiKey },
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) {
       return null;
@@ -50,6 +52,7 @@ export class HttpStoreCreditGateway implements StoreCreditGatewayPort {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
       body: JSON.stringify(input),
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) {
       // 409 aqui (desconto excede a linha) não deveria acontecer na prática —
@@ -75,6 +78,7 @@ export class HttpStoreCreditGateway implements StoreCreditGatewayPort {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
       body: JSON.stringify(input),
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (response.status === 409) {
       throw new InsufficientStoreCreditError(input.document);
@@ -94,6 +98,7 @@ export class HttpStoreCreditGateway implements StoreCreditGatewayPort {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
       body: JSON.stringify(input),
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (response.status === 409) {
       throw new InsufficientStoreCreditError(input.document);

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { DEFAULT_INTERMEDIADOR_TIMEOUT_MS, getIntermediadorUrl } from "../../../../common/intermediador-config.js";
 import {
   STORE_IDENTITY_REPOSITORY,
   type StoreIdentityRepositoryPort,
@@ -34,7 +35,7 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
     configService: ConfigService,
     @Inject(STORE_IDENTITY_REPOSITORY) private readonly storeIdentityRepository: StoreIdentityRepositoryPort,
   ) {
-    this.baseUrl = configService.get<string>("INTERMEDIADOR_URL") ?? "http://127.0.0.1:4002";
+    this.baseUrl = getIntermediadorUrl(configService);
   }
 
   private async headers(): Promise<{ apiKey: string }> {
@@ -63,7 +64,10 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
 
   async findById(id: string): Promise<Customer | null> {
     const { apiKey } = await this.headers();
-    const response = await fetch(`${this.baseUrl}/customers/${id}`, { headers: { "X-Terminal-Api-Key": apiKey } });
+    const response = await fetch(`${this.baseUrl}/customers/${id}`, {
+      headers: { "X-Terminal-Api-Key": apiKey },
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
+    });
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`Intermediador respondeu ${response.status} para GET /customers/${id}`);
     const body = await this.parseJsonOrNull(response);
@@ -74,6 +78,7 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
     const { apiKey } = await this.headers();
     const response = await fetch(`${this.baseUrl}/customers/by-document/${encodeURIComponent(document)}`, {
       headers: { "X-Terminal-Api-Key": apiKey },
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`Intermediador respondeu ${response.status} para GET /customers/by-document/${document}`);
     const body = await this.parseJsonOrNull(response);
@@ -84,7 +89,10 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
     const { apiKey } = await this.headers();
     const url = new URL(`${this.baseUrl}/customers`);
     if (query) url.searchParams.set("query", query);
-    const response = await fetch(url, { headers: { "X-Terminal-Api-Key": apiKey } });
+    const response = await fetch(url, {
+      headers: { "X-Terminal-Api-Key": apiKey },
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
+    });
     if (!response.ok) throw new Error(`Intermediador respondeu ${response.status} para GET /customers`);
     const body = (await response.json()) as unknown[];
     return body.map((item) => this.toCustomer(item));
@@ -108,6 +116,7 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": apiKey },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) {
       // Achado real, 2026-09-14: telefone ausente vira 400 do ZodValidationPipe
@@ -126,6 +135,7 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
       method: "PATCH",
       headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": apiKey },
       body: JSON.stringify(data),
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) {
       await throwDescriptiveHttpError(response, `PATCH /customers/${id}`);
@@ -138,6 +148,7 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
     const response = await fetch(`${this.baseUrl}/customers/${id}`, {
       method: "DELETE",
       headers: { "X-Terminal-Api-Key": apiKey },
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`Intermediador respondeu ${response.status} para DELETE /customers/${id}`);
   }

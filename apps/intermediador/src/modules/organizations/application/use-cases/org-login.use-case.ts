@@ -1,16 +1,14 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { JwtService } from "@nestjs/jwt";
-import { randomBytes } from "node:crypto";
 import type { AuthTokens, OrgUserPayload } from "@easypdv/shared-types";
 import {
   ORG_AUTH_SESSION_REPOSITORY,
   type OrgAuthSessionRepositoryPort,
 } from "../ports/org-auth-session-repository.port.js";
-import { PASSWORD_HASHER, type PasswordHasherPort } from "../ports/password-hasher.port.js";
 import { InvalidOrgUserCredentialsError } from "../../domain/errors.js";
 import { VerifyOrgUserLoginUseCase } from "./verify-org-user-login.use-case.js";
 import { toOrgUserPayload } from "../mappers/org-user-payload.mapper.js";
+import { OrgTokenIssuerService } from "../services/org-token-issuer.service.js";
 
 export interface OrgLoginResult {
   user: OrgUserPayload;
@@ -42,11 +40,12 @@ export interface OrgLoginResult {
  */
 @Injectable()
 export class OrgLoginUseCase {
+  private readonly logger = new Logger(OrgLoginUseCase.name);
+
   constructor(
     private readonly verifyOrgUserLoginUseCase: VerifyOrgUserLoginUseCase,
     @Inject(ORG_AUTH_SESSION_REPOSITORY) private readonly orgAuthSessionRepository: OrgAuthSessionRepositoryPort,
-    @Inject(PASSWORD_HASHER) private readonly passwordHasher: PasswordHasherPort,
-    private readonly jwtService: JwtService,
+    private readonly tokenIssuer: OrgTokenIssuerService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -61,31 +60,43 @@ export class OrgLoginUseCase {
 
     const user = await this.verifyOrgUserLoginUseCase.execute(organizationId, email, password);
 
-    const accessToken = this.jwtService.sign({ sub: user.id, organizationId: user.organizationId, role: user.role });
-    const refreshSecret = randomBytes(32).toString("base64url");
-    const refreshTokenHash = await this.passwordHasher.hash(refreshSecret);
-    const refreshTtlDays = Number(this.configService.get("JWT_REFRESH_EXPIRES_DAYS") ?? 30);
-    const expiresAt = new Date(Date.now() + refreshTtlDays * 24 * 60 * 60 * 1000);
+    const issued = await this.tokenIssuer.issue({
+      sub: user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    });
 
     const session = await this.orgAuthSessionRepository.create({
       orgUserId: user.id,
-      refreshTokenHash,
-      expiresAt,
+      refreshTokenHash: issued.refreshTokenHash,
+      expiresAt: issued.expiresAt,
     });
 
     return {
       user: toOrgUserPayload(user),
       tokens: {
-        accessToken,
-        refreshToken: `${session.id}.${refreshSecret}`,
-        expiresAt: expiresAt.toISOString(),
+        accessToken: issued.accessToken,
+        refreshToken: `${session.id}.${issued.refreshToken}`,
+        expiresAt: issued.expiresAt.toISOString(),
       },
     };
   }
 
   private isEmailAllowed(email: string): boolean {
     const raw = this.configService.get<string>("ADMIN_PANEL_ALLOWED_EMAILS");
-    if (!raw) return true;
+    if (!raw) {
+      // Mesmo padrão de JWT_SECRET/REDIS_URL (getOrThrow, achado M6) seria
+      // quebrar o boot — mas essa env é opcional por design em dev. Em
+      // produção sem ela, QUALQUER OrgUser com credencial válida loga no
+      // painel admin (a allowlist inteira vira no-op) — alto o bastante pra
+      // avisar alto em vez de falhar em silêncio.
+      if (this.configService.get<string>("NODE_ENV") === "production") {
+        this.logger.warn(
+          "ADMIN_PANEL_ALLOWED_EMAILS não configurada em produção — login no painel admin liberado pra qualquer OrgUser com credencial válida.",
+        );
+      }
+      return true;
+    }
     const allowlist = raw
       .split(",")
       .map((e) => e.trim().toLowerCase())

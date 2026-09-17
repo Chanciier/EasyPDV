@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { getIntermediadorUrl } from "../../../../common/intermediador-config.js";
 import type { ActivationCodeResult } from "@easypdv/shared-types";
 import {
   STORE_IDENTITY_REPOSITORY,
@@ -22,7 +23,7 @@ export class HttpActivationCodeGateway implements ActivationCodeGatewayPort {
     configService: ConfigService,
     @Inject(STORE_IDENTITY_REPOSITORY) private readonly storeIdentityRepository: StoreIdentityRepositoryPort,
   ) {
-    this.baseUrl = configService.get<string>("INTERMEDIADOR_URL") ?? "http://127.0.0.1:4002";
+    this.baseUrl = getIntermediadorUrl(configService);
   }
 
   async generate(): Promise<ActivationCodeResult> {

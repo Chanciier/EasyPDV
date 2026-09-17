@@ -1,7 +1,4 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { JwtService } from "@nestjs/jwt";
-import { randomBytes } from "node:crypto";
 import type { AuthTokens } from "@easypdv/shared-types";
 import { InvalidOrgRefreshTokenError } from "../../domain/errors.js";
 import {
@@ -10,6 +7,7 @@ import {
 } from "../ports/org-auth-session-repository.port.js";
 import { ORG_USER_REPOSITORY, type OrgUserRepositoryPort } from "../ports/org-user-repository.port.js";
 import { PASSWORD_HASHER, type PasswordHasherPort } from "../ports/password-hasher.port.js";
+import { OrgTokenIssuerService } from "../services/org-token-issuer.service.js";
 
 /**
  * Refresh token rotacionado a cada uso — a sessão antiga é revogada e uma
@@ -25,8 +23,7 @@ export class OrgRefreshTokenUseCase {
     @Inject(ORG_AUTH_SESSION_REPOSITORY) private readonly orgAuthSessionRepository: OrgAuthSessionRepositoryPort,
     @Inject(ORG_USER_REPOSITORY) private readonly orgUserRepository: OrgUserRepositoryPort,
     @Inject(PASSWORD_HASHER) private readonly passwordHasher: PasswordHasherPort,
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
+    private readonly tokenIssuer: OrgTokenIssuerService,
   ) {}
 
   async execute(refreshToken: string): Promise<AuthTokens> {
@@ -52,22 +49,22 @@ export class OrgRefreshTokenUseCase {
 
     await this.orgAuthSessionRepository.revoke(session.id);
 
-    const accessToken = this.jwtService.sign({ sub: user.id, organizationId: user.organizationId, role: user.role });
-    const newSecret = randomBytes(32).toString("base64url");
-    const refreshTokenHash = await this.passwordHasher.hash(newSecret);
-    const refreshTtlDays = Number(this.configService.get("JWT_REFRESH_EXPIRES_DAYS") ?? 30);
-    const expiresAt = new Date(Date.now() + refreshTtlDays * 24 * 60 * 60 * 1000);
+    const issued = await this.tokenIssuer.issue({
+      sub: user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    });
 
     const newSession = await this.orgAuthSessionRepository.create({
       orgUserId: user.id,
-      refreshTokenHash,
-      expiresAt,
+      refreshTokenHash: issued.refreshTokenHash,
+      expiresAt: issued.expiresAt,
     });
 
     return {
-      accessToken,
-      refreshToken: `${newSession.id}.${newSecret}`,
-      expiresAt: expiresAt.toISOString(),
+      accessToken: issued.accessToken,
+      refreshToken: `${newSession.id}.${issued.refreshToken}`,
+      expiresAt: issued.expiresAt.toISOString(),
     };
   }
 }

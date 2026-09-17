@@ -1,8 +1,16 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { getIntermediadorUrl } from "../../../../common/intermediador-config.js";
 import type { BlingProductSummary } from "@easypdv/shared-types";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
 import type { BlingCatalogGatewayPort } from "../../application/ports/bling-catalog-gateway.port.js";
+
+/**
+ * Catálogo completo do Bling pode chegar a dezenas de milhares de produtos
+ * numa resposta só (ver SyncProductsFromBlingUseCase) — timeout bem mais
+ * folgado que o default de gateway pontual.
+ */
+const CATALOG_SYNC_TIMEOUT_MS = 120_000;
 
 /**
  * Lê a apiKey do terminal direto via PrismaService (global), sem importar
@@ -18,7 +26,7 @@ export class HttpBlingCatalogGateway implements BlingCatalogGatewayPort {
     configService: ConfigService,
     private readonly prisma: PrismaService,
   ) {
-    this.baseUrl = configService.get<string>("INTERMEDIADOR_URL") ?? "http://127.0.0.1:4002";
+    this.baseUrl = getIntermediadorUrl(configService);
   }
 
   async listProducts(since?: Date): Promise<BlingProductSummary[]> {
@@ -33,6 +41,7 @@ export class HttpBlingCatalogGateway implements BlingCatalogGatewayPort {
     }
     const response = await fetch(url, {
       headers: { "X-Terminal-Api-Key": identity.apiKey },
+      signal: AbortSignal.timeout(CATALOG_SYNC_TIMEOUT_MS),
     });
     if (!response.ok) {
       const body = (await response.json().catch(() => null)) as { message?: string } | null;

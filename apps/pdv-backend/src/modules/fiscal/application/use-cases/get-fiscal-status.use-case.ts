@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
+import { toErrorMessage } from "../../../../common/to-error-message.js";
 import type { FiscalDocument } from "../../domain/entities/fiscal-document.entity.js";
 import {
   FISCAL_DOCUMENT_REPOSITORY,
@@ -35,8 +36,9 @@ export class GetFiscalStatusUseCase {
         issuedAt: remote.issuedAt ? new Date(remote.issuedAt) : null,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Não foi possível consultar status fiscal no Intermediador pra venda ${saleId}: ${message}`);
+      this.logger.warn(
+        `Não foi possível consultar status fiscal no Intermediador pra venda ${saleId}: ${toErrorMessage(error)}`,
+      );
       return this.fiscalDocumentRepository.findBySale(saleId);
     }
   }

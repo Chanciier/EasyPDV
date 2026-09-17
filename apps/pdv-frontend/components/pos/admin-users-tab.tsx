@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { KeyRound, Plus, UserCog } from 'lucide-react'
 import type { User, UserRole } from '@easypdv/shared-types'
-import { ApiError } from '@/lib/api-client'
+import { describeError } from '@/lib/api-client'
 import { useCreateUser, useResetUserPassword, useUsers } from '@/hooks/use-users'
 import { Modal } from './ui/modal'
 
@@ -22,11 +22,6 @@ const ROLE_OPTIONS = Object.entries(ROLE_LABELS) as [UserRole, string][]
 type FormState = { name: string; email: string; password: string; role: UserRole }
 const emptyForm: FormState = { name: '', email: '', password: '', role: 'operador' }
 
-function describeError(e: unknown, fallback: string) {
-  if (e instanceof ApiError) return e.code
-  if (e instanceof Error) return e.message
-  return fallback
-}
 
 export function AdminUsersTab() {
   const { data: users = [], isLoading } = useUsers()

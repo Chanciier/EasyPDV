@@ -5,6 +5,7 @@ import path from "node:path";
 import * as bcrypt from "bcrypt";
 import { NestFactory } from "@nestjs/core";
 import { Logger } from "nestjs-pino";
+import { isAllowedOrigin } from "./common/allowed-origin.js";
 import { AppModule } from "./app.module.js";
 import { PrismaService } from "./prisma/prisma.service.js";
 import { USER_VERIFICATION_GATEWAY } from "./modules/identity/application/ports/user-verification-gateway.port.js";
@@ -165,19 +166,12 @@ async function bootstrap() {
   // loadFile() (protocolo file://, sem Origin http(s) real) — permitido
   // sempre. Em dev, o pdv-frontend roda via `next dev` (localhost:PORT
   // real) — só liberado fora de produção, pra não travar o fluxo normal
-  // de desenvolvimento local.
-  const isProduction = process.env.NODE_ENV === "production";
+  // de desenvolvimento local. Mesma checagem em RealtimeGateway (WebSocket),
+  // ver allowed-origin.ts.
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-      if (!origin || origin === "null" || origin.startsWith("file://")) {
-        callback(null, true);
-        return;
-      }
-      if (!isProduction && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-        callback(null, true);
-        return;
-      }
-      callback(new Error("Origem não permitida"), false);
+      const allowed = isAllowedOrigin(origin);
+      callback(allowed ? null : new Error("Origem não permitida"), allowed);
     },
   });
 

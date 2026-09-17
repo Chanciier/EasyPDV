@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from 'react'
 import { Search, Receipt, TrendingUp, Hash, CheckCircle2, Clock3, AlertCircle, Ban, ExternalLink } from 'lucide-react'
-import type { FiscalDocument, Payment, PaymentMethod, Sale, UserRole } from '@easypdv/shared-types'
+import type { FiscalDocument, Sale, UserRole } from '@easypdv/shared-types'
 import { formatCpf } from '@easypdv/shared-validation'
 import { formatBRL, normalize } from '@/lib/pos-data'
-import { ApiError } from '@/lib/api-client'
+import { ApiError, describeError } from '@/lib/api-client'
+import { PAYMENT_LABELS, paymentLabel } from '@/lib/payment-labels'
 import { useAuthStore } from '@/lib/auth-store'
 import { useFiscalStatus, useIssueFiscalReceipt, useProducts, useReissueFiscalReceipt, useRetryFiscalReceipt, useSalesList, useVoidSale } from '@/hooks/use-sales'
 import { useDashboardReport } from '@/hooks/use-reports'
@@ -77,26 +78,6 @@ function FiscalStatusBadge({ saleId }: { saleId: string }) {
   )
 }
 
-const PAYMENT_LABELS: Record<PaymentMethod, string> = {
-  dinheiro: 'Dinheiro',
-  cartao: 'Cartão',
-  pix: 'PIX',
-  vale_troca: 'Vale-Troca',
-  outro: 'Outro',
-}
-
-const BRAND_LABELS: Record<string, string> = {
-  mastercard: 'Mastercard',
-  visa: 'Visa',
-}
-
-/** Bandeira do cartão (2026-08-21) — mesmo formato de payment-dialog.tsx/sale-view.tsx. */
-function paymentLabel(payment: Payment): string {
-  if (!payment.cardType) return PAYMENT_LABELS[payment.method]
-  const tipo = payment.cardType === 'credito' ? 'Crédito' : 'Débito'
-  const bandeira = payment.cardBrand ? BRAND_LABELS[payment.cardBrand] : null
-  return bandeira ? `${tipo} (${bandeira})` : tipo
-}
 
 export function HistoryView() {
   const { data: sales = [], isLoading } = useSalesList({ status: ['confirmed', 'cancelled'] })
@@ -141,7 +122,7 @@ export function HistoryView() {
       setVoidOpen(false)
       setVoidReason('')
     } catch (e) {
-      setVoidError(e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Erro ao estornar venda.')
+      setVoidError(describeError(e, 'Erro ao estornar venda.'))
     }
   }
 

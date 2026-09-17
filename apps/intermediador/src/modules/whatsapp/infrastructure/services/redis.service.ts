@@ -46,13 +46,30 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   keys(pattern: string): Promise<string[]> {
-    return this.client.keys(pattern);
+    return this.scanKeys(pattern);
   }
 
   async delPattern(pattern: string): Promise<void> {
-    const keys = await this.client.keys(pattern);
+    const keys = await this.scanKeys(pattern);
     if (keys.length > 0) {
       await this.client.del(...keys);
     }
+  }
+
+  /**
+   * `SCAN` em vez de `KEYS` — `KEYS` bloqueia o Redis inteiro (O(N) sobre
+   * todas as chaves do banco) enquanto processa, e este método é chamado
+   * tanto no boot (retomar sessões salvas) quanto em todo logout/limpeza de
+   * sessão. Inofensivo hoje com poucas organizações, mas escala mal.
+   */
+  private async scanKeys(pattern: string): Promise<string[]> {
+    const found: string[] = [];
+    let cursor = "0";
+    do {
+      const [nextCursor, batch] = await this.client.scan(cursor, "MATCH", pattern, "COUNT", 100);
+      cursor = nextCursor;
+      found.push(...batch);
+    } while (cursor !== "0");
+    return found;
   }
 }
