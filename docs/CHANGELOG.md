@@ -1,6 +1,13 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Desconto de Clube removido pelo operador era reaplicado sozinho ao finalizar a venda (2026-09-17)
+Achado real reportado pelo usuário: cliente trocou um produto, o valor virou Vale-Troca, e ao usar esse saldo numa compra seguinte (item de R$300, sócio do Clube) sobrou saldo — mesmo o operador tendo removido manualmente o desconto de 30% do item antes de fechar a venda.
+
+- **Causa raiz**: `openPayment()`/`finalizeClubItemDiscount` (`sale-view.tsx`) tratavam qualquer item com `discountAmount === 0` como "pendente de decidir" e reaplicavam os 30% de fallback do Clube Saldão — mas remover o desconto de propósito também zera `discountAmount`, e o código não distinguia os dois casos. Resultado: tirar o desconto (item volta a R$300) e finalizar a venda reaplicava os 30% sozinho (R$300 → R$210), cobrando a menos e deixando saldo de Vale-Troca sobrando no cliente.
+- **Corrigido**: rastreia explicitamente quais itens já tiveram o desconto decidido (`resolvedDiscountItemIds`) em vez de inferir pelo valor estar zerado — remover o desconto agora conta como decisão e não é mais sobrescrito.
+- `pnpm typecheck`/`lint`/`build` 20/20.
+
 ### Sessão do PDV/admin caía "aleatoriamente" durante o uso, sem reinício do app (2026-09-17)
 Achado real reportado pelo usuário: logout espontâneo, repetido, sem padrão aparente — descartado que fosse reinício do app por auto-update (confirmado que a janela não pisca/fecha, só volta pro login na mesma sessão).
 
