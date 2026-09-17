@@ -176,8 +176,11 @@ export function CustomersView() {
       return
     }
     const phone = form.phone.trim()
-    // Só no cadastro — editar um cliente já existente (ex: importado do
-    // Bling sem celular) não força preencher agora, ver createCustomerSchema.
+    // Só no cadastro manual por aqui — editar um cliente já existente (ex:
+    // importado do Bling sem celular) não força preencher agora. Exigência
+    // é só desta tela: o schema compartilhado (createCustomerSchema) trata
+    // telefone como opcional, porque também cria o Customer mínimo de "CPF
+    // na nota" durante uma venda (ver AttachCustomerToSaleUseCase).
     if (editingId === 'new' && !phone) {
       setFormError('Informe o telefone.')
       return

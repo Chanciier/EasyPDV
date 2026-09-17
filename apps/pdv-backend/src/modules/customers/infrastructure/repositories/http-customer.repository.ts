@@ -119,11 +119,10 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
       signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) {
-      // Achado real, 2026-09-14: telefone ausente vira 400 do ZodValidationPipe
-      // desde que createCustomerSchema passou a exigir telefone no cadastro —
-      // throwDescriptiveHttpError extrai qual campo e lança HttpException
-      // (não Error simples) pra mensagem sobreviver ao DomainExceptionFilter
-      // e chegar de verdade na tela do operador.
+      // throwDescriptiveHttpError extrai o motivo real de um 400 do
+      // ZodValidationPipe (ex: nome ausente) e lança HttpException (não
+      // Error simples) pra mensagem sobreviver ao DomainExceptionFilter e
+      // chegar de verdade na tela do operador — não Error simples.
       await throwDescriptiveHttpError(response, "POST /customers");
     }
     return this.toCustomer(await response.json());
