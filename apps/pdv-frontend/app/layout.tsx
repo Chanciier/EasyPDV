@@ -15,9 +15,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'PDV — Ponto de Venda',
+  title: 'EasyPDV — Ponto de Venda',
   description: 'Sistema de ponto de venda rápido e eficiente, keyboard-first.',
-  generator: 'v0.app',
 }
 
 export const viewport: Viewport = {
