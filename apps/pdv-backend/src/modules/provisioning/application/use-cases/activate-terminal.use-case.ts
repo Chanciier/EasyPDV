@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { getIntermediadorUrl } from "../../../../common/intermediador-config.js";
 import type { TerminalActivationResult } from "@easypdv/shared-types";
 import type { StoreIdentity } from "../../domain/entities/store-identity.entity.js";
 import { ActivationFailedError, AlreadyActivatedError } from "../../domain/errors.js";
@@ -31,7 +32,7 @@ export class ActivateTerminalUseCase {
     private readonly syncProductsFromBlingUseCase: SyncProductsFromBlingUseCase,
     configService: ConfigService,
   ) {
-    this.intermediadorUrl = configService.get<string>("INTERMEDIADOR_URL") ?? "http://127.0.0.1:4002";
+    this.intermediadorUrl = getIntermediadorUrl(configService);
   }
 
   async execute(command: ActivateTerminalCommand): Promise<StoreIdentity> {

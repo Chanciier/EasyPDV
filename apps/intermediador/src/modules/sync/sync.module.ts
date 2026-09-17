@@ -39,9 +39,6 @@ import { SYNC_QUEUE_NAME } from "./sync.constants.js";
     SyncJobReconciliationWorker,
     { provide: SYNC_JOB_REPOSITORY, useClass: PrismaSyncJobRepository },
     { provide: SYNC_QUEUE, useClass: BullSyncQueueAdapter },
-    // Sprint 7: Adapter Bling real substitui o NoopSyncTargetAdapter (Sprint 6) —
-    // este último continua no código como dublê de teste pra ambientes sem
-    // credenciais Bling (ver infrastructure/adapters/noop/).
     { provide: SYNC_TARGET, useExisting: BlingSyncTargetAdapter },
   ],
 })

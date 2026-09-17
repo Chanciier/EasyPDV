@@ -18,10 +18,22 @@ function settingsPath(): string {
 }
 
 export function readSettings(): HardwareSettings {
+  let raw: string;
   try {
-    const raw = fs.readFileSync(settingsPath(), "utf8");
-    return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<HardwareSettings>) };
+    raw = fs.readFileSync(settingsPath(), "utf8");
   } catch {
+    // Arquivo não existe ainda (primeira execução) — esperado, sem log.
+    return DEFAULT_SETTINGS;
+  }
+
+  try {
+    return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<HardwareSettings>) };
+  } catch (error) {
+    // JSON corrompido (ex: gravação interrompida por queda de energia) É um
+    // bug real, diferente de "arquivo não existe" — antes os dois caiam no
+    // mesmo catch e resetavam pro default em silêncio, sem rastro nenhum pra
+    // diagnosticar por que a config da impressora sumiu de uma hora pra outra.
+    console.warn(`settings.json corrompido, usando default: ${error instanceof Error ? error.message : String(error)}`);
     return DEFAULT_SETTINGS;
   }
 }

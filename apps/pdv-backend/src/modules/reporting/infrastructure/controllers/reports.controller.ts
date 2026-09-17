@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../identity/infrastructure/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../../identity/infrastructure/guards/roles.guard.js";
 import { Roles } from "../../../identity/infrastructure/decorators/roles.decorator.js";
@@ -23,9 +23,18 @@ function endOfDay(date: Date): Date {
   return end;
 }
 
+/** `from`/`to` vêm de `<input type="date">` — uma query string malformada (`?from=abc`) não deveria virar `Invalid Date` silenciosa dentro do filtro do banco. */
+function parseDateParam(value: string, paramName: string): Date {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new BadRequestException(`Parâmetro "${paramName}" inválido: "${value}" não é uma data válida`);
+  }
+  return parsed;
+}
+
 function resolveRange(from?: string, to?: string): { from: Date; to: Date } {
-  const toDate = to ? endOfDay(new Date(to)) : new Date();
-  const fromDate = from ? new Date(from) : new Date(toDate.getTime() - THIRTY_DAYS_MS);
+  const toDate = to ? endOfDay(parseDateParam(to, "to")) : new Date();
+  const fromDate = from ? parseDateParam(from, "from") : new Date(toDate.getTime() - THIRTY_DAYS_MS);
   return { from: fromDate, to: toDate };
 }
 

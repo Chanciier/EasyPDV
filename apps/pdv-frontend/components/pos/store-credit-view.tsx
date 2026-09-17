@@ -5,7 +5,7 @@ import { Gift, Trash2, UserCheck, RotateCcw, CheckCircle2, Package } from 'lucid
 import type { Product } from '@easypdv/shared-types'
 import { formatCpf, onlyDigits, isValidCpf } from '@easypdv/shared-validation'
 import { formatBRL } from '@/lib/pos-data'
-import { ApiError } from '@/lib/api-client'
+import { describeError } from '@/lib/api-client'
 import { findProductByBarcode, useProductPrices, useProductSearch } from '@/hooks/use-sales'
 import { useGrantStoreCredit, useStoreCreditCustomer, type GrantStoreCreditResult } from '@/hooks/use-store-credit'
 import { Modal } from './ui/modal'
@@ -22,11 +22,6 @@ interface TrocaItem {
 
 type Step = 'cpf' | 'customer-info' | 'items'
 
-function describeError(e: unknown, fallback: string): string {
-  if (e instanceof ApiError) return e.code
-  if (e instanceof Error) return e.message
-  return fallback
-}
 
 /**
  * Vale-Troca — Fase 2 (2026-09-10). Portão de CPF (sem opção de pular —

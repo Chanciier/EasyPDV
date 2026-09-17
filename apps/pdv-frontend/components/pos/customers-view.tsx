@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Search, Plus, Pencil, Trash2, Users, RefreshCw, Wallet, PlusCircle, MinusCircle } from 'lucide-react'
 import type { Customer } from '@easypdv/shared-types'
 import { isValidCpf, onlyDigits } from '@easypdv/shared-validation'
-import { ApiError } from '@/lib/api-client'
+import { describeError } from '@/lib/api-client'
 import { useAuthStore } from '@/lib/auth-store'
 import { formatBRL } from '@/lib/pos-data'
 import {
@@ -66,7 +66,7 @@ function StoreCreditAdjustSection({ document }: { document: string }) {
       setAmount('')
       setReason('')
     } catch (e) {
-      setAdjustError(e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Erro ao ajustar saldo.')
+      setAdjustError(describeError(e, 'Erro ao ajustar saldo.'))
     }
   }
 
@@ -204,7 +204,7 @@ export function CustomersView() {
       }
       setEditingId(null)
     } catch (e) {
-      setFormError(e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Erro ao salvar cliente.')
+      setFormError(describeError(e, 'Erro ao salvar cliente.'))
     }
   }
 
@@ -229,7 +229,7 @@ export function CustomersView() {
     } catch (e) {
       setSyncMessage({
         ok: false,
-        text: e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Falha ao sincronizar com o Bling.',
+        text: describeError(e, 'Falha ao sincronizar com o Bling.'),
       })
     }
   }

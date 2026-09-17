@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { DEFAULT_INTERMEDIADOR_TIMEOUT_MS, getIntermediadorUrl } from "../../../../common/intermediador-config.js";
+import { throwDescriptiveHttpError } from "../../../../common/describe-http-error.js";
 import {
   STORE_IDENTITY_REPOSITORY,
   type StoreIdentityRepositoryPort,
@@ -23,7 +25,7 @@ export class HttpSyncGateway implements SyncGatewayPort {
     configService: ConfigService,
     @Inject(STORE_IDENTITY_REPOSITORY) private readonly storeIdentityRepository: StoreIdentityRepositoryPort,
   ) {
-    this.baseUrl = configService.get<string>("INTERMEDIADOR_URL") ?? "http://127.0.0.1:4002";
+    this.baseUrl = getIntermediadorUrl(configService);
   }
 
   async send(entry: SyncGatewayEntry): Promise<void> {
@@ -36,9 +38,10 @@ export class HttpSyncGateway implements SyncGatewayPort {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
       body: JSON.stringify(entry),
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) {
-      throw new Error(`Intermediador respondeu ${response.status} para ${entry.entityType}:${entry.entityId}`);
+      await throwDescriptiveHttpError(response, `POST /sync (${entry.entityType}:${entry.entityId})`);
     }
   }
 }

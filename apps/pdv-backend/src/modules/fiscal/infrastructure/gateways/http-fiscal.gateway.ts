@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { DEFAULT_INTERMEDIADOR_TIMEOUT_MS, getIntermediadorUrl } from "../../../../common/intermediador-config.js";
 import type { FiscalStatusPayload } from "@easypdv/shared-types";
 import {
   STORE_IDENTITY_REPOSITORY,
@@ -7,6 +8,9 @@ import {
 } from "../../../provisioning/application/ports/store-identity-repository.port.js";
 import { throwDescriptiveHttpError } from "../../../../common/describe-http-error.js";
 import type { FiscalGatewayPort } from "../../application/ports/fiscal-gateway.port.js";
+
+/** Ação fiscal real (issue/retry/reissue) pode envolver round-trip do Intermediador com a SEFAZ via Bling — timeout mais folgado que o default pra não cortar uma emissão que só está demorando. */
+const FISCAL_ACTION_TIMEOUT_MS = 20_000;
 
 /** Mesmo padrão de HttpSyncGateway (Sprint 6/10) — apiKey de terminal lida do StoreIdentity local a cada chamada. */
 @Injectable()
@@ -17,7 +21,7 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
     configService: ConfigService,
     @Inject(STORE_IDENTITY_REPOSITORY) private readonly storeIdentityRepository: StoreIdentityRepositoryPort,
   ) {
-    this.baseUrl = configService.get<string>("INTERMEDIADOR_URL") ?? "http://127.0.0.1:4002";
+    this.baseUrl = getIntermediadorUrl(configService);
   }
 
   async fetchStatus(saleId: string): Promise<FiscalStatusPayload | null> {
@@ -28,6 +32,7 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
 
     const response = await fetch(`${this.baseUrl}/fiscal/sale/${encodeURIComponent(saleId)}`, {
       headers: { "X-Terminal-Api-Key": identity.apiKey },
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (response.status === 404) {
       return null;
@@ -47,6 +52,7 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
     const response = await fetch(`${this.baseUrl}/fiscal/sale/${encodeURIComponent(saleId)}/issue`, {
       method: "POST",
       headers: { "X-Terminal-Api-Key": identity.apiKey },
+      signal: AbortSignal.timeout(FISCAL_ACTION_TIMEOUT_MS),
     });
     if (!response.ok) {
       await throwDescriptiveHttpError(response, `POST /fiscal/sale/${saleId}/issue`);
@@ -63,6 +69,7 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
     const response = await fetch(`${this.baseUrl}/fiscal/sale/${encodeURIComponent(saleId)}/retry`, {
       method: "POST",
       headers: { "X-Terminal-Api-Key": identity.apiKey },
+      signal: AbortSignal.timeout(FISCAL_ACTION_TIMEOUT_MS),
     });
     if (!response.ok) {
       await throwDescriptiveHttpError(response, `POST /fiscal/sale/${saleId}/retry`);
@@ -79,6 +86,7 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
     const response = await fetch(`${this.baseUrl}/fiscal/sale/${encodeURIComponent(saleId)}/reissue`, {
       method: "POST",
       headers: { "X-Terminal-Api-Key": identity.apiKey },
+      signal: AbortSignal.timeout(FISCAL_ACTION_TIMEOUT_MS),
     });
     if (!response.ok) {
       await throwDescriptiveHttpError(response, `POST /fiscal/sale/${saleId}/reissue`);

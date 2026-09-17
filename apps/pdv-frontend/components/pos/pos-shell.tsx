@@ -153,7 +153,7 @@ export function POSShell() {
             <ScanBarcode className="size-5" />
           </div>
           <div className="leading-tight">
-            <p className="text-sm font-bold tracking-tight">PDV Express</p>
+            <p className="text-sm font-bold tracking-tight">EasyPDV</p>
             <p className="text-xs text-sidebar-foreground/60">Ponto de Venda</p>
           </div>
         </div>

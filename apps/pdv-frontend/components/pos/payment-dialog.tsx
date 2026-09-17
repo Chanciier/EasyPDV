@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Banknote, CreditCard, Gift, QrCode, Trash2, Wallet } from 'lucide-react'
 import type { Payment, PaymentCardBrand, PaymentCardType, PaymentMethod, Sale } from '@easypdv/shared-types'
+import { paymentDisplayLabel } from '@/lib/payment-labels'
 import { Modal } from './ui/modal'
 import { formatBRL } from '@/lib/pos-data'
-import { ApiError } from '@/lib/api-client'
+import { describeError } from '@/lib/api-client'
+import { roundMoney } from '@/lib/money'
 import { useRegisterPayment, useRemovePayment } from '@/hooks/use-sales'
 import { useStoreCreditBalance } from '@/hooks/use-store-credit'
 
@@ -40,32 +42,6 @@ const METHODS: { key: MethodKey; label: string; icon: typeof Banknote; num: stri
 
 const FIXED_CARD_BRAND: PaymentCardBrand = 'mastercard'
 
-const PAYMENT_LABELS: Record<PaymentMethod, string> = {
-  dinheiro: 'Dinheiro',
-  cartao: 'Cartão',
-  pix: 'PIX',
-  vale_troca: 'Vale-Troca',
-  outro: 'Outro',
-}
-
-const BRAND_LABELS: Record<PaymentCardBrand, string> = {
-  mastercard: 'Mastercard',
-  visa: 'Visa',
-}
-
-function paymentDisplayLabel(payment: Payment): string {
-  if (!payment.cardType) return PAYMENT_LABELS[payment.method]
-  const tipo = payment.cardType === 'credito' ? 'Crédito' : 'Débito'
-  const bandeira = payment.cardBrand ? BRAND_LABELS[payment.cardBrand] : null
-  const parcelas = payment.installments && payment.installments > 1 ? ` ${payment.installments}x` : ''
-  return bandeira ? `${tipo} (${bandeira})${parcelas}` : `${tipo}${parcelas}`
-}
-
-function describeError(e: unknown, fallback: string) {
-  if (e instanceof ApiError) return e.code
-  if (e instanceof Error) return e.message
-  return fallback
-}
 
 /**
  * Pagamento dividido (2026-08-21): cada pagamento ("perna") é registrado no
@@ -125,7 +101,7 @@ export function PaymentDialog({
   const total = sale?.totalAmount ?? 0
   const approvedPayments = useMemo(() => (sale?.payments ?? []).filter((p) => p.status === 'aprovado'), [sale?.payments])
   const approvedTotal = useMemo(() => approvedPayments.reduce((sum, p) => sum + p.amount, 0), [approvedPayments])
-  const remaining = Math.max(0, Math.round((total - approvedTotal) * 100) / 100)
+  const remaining = Math.max(0, roundMoney(total - approvedTotal))
   const fullyPaid = remaining <= 0
 
   useEffect(() => {
@@ -156,8 +132,8 @@ export function PaymentDialog({
   const isCash = selectedKey === 'dinheiro'
   const amountNum = Number(amount.replace(',', '.')) || 0
   const receivedNum = Number(received.replace(',', '.')) || 0
-  const appliedAmount = Math.round((isCash ? Math.min(receivedNum, remaining) : amountNum) * 100) / 100
-  const change = isCash ? Math.max(0, Math.round((receivedNum - remaining) * 100) / 100) : 0
+  const appliedAmount = roundMoney(isCash ? Math.min(receivedNum, remaining) : amountNum)
+  const change = isCash ? Math.max(0, roundMoney(receivedNum - remaining)) : 0
 
   const isValeTroca = selectedKey === 'vale_troca'
   // Fase 3 (2026-09-10) — achado crítico do plano original: até aqui
@@ -206,7 +182,7 @@ export function PaymentDialog({
       const updatedApprovedTotal = updated.payments
         .filter((p) => p.status === 'aprovado')
         .reduce((sum, p) => sum + p.amount, 0)
-      const newRemaining = Math.max(0, Math.round((updated.totalAmount - updatedApprovedTotal) * 100) / 100)
+      const newRemaining = Math.max(0, roundMoney(updated.totalAmount - updatedApprovedTotal))
       if (newRemaining > 0) {
         setStep('method')
       }

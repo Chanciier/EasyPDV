@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { DEFAULT_INTERMEDIADOR_TIMEOUT_MS, getIntermediadorUrl } from "../../../../common/intermediador-config.js";
 import {
   STORE_IDENTITY_REPOSITORY,
   type StoreIdentityRepositoryPort,
@@ -16,7 +17,7 @@ export class HttpClubGateway implements ClubGatewayPort {
     configService: ConfigService,
     @Inject(STORE_IDENTITY_REPOSITORY) private readonly storeIdentityRepository: StoreIdentityRepositoryPort,
   ) {
-    this.baseUrl = configService.get<string>("INTERMEDIADOR_URL") ?? "http://127.0.0.1:4002";
+    this.baseUrl = getIntermediadorUrl(configService);
   }
 
   /** `null` = não deu pra saber (rede/identidade indisponível) — chamador (CheckClubStatusUseCase) trata como "não bloquear a venda". */
@@ -27,6 +28,7 @@ export class HttpClubGateway implements ClubGatewayPort {
     }
     const response = await fetch(`${this.baseUrl}/club/status/${encodeURIComponent(document)}`, {
       headers: { "X-Terminal-Api-Key": identity.apiKey },
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) {
       return null;
@@ -42,6 +44,7 @@ export class HttpClubGateway implements ClubGatewayPort {
     }
     const response = await fetch(`${this.baseUrl}/club/members`, {
       headers: { "X-Terminal-Api-Key": identity.apiKey },
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) {
       await throwDescriptiveHttpError(response, "GET /club/members");
@@ -58,6 +61,7 @@ export class HttpClubGateway implements ClubGatewayPort {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
       body: JSON.stringify(input),
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) {
       await throwDescriptiveHttpError(response, "POST /club/members");
@@ -73,6 +77,7 @@ export class HttpClubGateway implements ClubGatewayPort {
     const response = await fetch(`${this.baseUrl}/club/members/${encodeURIComponent(document)}`, {
       method: "DELETE",
       headers: { "X-Terminal-Api-Key": identity.apiKey },
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) {
       await throwDescriptiveHttpError(response, `DELETE /club/members/${document}`);

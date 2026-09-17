@@ -47,7 +47,7 @@ export function LoginScreen() {
         <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-primary/15">
           <ScanBarcode className="size-7 text-primary-foreground" />
         </div>
-        <h1 className="text-center text-xl font-bold">PDV Express</h1>
+        <h1 className="text-center text-xl font-bold">EasyPDV</h1>
         <p className="mt-1 text-center text-sm text-muted-foreground">Entre com seu usuário para começar.</p>
 
         <div className="mt-6 space-y-3">

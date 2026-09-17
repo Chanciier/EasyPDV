@@ -18,7 +18,6 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@easypdv/shared-events": "workspace:*",
     "@easypdv/shared-types": "workspace:*",
     "@easypdv/shared-validation": "workspace:*",
     "@nestjs/common": "^11.0.1",

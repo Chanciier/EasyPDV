@@ -3,6 +3,7 @@ import { PrismaService } from "../../../../prisma/prisma.service.js";
 import type { ErpSyncMapping } from "../../domain/entities/erp-sync-mapping.entity.js";
 import type { ErpProviderCode } from "../../domain/entities/erp-integration.entity.js";
 import type {
+  ErpSyncMappingEntityType,
   ErpSyncMappingRepositoryPort,
   UpsertErpSyncMappingData,
 } from "../../application/ports/erp-sync-mapping-repository.port.js";
@@ -15,7 +16,7 @@ export class PrismaErpSyncMappingRepository implements ErpSyncMappingRepositoryP
   async find(
     organizationId: string,
     provider: ErpProviderCode,
-    localEntityType: string,
+    localEntityType: ErpSyncMappingEntityType,
     localEntityId: string,
   ): Promise<ErpSyncMapping | null> {
     const record = await this.prisma.erpSyncMapping.findUnique({
@@ -47,7 +48,11 @@ export class PrismaErpSyncMappingRepository implements ErpSyncMappingRepositoryP
     return toDomainErpSyncMapping(record);
   }
 
-  async deleteByTypes(organizationId: string, provider: ErpProviderCode, localEntityTypes: string[]): Promise<number> {
+  async deleteByTypes(
+    organizationId: string,
+    provider: ErpProviderCode,
+    localEntityTypes: ErpSyncMappingEntityType[],
+  ): Promise<number> {
     const result = await this.prisma.erpSyncMapping.deleteMany({
       where: { organizationId, provider, localEntityType: { in: localEntityTypes } },
     });

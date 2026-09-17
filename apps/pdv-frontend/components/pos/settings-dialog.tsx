@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Printer, Wifi, WifiOff, DatabaseBackup, RotateCcw } from 'lucide-react'
+import { describeError } from '@/lib/api-client'
 import { Modal } from './ui/modal'
 import {
   isElectron,
@@ -54,7 +55,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       })
       setMessage('Configuracoes salvas.')
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Erro ao salvar.')
+      setMessage(describeError(e, 'Erro ao salvar.'))
     }
   }
 
@@ -70,7 +71,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       })
       setMessage('Enviado para a impressora.')
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Erro ao imprimir.')
+      setMessage(describeError(e, 'Erro ao imprimir.'))
     }
   }
 
@@ -80,7 +81,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       await openDrawer.mutateAsync()
       setMessage('Comando de abertura enviado.')
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Erro ao abrir gaveta.')
+      setMessage(describeError(e, 'Erro ao abrir gaveta.'))
     }
   }
 
@@ -90,7 +91,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       await createBackup.mutateAsync()
       setBackupMessage('Backup criado.')
     } catch (e) {
-      setBackupMessage(e instanceof Error ? e.message : 'Erro ao criar backup.')
+      setBackupMessage(describeError(e, 'Erro ao criar backup.'))
     }
   }
 
@@ -102,7 +103,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       await restoreBackup.mutateAsync(fileName)
     } catch (e) {
       setConfirmRestore(null)
-      setBackupMessage(e instanceof Error ? e.message : 'Erro ao restaurar backup.')
+      setBackupMessage(describeError(e, 'Erro ao restaurar backup.'))
     }
   }
 

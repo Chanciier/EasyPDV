@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Search, Plus, Pencil, Trash2, Package, RefreshCw } from 'lucide-react'
 import type { Product } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
-import { ApiError } from '@/lib/api-client'
+import { describeError } from '@/lib/api-client'
 import { useProductPrices } from '@/hooks/use-sales'
 import {
   useActivePriceList,
@@ -39,12 +39,6 @@ const emptyForm: ProductForm = {
   active: true,
   price: '',
   newBarcode: '',
-}
-
-function describeError(e: unknown, fallback: string) {
-  if (e instanceof ApiError) return e.code
-  if (e instanceof Error) return e.message
-  return fallback
 }
 
 export function ProductsView() {

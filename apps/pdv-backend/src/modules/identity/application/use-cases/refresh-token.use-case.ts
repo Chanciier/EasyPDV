@@ -1,7 +1,4 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { JwtService } from "@nestjs/jwt";
-import { randomBytes } from "node:crypto";
 import { InvalidRefreshTokenError } from "../../domain/errors.js";
 import type { AuthTokens } from "@easypdv/shared-types";
 import { AUTH_SESSION_REPOSITORY, type AuthSessionRepositoryPort } from "../ports/auth-session-repository.port.js";
@@ -11,6 +8,7 @@ import {
   USER_VERIFICATION_GATEWAY,
   type UserVerificationGatewayPort,
 } from "../ports/user-verification-gateway.port.js";
+import { TokenIssuerService } from "../services/token-issuer.service.js";
 
 const CENTRAL_RECHECK_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -22,8 +20,7 @@ export class RefreshTokenUseCase {
     @Inject(USER_REPOSITORY) private readonly userRepository: UserRepositoryPort,
     @Inject(PASSWORD_HASHER) private readonly passwordHasher: PasswordHasherPort,
     @Inject(USER_VERIFICATION_GATEWAY) private readonly userVerificationGateway: UserVerificationGatewayPort,
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
+    private readonly tokenIssuer: TokenIssuerService,
   ) {}
 
   async execute(refreshToken: string): Promise<AuthTokens> {
@@ -69,23 +66,19 @@ export class RefreshTokenUseCase {
 
     await this.authSessionRepository.revoke(session.id);
 
-    const accessToken = this.jwtService.sign({ sub: user.id, role: user.role });
-    const newSecret = randomBytes(32).toString("base64url");
-    const refreshTokenHash = await this.passwordHasher.hash(newSecret);
-    const refreshTtlDays = Number(this.configService.get("JWT_REFRESH_EXPIRES_DAYS") ?? 30);
-    const expiresAt = new Date(Date.now() + refreshTtlDays * 24 * 60 * 60 * 1000);
+    const issued = await this.tokenIssuer.issue({ sub: user.id, role: user.role });
 
     const newSession = await this.authSessionRepository.create({
       userId: user.id,
-      refreshTokenHash,
+      refreshTokenHash: issued.refreshTokenHash,
       terminalId: null,
-      expiresAt,
+      expiresAt: issued.expiresAt,
     });
 
     return {
-      accessToken,
-      refreshToken: `${newSession.id}.${newSecret}`,
-      expiresAt: expiresAt.toISOString(),
+      accessToken: issued.accessToken,
+      refreshToken: `${newSession.id}.${issued.refreshToken}`,
+      expiresAt: issued.expiresAt.toISOString(),
     };
   }
 }

@@ -1,21 +1,28 @@
 'use client'
 
 import { useState } from 'react'
-import { KeyRound, Copy } from 'lucide-react'
+import { KeyRound, Copy, Check } from 'lucide-react'
 import type { ActivationCodeResult } from '@easypdv/shared-types'
-import { ApiError } from '@/lib/api-client'
+import { describeError } from '@/lib/api-client'
 import { useGenerateActivationCode } from '@/hooks/use-provisioning'
-
-function describeError(e: unknown, fallback: string) {
-  if (e instanceof ApiError) return e.code
-  if (e instanceof Error) return e.message
-  return fallback
-}
 
 export function AdminActivationTab() {
   const [result, setResult] = useState<ActivationCodeResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const generate = useGenerateActivationCode()
+
+  const copyCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (e) {
+      // Permissão de clipboard negada (comum em contexto sandboxed) — sem
+      // isso o clique falhava em silêncio e o operador achava que copiou.
+      setError(describeError(e, 'Não foi possível copiar o código — copie manualmente.'))
+    }
+  }
 
   const submit = async () => {
     setError(null)
@@ -58,11 +65,11 @@ export function AdminActivationTab() {
               {result.code}
             </span>
             <button
-              onClick={() => navigator.clipboard.writeText(result.code)}
+              onClick={() => copyCode(result.code)}
               title="Copiar código"
               className="grid size-9 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
             >
-              <Copy className="size-4" />
+              {copied ? <Check className="size-4 text-primary" /> : <Copy className="size-4" />}
             </button>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">

@@ -2,14 +2,13 @@
 
 import { useState } from 'react'
 import { KeyRound } from 'lucide-react'
-import { ApiError } from '@/lib/api-client'
+import { ApiError, describeError } from '@/lib/api-client'
 import { useChangePassword } from '@/hooks/use-auth'
 import { useAuthStore } from '@/lib/auth-store'
 
-function describeError(e: unknown, fallback: string) {
-  if (e instanceof ApiError) return e.status === 401 ? 'Senha atual incorreta.' : e.code
-  if (e instanceof Error) return e.message
-  return fallback
+function describeChangePasswordError(e: unknown, fallback: string) {
+  if (e instanceof ApiError && e.status === 401) return 'Senha atual incorreta.'
+  return describeError(e, fallback)
 }
 
 /**
@@ -30,7 +29,7 @@ export function ForceChangePasswordScreen() {
   const changePassword = useChangePassword()
 
   const errorMessage =
-    validationError ?? (changePassword.error ? describeError(changePassword.error, 'Erro ao trocar a senha.') : null)
+    validationError ?? (changePassword.error ? describeChangePasswordError(changePassword.error, 'Erro ao trocar a senha.') : null)
 
   const submit = () => {
     if (changePassword.isPending) return

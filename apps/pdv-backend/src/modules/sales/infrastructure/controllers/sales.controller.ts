@@ -130,7 +130,10 @@ export class SalesController {
     this.realtimeGateway.emitSaleConfirmed({
       saleId: sale.id,
       totalAmount: sale.totalAmount,
-      confirmedAt: sale.confirmedAt!.toISOString(),
+      // Sale recém-confirmada sempre tem confirmedAt — fallback só pra não
+      // derrubar o broadcast (evento é só "algo mudou, revalida") se essa
+      // invariante for quebrada por um bug futuro em mapper/entidade.
+      confirmedAt: (sale.confirmedAt ?? new Date()).toISOString(),
     });
     return sale;
   }

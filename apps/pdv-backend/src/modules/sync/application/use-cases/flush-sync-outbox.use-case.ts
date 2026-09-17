@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { toErrorMessage } from "../../../../common/to-error-message.js";
 import { SYNC_GATEWAY, type SyncGatewayPort } from "../ports/sync-gateway.port.js";
 import { SYNC_OUTBOX_REPOSITORY, type SyncOutboxRepositoryPort } from "../ports/sync-outbox-repository.port.js";
 
@@ -34,7 +35,7 @@ export class FlushSyncOutboxUseCase {
         await this.syncOutboxRepository.markSent(entry.id);
         sent++;
       } catch (error) {
-        await this.syncOutboxRepository.markFailed(entry.id, error instanceof Error ? error.message : String(error));
+        await this.syncOutboxRepository.markFailed(entry.id, toErrorMessage(error));
         failed++;
       }
     }

@@ -13,12 +13,52 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Extrai uma mensagem de erro amigável — antes copiada (com pelo menos uma
+ * variante mais fraca, que não checava `ApiError` e só funcionava por
+ * `ApiError.message` coincidir com `.code`) em 11+ componentes.
+ */
+export function describeError(error: unknown, fallback = "Erro inesperado"): string {
+  if (error instanceof ApiError) return error.code;
+  if (error instanceof Error) return error.message;
+  return fallback;
+}
+
 export interface ApiRequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   query?: Record<string, string | string[] | undefined>;
   /** /auth/login e /auth/refresh não anexam Bearer nem disparam retry de refresh em 401. */
   skipAuth?: boolean;
+}
+
+interface ErrorResponseBody {
+  message?: string;
+  error?: string;
+  fieldErrors?: Record<string, string[]>;
+  formErrors?: string[];
+}
+
+/**
+ * `ZodValidationPipe` (pdv-backend) lança `BadRequestException(result.error.flatten())`
+ * — o corpo vira `{fieldErrors, formErrors}`, sem `message`/`error` nenhum.
+ * Sem tratar esse formato, qualquer validação (ex: CPF inválido ao anexar
+ * cliente numa venda) aparecia pro operador como um "Bad Request" genérico
+ * (`response.statusText`) em vez do motivo real — mesma classe de bug já
+ * corrigida do lado do Intermediador em `describe-http-error.ts`.
+ */
+function extractErrorCode(body: ErrorResponseBody | string | null, fallback: string): string {
+  if (typeof body === "string") return body || fallback;
+  if (body?.message) return body.message;
+  const fieldIssues = body?.fieldErrors
+    ? Object.entries(body.fieldErrors)
+        .map(([field, issues]) => `${field}: ${issues.join(", ")}`)
+        .join("; ")
+    : "";
+  if (fieldIssues || body?.formErrors?.length) {
+    return [fieldIssues, ...(body?.formErrors ?? [])].filter(Boolean).join("; ");
+  }
+  return body?.error ?? fallback;
 }
 
 function buildUrl(path: string, query?: Record<string, string | string[] | undefined>): string {
@@ -55,10 +95,10 @@ async function rawRequest<T>(path: string, options: ApiRequestOptions): Promise<
     return undefined as T;
   }
 
-  const parsed = (await response.json().catch(() => null)) as { message?: string; error?: string } | null;
+  const parsed = (await response.json().catch(() => null)) as ErrorResponseBody | string | null;
 
   if (!response.ok) {
-    throw new ApiError(response.status, parsed?.message ?? parsed?.error ?? response.statusText);
+    throw new ApiError(response.status, extractErrorCode(parsed, response.statusText));
   }
 
   return parsed as T;

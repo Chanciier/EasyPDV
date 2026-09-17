@@ -4,7 +4,11 @@ import { InvalidBlingOAuthStateError } from "../../domain/errors.js";
 import { BlingOAuthClient } from "../../infrastructure/clients/bling-oauth.client.js";
 import { BlingOAuthStateStore } from "../../infrastructure/services/bling-oauth-state.store.js";
 import { ERP_INTEGRATION_REPOSITORY, type ErpIntegrationRepositoryPort } from "../ports/erp-integration-repository.port.js";
-import { ERP_SYNC_MAPPING_REPOSITORY, type ErpSyncMappingRepositoryPort } from "../ports/erp-sync-mapping-repository.port.js";
+import {
+  ERP_SYNC_MAPPING_REPOSITORY,
+  type ErpSyncMappingEntityType,
+  type ErpSyncMappingRepositoryPort,
+} from "../ports/erp-sync-mapping-repository.port.js";
 
 /**
  * Tipos de mapeamento "resolvidos uma vez e reaproveitados por qualquer
@@ -12,7 +16,7 @@ import { ERP_SYNC_MAPPING_REPOSITORY, type ErpSyncMappingRepositoryPort } from "
  * idempotência de UMA venda específica já processada e não precisam (nem
  * devem) ser invalidadas numa reconexão.
  */
-const REUSABLE_MAPPING_TYPES = ["contact", "payment_method", "warehouse", "product"];
+const REUSABLE_MAPPING_TYPES: ErpSyncMappingEntityType[] = ["contact", "payment_method", "warehouse", "product"];
 
 @Injectable()
 export class HandleBlingCallbackUseCase {

@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, Plus, Minus, Trash2, ShoppingCart, Lock, Percent, Gift } from 'lucide-react'
-import type { Payment, PaymentMethod, Product, ReceiptPrintPayload, Sale, SaleItem } from '@easypdv/shared-types'
+import type { Product, ReceiptPrintPayload, Sale, SaleItem } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
-import { ApiError } from '@/lib/api-client'
+import { describeError } from '@/lib/api-client'
+import { paymentDisplayLabel } from '@/lib/payment-labels'
+import { percentToAmount } from '@/lib/money'
 import { useCartStore } from '@/lib/cart-store'
 import { useFiscalPrintStore } from '@/lib/fiscal-print-store'
 import { useCurrentCashSession } from '@/hooks/use-cash'
@@ -34,19 +36,6 @@ import { ReceiptDialog } from './receipt-dialog'
 
 type Receipt = { sale: Sale; changeTotal: number }
 
-const PAYMENT_LABELS: Record<PaymentMethod, string> = {
-  dinheiro: 'Dinheiro',
-  cartao: 'Cartão',
-  pix: 'PIX',
-  vale_troca: 'Vale-Troca',
-  outro: 'Outro',
-}
-
-const BRAND_LABELS: Record<string, string> = {
-  mastercard: 'Mastercard',
-  visa: 'Visa',
-}
-
 /** Desconto padrão do item de venda de sócio (30%) quando o operador não digita nada — ver `finalizeClubItemDiscount` em SaleView. */
 const CLUB_DEFAULT_DISCOUNT_PERCENT = 30
 
@@ -58,15 +47,6 @@ const CLUB_DEFAULT_DISCOUNT_PERCENT = 30
  * bastante pra nenhum leitor real terminar de mandar um código nesse tempo.
  */
 const CLUB_DISCOUNT_DIGIT_DELAY_MS = 300
-
-/** Pagamento dividido + bandeira (2026-08-21) — usado no cupom/recibo pra identificar cada perna (ex: "Crédito (Mastercard) 3x"). */
-function paymentLegLabel(payment: Payment): string {
-  if (!payment.cardType) return PAYMENT_LABELS[payment.method]
-  const tipo = payment.cardType === 'credito' ? 'Crédito' : 'Débito'
-  const bandeira = payment.cardBrand ? BRAND_LABELS[payment.cardBrand] : null
-  const parcelas = payment.installments && payment.installments > 1 ? ` ${payment.installments}x` : ''
-  return bandeira ? `${tipo} (${bandeira})${parcelas}` : `${tipo}${parcelas}`
-}
 
 export function SaleView() {
   const { data: cashSession } = useCurrentCashSession()
@@ -163,12 +143,6 @@ export function SaleView() {
     return map
   }, [allProductIds, productQueries])
 
-  const describeError = (e: unknown, fallback: string) => {
-    if (e instanceof ApiError) return e.code
-    if (e instanceof Error) return e.message
-    return fallback
-  }
-
   /**
    * `discountMode: 'percent'` (2026-09-01) é só uma conveniência de entrada
    * — converte pra R$ aqui antes de mandar pro backend, que continua só
@@ -186,7 +160,7 @@ export function SaleView() {
       return
     }
     const subtotal = sale.totalAmount + sale.discountAmount
-    const amount = discountMode === 'percent' ? Math.round(subtotal * (raw / 100) * 100) / 100 : raw
+    const amount = discountMode === 'percent' ? percentToAmount(subtotal, raw) : raw
     setDiscountError(null)
     try {
       await applyDiscount.mutateAsync({ saleId: sale.id, discountAmount: amount })
@@ -205,7 +179,7 @@ export function SaleView() {
       return
     }
     const lineSubtotal = item.quantity * item.unitPrice
-    const amount = itemDiscountMode === 'percent' ? Math.round(lineSubtotal * (raw / 100) * 100) / 100 : raw
+    const amount = itemDiscountMode === 'percent' ? percentToAmount(lineSubtotal, raw) : raw
     setItemDiscountError(null)
     try {
       await applyItemDiscount.mutateAsync({ saleId: sale.id, itemId: item.id, discountAmount: amount })
@@ -298,7 +272,7 @@ export function SaleView() {
   function applyClubItemDiscountPercent(item: SaleItem, percent: number) {
     if (!sale) return
     const lineSubtotal = item.quantity * item.unitPrice
-    const discountAmount = Math.round(lineSubtotal * (percent / 100) * 100) / 100
+    const discountAmount = percentToAmount(lineSubtotal, percent)
     applyItemDiscount.mutate({ saleId: sale.id, itemId: item.id, discountAmount })
   }
 
@@ -385,7 +359,7 @@ export function SaleView() {
             applyItemDiscount.mutateAsync({
               saleId: sale.id,
               itemId: i.id,
-              discountAmount: Math.round(i.quantity * i.unitPrice * (CLUB_DEFAULT_DISCOUNT_PERCENT / 100) * 100) / 100,
+              discountAmount: percentToAmount(i.quantity * i.unitPrice, CLUB_DEFAULT_DISCOUNT_PERCENT),
             }),
           ),
         )
@@ -574,7 +548,7 @@ export function SaleView() {
         })),
         totalAmount: confirmed.totalAmount,
         payments: approvedPayments.map((p) => ({
-          label: paymentLegLabel(p),
+          label: paymentDisplayLabel(p),
           amount: p.amount,
           received: receivedByPaymentId[p.id],
           change: receivedByPaymentId[p.id] ? Math.max(0, receivedByPaymentId[p.id] - p.amount) : undefined,

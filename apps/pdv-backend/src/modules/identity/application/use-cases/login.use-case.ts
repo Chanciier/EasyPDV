@@ -1,7 +1,4 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { JwtService } from "@nestjs/jwt";
-import { randomBytes } from "node:crypto";
 import { IsUserActiveSpecification } from "../../domain/specifications/is-user-active.specification.js";
 import { InactiveUserError, InvalidCredentialsError } from "../../domain/errors.js";
 import type { User } from "../../domain/entities/user.entity.js";
@@ -14,6 +11,7 @@ import {
   USER_VERIFICATION_GATEWAY,
   type UserVerificationGatewayPort,
 } from "../ports/user-verification-gateway.port.js";
+import { TokenIssuerService } from "../services/token-issuer.service.js";
 
 export interface LoginCommand {
   email: string;
@@ -39,8 +37,7 @@ export class LoginUseCase {
     @Inject(AUTH_SESSION_REPOSITORY) private readonly authSessionRepository: AuthSessionRepositoryPort,
     @Inject(PASSWORD_HASHER) private readonly passwordHasher: PasswordHasherPort,
     @Inject(USER_VERIFICATION_GATEWAY) private readonly userVerificationGateway: UserVerificationGatewayPort,
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
+    private readonly tokenIssuer: TokenIssuerService,
   ) {}
 
   async execute(command: LoginCommand): Promise<LoginResponseDto> {
@@ -50,11 +47,10 @@ export class LoginUseCase {
       throw new InactiveUserError();
     }
 
-    const accessToken = this.jwtService.sign({ sub: user.id, role: user.role });
-    const refreshSecret = randomBytes(32).toString("base64url");
-    const refreshTokenHash = await this.passwordHasher.hash(refreshSecret);
-    const refreshTtlDays = Number(this.configService.get("JWT_REFRESH_EXPIRES_DAYS") ?? 30);
-    const expiresAt = new Date(Date.now() + refreshTtlDays * 24 * 60 * 60 * 1000);
+    const { accessToken, refreshToken, refreshTokenHash, expiresAt } = await this.tokenIssuer.issue({
+      sub: user.id,
+      role: user.role,
+    });
 
     const session = await this.authSessionRepository.create({
       userId: user.id,
@@ -67,7 +63,7 @@ export class LoginUseCase {
       user: toUserResponseDto(user),
       tokens: {
         accessToken,
-        refreshToken: `${session.id}.${refreshSecret}`,
+        refreshToken: `${session.id}.${refreshToken}`,
         expiresAt: expiresAt.toISOString(),
       },
     };

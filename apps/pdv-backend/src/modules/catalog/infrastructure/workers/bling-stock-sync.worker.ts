@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Interval } from "@nestjs/schedule";
+import { toErrorMessage } from "../../../../common/to-error-message.js";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
 import { SyncProductsFromBlingUseCase } from "../../application/use-cases/sync-products-from-bling.use-case.js";
 
@@ -52,8 +53,7 @@ export class BlingStockSyncWorker {
         );
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Falha no poll incremental de estoque com o Bling: ${message}`);
+      this.logger.error(`Falha no poll incremental de estoque com o Bling: ${toErrorMessage(error)}`);
     }
   }
 }

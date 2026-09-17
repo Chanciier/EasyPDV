@@ -34,6 +34,7 @@ import { ListOrgUsersUseCase } from "./application/use-cases/list-org-users.use-
 import { UpdateOrgUserUseCase } from "./application/use-cases/update-org-user.use-case.js";
 import { VerifyOrgUserLoginUseCase } from "./application/use-cases/verify-org-user-login.use-case.js";
 import { ChangeOrgUserPasswordUseCase } from "./application/use-cases/change-org-user-password.use-case.js";
+import { OrgTokenIssuerService } from "./application/services/org-token-issuer.service.js";
 import { OrgLoginUseCase } from "./application/use-cases/org-login.use-case.js";
 import { OrgRefreshTokenUseCase } from "./application/use-cases/org-refresh-token.use-case.js";
 import { OrgLogoutUseCase } from "./application/use-cases/org-logout.use-case.js";
@@ -73,6 +74,7 @@ import { GetCurrentOrgUserUseCase } from "./application/use-cases/get-current-or
     UpdateOrgUserUseCase,
     VerifyOrgUserLoginUseCase,
     ChangeOrgUserPasswordUseCase,
+    OrgTokenIssuerService,
     OrgLoginUseCase,
     OrgRefreshTokenUseCase,
     OrgLogoutUseCase,
