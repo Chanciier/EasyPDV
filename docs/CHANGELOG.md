@@ -1,6 +1,12 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### "proprietario" continuava sem acesso ao ajuste de Vale-Troca e ao estorno de venda (2026-09-17)
+Achado real reportado pelo usuário: ajustar o saldo de Vale-Troca na tela Clientes "não estava sendo possível" — o controle inteiro (campos + botões Adicionar/Remover) simplesmente não aparecia. Mesma causa já documentada e corrigida em `cash-view.tsx` (forçar fechamento de caixa, 2026-09-16) e deixada pendente aqui de propósito: `RolesGuard` (backend) libera `"proprietario"` pra qualquer `@Roles(...)` desde 2026-09-16, mas as checagens de papel do FRONTEND (`STORE_CREDIT_ADJUST_ROLES` em `customers-view.tsx`, `VOID_ROLES` em `history-view.tsx`) continuavam com a lista antiga, sem `"proprietario"` — o dono da loja passa em qualquer checagem do servidor, mas a UI escondia o controle antes mesmo da requisição sair.
+
+- **Corrigido**: `"proprietario"` adicionado às duas listas. Mesmo gap ainda pode existir em outros controles com checagem de papel só no frontend — não uma varredura completa, só os dois relatados/já mapeados.
+- `pnpm typecheck`/`lint`/`build` 20/20.
+
 ### Desconto de Clube removido pelo operador era reaplicado sozinho ao finalizar a venda (2026-09-17)
 Achado real reportado pelo usuário: cliente trocou um produto, o valor virou Vale-Troca, e ao usar esse saldo numa compra seguinte (item de R$300, sócio do Clube) sobrou saldo — mesmo o operador tendo removido manualmente o desconto de 30% do item antes de fechar a venda.
 

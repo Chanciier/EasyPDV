@@ -23,8 +23,12 @@ const emptyForm: FormState = { name: '', document: '', phone: '', email: '' }
 // Mesma restrição de "Cancelar venda" (Histórico) — ajuste manual de saldo é
 // uma correção administrativa fora do fluxo normal, pedido explícito do
 // usuário pra restringir a quem gerencia a loja. A restrição real é sempre
-// no backend (RolesGuard); isso aqui só esconde o controle pro mesmo público.
-const STORE_CREDIT_ADJUST_ROLES = ['administrador', 'gerente'] as const
+// no backend (RolesGuard, que já libera "proprietario" pra tudo desde
+// 2026-09-16); isso aqui só esconde o controle pro mesmo público — sem
+// "proprietario" aqui, o dono da loja não via o controle (mesmo gap já
+// corrigido em cash-view.tsx, deixado pendente aqui de propósito até
+// aparecer de verdade — achado real de produção, 2026-09-17).
+const STORE_CREDIT_ADJUST_ROLES = ['administrador', 'gerente', 'proprietario'] as const
 
 /**
  * Ajuste manual de Vale-Troca (2026-09-16, pedido do usuário: "alterar o

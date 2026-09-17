@@ -16,7 +16,10 @@ import { useFiscalPrintStore } from '@/lib/fiscal-print-store'
 import { Modal } from './ui/modal'
 import { StatCard } from './ui/stat-card'
 
-const VOID_ROLES: UserRole[] = ['administrador', 'gerente']
+// RolesGuard (backend) já libera "proprietario" pra tudo desde 2026-09-16 —
+// sem ele aqui, o dono da loja não via o botão "Estornar venda" (mesmo gap
+// já corrigido em cash-view.tsx, achado real de produção, 2026-09-17).
+const VOID_ROLES: UserRole[] = ['administrador', 'gerente', 'proprietario']
 
 const FISCAL_STATUS_META: Record<
   FiscalDocument['status'],
