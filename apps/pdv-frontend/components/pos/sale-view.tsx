@@ -96,6 +96,17 @@ export function SaleView() {
   const [itemDiscountMode, setItemDiscountMode] = useState<'amount' | 'percent'>('amount')
   const [itemDiscountError, setItemDiscountError] = useState<string | null>(null)
   const applyItemDiscount = useApplyItemDiscount()
+  // Clube Saldão — quais itens já tiveram o desconto DECIDIDO (manualmente
+  // ou pelo fallback de 30%), pra distinguir de "ainda pendente". Sem isso,
+  // `discountAmount === 0` era o único sinal usado em finalizeClubItemDiscount/
+  // openPayment — indistinguível de "operador removeu o desconto de
+  // propósito" (achado real de produção, 2026-09-17: tirar o desconto de um
+  // item e finalizar a venda reaplicava os 30% sozinho, cobrando a menos e
+  // deixando saldo de Vale-Troca sobrando no cliente).
+  const [resolvedDiscountItemIds, setResolvedDiscountItemIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    setResolvedDiscountItemIds(new Set())
+  }, [saleId])
   // CPF no início da venda (2026-08-25) — ver CpfGateDialog. `gateSubmitting`/
   // `gateError` cobrem só o passo de iniciar a venda em si; falha ao anexar
   // CPF/checar clube DEPOIS da venda já criada nunca bloqueia (mostrado no
@@ -183,6 +194,7 @@ export function SaleView() {
     setItemDiscountError(null)
     try {
       await applyItemDiscount.mutateAsync({ saleId: sale.id, itemId: item.id, discountAmount: amount })
+      setResolvedDiscountItemIds((prev) => new Set(prev).add(item.id))
       setItemDiscountId(null)
     } catch (e) {
       setItemDiscountError(describeError(e, 'Erro ao aplicar desconto.'))
@@ -274,17 +286,18 @@ export function SaleView() {
     const lineSubtotal = item.quantity * item.unitPrice
     const discountAmount = percentToAmount(lineSubtotal, percent)
     applyItemDiscount.mutate({ saleId: sale.id, itemId: item.id, discountAmount })
+    setResolvedDiscountItemIds((prev) => new Set(prev).add(item.id))
   }
 
   /**
-   * Clube Saldão — fecha o desconto de um item "pendente" (nasceu com
-   * `discountAmount: 0`, nunca recebeu uma tecla 1-9 do operador) em 30% de
-   * fallback. Chamado ao trocar de item selecionado (bipar o próximo
+   * Clube Saldão — fecha o desconto de um item "pendente" (nunca teve o
+   * desconto decidido — ver `resolvedDiscountItemIds`) em 30% de fallback.
+   * Chamado ao trocar de item selecionado (bipar o próximo
    * produto) e antes de abrir o pagamento, pro último item da venda — que
    * nunca tem um "próximo bip" pra disparar isso sozinho.
    */
   function finalizeClubItemDiscount(item: SaleItem | undefined) {
-    if (!item || item.discountAmount > 0) return
+    if (!item || resolvedDiscountItemIds.has(item.id)) return
     applyClubItemDiscountPercent(item, CLUB_DEFAULT_DISCOUNT_PERCENT)
   }
 
@@ -352,7 +365,7 @@ export function SaleView() {
   async function openPayment() {
     if (!sale) return
     if (sale.discountSource === 'club') {
-      const pending = sale.items.filter((i) => i.discountAmount === 0)
+      const pending = sale.items.filter((i) => !resolvedDiscountItemIds.has(i.id))
       if (pending.length > 0) {
         await Promise.all(
           pending.map((i) =>
@@ -363,6 +376,11 @@ export function SaleView() {
             }),
           ),
         )
+        setResolvedDiscountItemIds((prev) => {
+          const next = new Set(prev)
+          pending.forEach((i) => next.add(i.id))
+          return next
+        })
       }
     }
     setPaymentOpen(true)
