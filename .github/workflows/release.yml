@@ -43,10 +43,10 @@ jobs:
       # Build do workspace inteiro via Turborepo (mesmo comando usado o
       # resto desta sessão sem nenhum problema de ordem — `turbo run build`
       # já resolve o grafo de dependências certo sozinho: shared-types/
-      # shared-validation/shared-events antes de pdv-backend/pdv-frontend/
-      # electron). Tentativas anteriores com `--filter` customizado
-      # (2026-08-21) erraram a sintaxe e incluíam pacotes fora de ordem —
-      # sem motivo pra reinventar isso, `pnpm -w build` já é comprovado.
+      # shared-validation antes de pdv-backend/pdv-frontend/electron).
+      # Tentativas anteriores com `--filter` customizado (2026-08-21)
+      # erraram a sintaxe e incluíam pacotes fora de ordem — sem motivo pra
+      # reinventar isso, `pnpm -w build` já é comprovado.
       - run: pnpm turbo run build
 
       # prepare-resources.js builda pdv-backend/pdv-frontend de novo (cache
@@ -55,6 +55,31 @@ jobs:
       # prisma:generate acima (plataforma pode diferir do passo anterior).
       - run: pnpm --filter @easypdv/electron run prepackage
 
-      - run: pnpm --filter @easypdv/electron exec electron-builder --publish always
+      # Cache do binário do Electron (~115MB) baixado pelo electron-builder —
+      # achado real (2026-09-17): o download direto do CDN de release assets
+      # do GitHub travou/falhou 3x seguidas (conexão derrubada no meio),
+      # travando o release inteiro por dezenas de minutos até cancelar na
+      # mão. Sem isso, TODA release baixa o zip do zero; com cache
+      # (chaveado pela versão do Electron em package.json), só a primeira
+      # release depois de trocar de versão paga esse custo.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\.electron-builder-cache
+          key: electron-builder-cache-${{ runner.os }}-${{ hashFiles('apps/electron/package.json') }}
+
+      # Retry automático (2026-09-17, mesmo achado acima) — o download do
+      # binário do Electron por `app-builder-bin` não tem retry/backoff
+      # embutido contra uma conexão derrubada no meio; sem isso, qualquer
+      # instabilidade pontual do CDN do GitHub exige cancelar e disparar o
+      # workflow de novo manualmente. `timeout_minutes` mata uma tentativa
+      # travada (achado real: uma tentativa ficou "in_progress" por mais de
+      # 40min sem nunca falhar sozinha) em vez de deixar rodando pra sempre.
+      - uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 8
+          max_attempts: 3
+          retry_wait_seconds: 20
+          command: pnpm --filter @easypdv/electron exec electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_BUILDER_CACHE: ${{ github.workspace }}\.electron-builder-cache
