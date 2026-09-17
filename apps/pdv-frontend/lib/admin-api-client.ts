@@ -88,8 +88,13 @@ async function refreshSession(): Promise<AuthTokens | null> {
     const user = useAdminAuthStore.getState().user
     if (user) useAdminAuthStore.getState().setSession(user, tokens)
     return tokens
-  } catch {
-    useAdminAuthStore.getState().clear()
+  } catch (error) {
+    // Mesmo achado de api-client.ts (2026-09-17): só um 401 de verdade do
+    // /auth/refresh prova que o refresh token não vale mais — qualquer outra
+    // falha (rede, backend ocupado, timeout) não deveria derrubar a sessão.
+    if (error instanceof AdminApiError && error.status === 401) {
+      useAdminAuthStore.getState().clear()
+    }
     return null
   }
 }

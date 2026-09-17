@@ -1,6 +1,13 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Sessão do PDV/admin caía "aleatoriamente" durante o uso, sem reinício do app (2026-09-17)
+Achado real reportado pelo usuário: logout espontâneo, repetido, sem padrão aparente — descartado que fosse reinício do app por auto-update (confirmado que a janela não pisca/fecha, só volta pro login na mesma sessão).
+
+- **Causa raiz**: `refreshSession()` (`api-client.ts`/`admin-api-client.ts`) tratava QUALQUER falha na chamada `/auth/refresh` — rede instável, backend local momentaneamente ocupado (ex: SQLite lock), timeout — como se fosse "refresh token inválido", chamando `clear()` e derrubando a sessão inteira. Só uma resposta 401 de verdade do próprio endpoint prova que o token não vale mais (expirado/revogado/já rotacionado); qualquer outro erro é só uma falha transitória — o refresh token em memória continua válido, a próxima tentativa deveria funcionar normal.
+- **Corrigido**: só limpa a sessão quando o erro é especificamente `ApiError`/`AdminApiError` com `status === 401`. Qualquer outra falha deixa a sessão intacta — o operador só vê aquela chamada específica falhar (mesmo padrão de "servidor indisponível" de qualquer outra tela), sem ser jogado pro login à toa.
+- `pnpm typecheck`/`lint`/`build` 23/23.
+
 ### Regressão do "Emitir nova NFC-e": falha na geração apagava o FiscalDocument inteiro (2026-09-16)
 Achado real usando a própria feature em produção, na mesma venda `cmu3dbdpi1tf3mp4saoqtnium` que motivou a feature: Bling recusou `generateNfceFromOrder` com "A NFC-e da venda não pode ser gerada devido a erros de validação" (HTTP 400) — motivo NOVO e diferente do "704 emissão atrasada" original. `reissueRejectedNfce` apaga o `FiscalDocument` antigo ANTES de chamar `ensureFiscalDocument`; como a geração falhou antes de criar um doc novo, e `ensureFiscalDocument` só atualiza um doc que já existe (`if (existing) update(...)`, sem `else`), a venda ficou **sem nenhum registro fiscal** — pior que antes da reemissão, perdeu até o "error" anterior. Botões "Tentar novamente"/"Emitir nova NFC-e" sumiram da tela (dependem de `type: 'nfce'`+`status: 'error'` existir) e "Reimprimir" passou a emitir comprovante não fiscal.
 

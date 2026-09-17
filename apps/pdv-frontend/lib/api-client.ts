@@ -88,8 +88,19 @@ async function refreshSession(): Promise<AuthTokens | null> {
     const user = useAuthStore.getState().user;
     if (user) useAuthStore.getState().setSession(user, tokens);
     return tokens;
-  } catch {
-    useAuthStore.getState().clear();
+  } catch (error) {
+    // Achado real (2026-09-17): logout "aleatório" durante o uso, sem
+    // reinício do app — este catch tratava QUALQUER falha aqui (rede
+    // instável, SQLite local ocupado por um instante, timeout) como
+    // "refresh token inválido", derrubando a sessão por um problema
+    // transitório. Só um 401 de verdade do próprio /auth/refresh prova que
+    // o token não vale mais (expirado/revogado/já rotacionado) — qualquer
+    // outro erro só falha ESSA tentativa (o chamador já vê o erro original
+    // propagar), sem mexer na sessão; a próxima chamada tenta de novo com o
+    // mesmo refreshToken (ainda válido em memória), sem nunca ter deslogado.
+    if (error instanceof ApiError && error.status === 401) {
+      useAuthStore.getState().clear();
+    }
     return null;
   }
 }
