@@ -7,6 +7,7 @@ import { ClubController } from "./infrastructure/controllers/club.controller.js"
 import { AdminClubController } from "./infrastructure/controllers/admin-club.controller.js";
 import { ClubExpirationCleanupWorker } from "./infrastructure/workers/club-expiration-cleanup.worker.js";
 import { CheckClubMembershipUseCase } from "./application/use-cases/check-club-membership.use-case.js";
+import { GetClubMembershipStatusUseCase } from "./application/use-cases/get-club-membership-status.use-case.js";
 import { ListClubMembersUseCase } from "./application/use-cases/list-club-members.use-case.js";
 import { ListClubMembersForAdminUseCase } from "./application/use-cases/list-club-members-for-admin.use-case.js";
 import { AddClubMemberUseCase } from "./application/use-cases/add-club-member.use-case.js";
@@ -23,10 +24,10 @@ import { RemoveClubMemberUseCase } from "./application/use-cases/remove-club-mem
   // diferente de ClubController (OrgJwtAuthGuard, não TerminalApiKeyGuard),
   // por isso controller separado em vez de misturar guards no mesmo.
   controllers: [ClubController, AdminClubController],
-  // AddClubMemberUseCase exportado (2026-09-22) pra EcommerceIntegrationModule
-  // reaproveitar a mesma lógica de Bling sem duplicar — ver
-  // ecommerce-integration.module.ts.
-  exports: [AddClubMemberUseCase],
+  // AddClubMemberUseCase/GetClubMembershipStatusUseCase exportados
+  // (2026-09-22) pra EcommerceIntegrationModule reaproveitar a mesma lógica
+  // de Bling sem duplicar — ver ecommerce-integration.module.ts.
+  exports: [AddClubMemberUseCase, GetClubMembershipStatusUseCase],
   providers: [
     // Registrado de novo aqui (mesmo motivo documentado em erp-integration.module.ts/
     // sync.module.ts/organizations.module.ts): @UseGuards(TerminalApiKeyGuard) no
@@ -38,6 +39,7 @@ import { RemoveClubMemberUseCase } from "./application/use-cases/remove-club-mem
     // em AppModule), não pelo container deste módulo.
     TerminalApiKeyGuard,
     CheckClubMembershipUseCase,
+    GetClubMembershipStatusUseCase,
     ListClubMembersUseCase,
     ListClubMembersForAdminUseCase,
     AddClubMemberUseCase,
