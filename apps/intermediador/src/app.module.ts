@@ -8,6 +8,7 @@ import { DomainExceptionFilter } from "./common/filters/domain-exception.filter.
 import { ClubModule } from "./modules/club/club.module.js";
 import { ClubRemindersModule } from "./modules/club-reminders/club-reminders.module.js";
 import { CustomersModule } from "./modules/customers/customers.module.js";
+import { EcommerceIntegrationModule } from "./modules/ecommerce-integration/ecommerce-integration.module.js";
 import { ErpIntegrationModule } from "./modules/erp-integration/erp-integration.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { OrganizationsModule } from "./modules/organizations/organizations.module.js";
@@ -44,6 +45,7 @@ import { PrismaModule } from "./prisma/prisma.module.js";
     StoreCreditModule,
     CustomersModule,
     SyncModule,
+    EcommerceIntegrationModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],
 })

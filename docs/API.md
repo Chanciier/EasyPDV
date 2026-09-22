@@ -216,6 +216,13 @@ Nenhuma tela depende disso pra funcionar corretamente — quem fez a mutação j
 
 ```
 /health
+POST   /integrations/ecommerce/club-members  chamado pelo backend do site (Sald-o-da-Reserva) depois que o
+                           pagamento do "Clube Reversa" é aprovado — exige EcommerceApiKeyGuard (header
+                           X-Ecommerce-Api-Key; 401 sem ela ou inválida). Body: { name, document, validUntil,
+                           phone, whatsappConsent? } (mesmo schema de POST /club/members). organizationId
+                           nunca vem do body — vem de ECOMMERCE_ORGANIZATION_ID. Reaproveita
+                           AddClubMemberUseCase: mesmo clube/tag do Bling usado pela loja física ("Clube
+                           Saldão"), só um caller diferente (2026-09-22).
 POST   /sync              chamado pelo SyncOutboxWorker do PDV local — exige apiKey de terminal
                            (Sprint 10, TerminalApiKeyGuard, header X-Terminal-Api-Key; 401 sem ela ou
                            inválida) { entityType, entityId, payload } → cria/reaproveita um SyncJob
