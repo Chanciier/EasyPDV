@@ -216,6 +216,10 @@ Nenhuma tela depende disso pra funcionar corretamente — quem fez a mutação j
 
 ```
 /health
+GET    /integrations/ecommerce/club-members/:document  checagem de sócio por CPF antes de cobrar de novo —
+                           exige EcommerceApiKeyGuard. Resposta: { isMember: boolean, validUntil: string|null }.
+                           Mesmo cache local (ClubMembership) usado na venda do PDV — cobre sócio cadastrado
+                           tanto pela loja física quanto por uma assinatura anterior do site (2026-09-22).
 POST   /integrations/ecommerce/club-members  chamado pelo backend do site (Sald-o-da-Reserva) depois que o
                            pagamento do "Clube Reversa" é aprovado — exige EcommerceApiKeyGuard (header
                            X-Ecommerce-Api-Key; 401 sem ela ou inválida). Body: { name, document, validUntil,

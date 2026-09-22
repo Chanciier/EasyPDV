@@ -1,8 +1,9 @@
-import { Body, Controller, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { addClubMemberSchema, type AddClubMemberInput } from "@easypdv/shared-validation";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe.js";
 import { AddClubMemberUseCase } from "../../../club/application/use-cases/add-club-member.use-case.js";
+import { GetClubMembershipStatusUseCase } from "../../../club/application/use-cases/get-club-membership-status.use-case.js";
 import { EcommerceApiKeyGuard } from "../guards/ecommerce-api-key.guard.js";
 
 /**
@@ -18,7 +19,19 @@ export class EcommerceClubController {
   constructor(
     private readonly config: ConfigService,
     private readonly addClubMemberUseCase: AddClubMemberUseCase,
+    private readonly getClubMembershipStatusUseCase: GetClubMembershipStatusUseCase,
   ) {}
+
+  // Checagem antes de cobrar de novo — o site chama isso ao sair do campo
+  // CPF pra avisar "você já é sócio até DD/MM" antes de ir pro pagamento.
+  // Mesmo cache local (ClubMembership) usado pela venda no PDV, então cobre
+  // sócio cadastrado tanto pela loja física quanto por uma assinatura
+  // anterior do site.
+  @Get("club-members/:document")
+  status(@Param("document") document: string) {
+    const organizationId = this.config.getOrThrow<string>("ECOMMERCE_ORGANIZATION_ID");
+    return this.getClubMembershipStatusUseCase.execute(organizationId, document);
+  }
 
   @Post("club-members")
   add(@Body(new ZodValidationPipe(addClubMemberSchema)) body: AddClubMemberInput) {
