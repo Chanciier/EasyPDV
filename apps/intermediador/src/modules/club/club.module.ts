@@ -23,6 +23,10 @@ import { RemoveClubMemberUseCase } from "./application/use-cases/remove-club-mem
   // diferente de ClubController (OrgJwtAuthGuard, não TerminalApiKeyGuard),
   // por isso controller separado em vez de misturar guards no mesmo.
   controllers: [ClubController, AdminClubController],
+  // AddClubMemberUseCase exportado (2026-09-22) pra EcommerceIntegrationModule
+  // reaproveitar a mesma lógica de Bling sem duplicar — ver
+  // ecommerce-integration.module.ts.
+  exports: [AddClubMemberUseCase],
   providers: [
     // Registrado de novo aqui (mesmo motivo documentado em erp-integration.module.ts/
     // sync.module.ts/organizations.module.ts): @UseGuards(TerminalApiKeyGuard) no
