@@ -303,7 +303,7 @@ export function StoreCreditView() {
           aria-label="Buscar produto pra troca"
         />
         {scanError && <p className="mt-1 text-xs text-destructive">{scanError}</p>}
-        {debouncedTerm === term.trim() && matches.length > 1 && (
+        {debouncedTerm === term.trim() && matches.length > 0 && (
           <div className="mt-2 divide-y divide-border rounded-lg border border-border bg-card">
             {matches.map((p, idx) => (
               <button
