@@ -41,7 +41,7 @@ export class PrismaProductRepository implements ProductRepositoryPort {
     return bySku ? toDomainProduct(bySku) : null;
   }
 
-  async search(query: string): Promise<Product[]> {
+  async search(query: string, limit = 25): Promise<Product[]> {
     const records = await this.prisma.product.findMany({
       where: {
         active: true,
@@ -50,7 +50,8 @@ export class PrismaProductRepository implements ProductRepositoryPort {
           { sku: { contains: query } },
         ],
       },
-      take: 25,
+      orderBy: { sku: "asc" },
+      take: limit,
     });
     return records.map(toDomainProduct);
   }

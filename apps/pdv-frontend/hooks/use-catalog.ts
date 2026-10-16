@@ -6,13 +6,15 @@ import { apiRequest } from '@/lib/api-client'
  * Tela de gestão de Produtos: ao contrário de useProductSearch (hooks/use-sales.ts,
  * usado no autocomplete da Venda), aqui a busca dispara mesmo com termo vazio —
  * é a listagem principal da tela, não um dropdown. /products/search com query=""
- * já devolve os produtos ativos (até 25, sem paginação — limite conhecido do V1).
+ * devolve os produtos ativos até `PRODUCT_LIST_LIMIT` (sem paginação) — com o limite antigo de 25 só aparecia uma fração do catálogo sincronizado do Bling.
  */
+const PRODUCT_LIST_LIMIT = 1000
+
 export function useProductList(query: string) {
   const trimmed = query.trim()
   return useQuery({
     queryKey: ['products', 'search', trimmed],
-    queryFn: () => apiRequest<Product[]>('/products/search', { query: { query: trimmed } }),
+    queryFn: () => apiRequest<Product[]>('/products/search', { query: { query: trimmed, limit: String(PRODUCT_LIST_LIMIT) } }),
   })
 }
 
