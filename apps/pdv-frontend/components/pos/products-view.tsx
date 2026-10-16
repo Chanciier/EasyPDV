@@ -41,15 +41,21 @@ const emptyForm: ProductForm = {
   newBarcode: '',
 }
 
+/** Linhas renderizadas por vez — cada linha dispara uma query de preço, então listar o catálogo inteiro (milhares) travava o app. */
+const PAGE_SIZE = 100
+
 export function ProductsView() {
   const [term, setTerm] = useState('')
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   const [debouncedTerm, setDebouncedTerm] = useState('')
   useEffect(() => {
     const t = setTimeout(() => setDebouncedTerm(term), 250)
     return () => clearTimeout(t)
   }, [term])
+  useEffect(() => setVisibleCount(PAGE_SIZE), [debouncedTerm])
 
-  const { data: products = [], isLoading } = useProductList(debouncedTerm)
+  const { data: allProducts = [], isLoading } = useProductList(debouncedTerm)
+  const products = useMemo(() => allProducts.slice(0, visibleCount), [allProducts, visibleCount])
   const { data: categories = [] } = useCategories()
   const { data: activePriceList } = useActivePriceList()
 
@@ -316,6 +322,19 @@ export function ProductsView() {
                 </div>
               )
             })
+          )}
+          {allProducts.length > visibleCount && (
+            <div className="flex items-center justify-center gap-3 py-4 text-sm text-muted-foreground">
+              <span>
+                Mostrando {visibleCount} de {allProducts.length}
+              </span>
+              <button
+                onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+                className="rounded-lg border border-border px-3 py-1.5 font-medium text-foreground hover:bg-muted"
+              >
+                Mostrar mais
+              </button>
+            </div>
           )}
         </div>
       </div>
