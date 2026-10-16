@@ -6,7 +6,7 @@ import { PRODUCT_REPOSITORY, type ProductRepositoryPort } from "../ports/product
 export class SearchProductsUseCase {
   constructor(@Inject(PRODUCT_REPOSITORY) private readonly productRepository: ProductRepositoryPort) {}
 
-  execute(query: string): Promise<Product[]> {
-    return this.productRepository.search(query);
+  execute(query: string, limit?: number): Promise<Product[]> {
+    return this.productRepository.search(query, limit);
   }
 }
