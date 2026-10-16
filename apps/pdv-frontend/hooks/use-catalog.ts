@@ -8,7 +8,7 @@ import { apiRequest } from '@/lib/api-client'
  * é a listagem principal da tela, não um dropdown. /products/search com query=""
  * devolve os produtos ativos até `PRODUCT_LIST_LIMIT` (sem paginação) — com o limite antigo de 25 só aparecia uma fração do catálogo sincronizado do Bling.
  */
-const PRODUCT_LIST_LIMIT = 1000
+const PRODUCT_LIST_LIMIT = 20000
 
 export function useProductList(query: string) {
   const trimmed = query.trim()
