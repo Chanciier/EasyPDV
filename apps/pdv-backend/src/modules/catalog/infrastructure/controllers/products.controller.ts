@@ -39,7 +39,7 @@ export class ProductsController {
   async search(@Query("query") query = "", @Query("limit") limit?: string) {
     // Autocomplete da Venda usa o default (25); a tela Produtos pede mais.
     const parsed = Number.parseInt(limit ?? "", 10);
-    const products = await this.searchProductsUseCase.execute(query, Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 1000) : undefined);
+    const products = await this.searchProductsUseCase.execute(query, Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 20000) : undefined);
     return products.map(toProductResponseDto);
   }
 
