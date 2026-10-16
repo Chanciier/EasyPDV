@@ -47,7 +47,17 @@ export interface SyncProductsFromBlingResult {
  * o catálogo parcialmente atualizado — inofensivo, é um espelho idempotente
  * do Bling, o próximo sync (manual ou o poll incremental) completa o resto.
  */
-const BATCH_SIZE = 200;
+const BATCH_SIZE = 50;
+
+/**
+ * Timeout da transação interativa de cada lote. O default do Prisma é 5s e
+ * não bastava num PC de loja mais lento (HDD, antivírus escaneando o .db):
+ * o lote estourava, a transação era abortada (P2028 "Transaction already
+ * closed"), o sync parava no meio — catálogo parcial — e clicar de novo
+ * falhava no mesmo ponto. Lote menor + timeout folgado resolvem.
+ */
+const BATCH_TRANSACTION_TIMEOUT_MS = 120_000;
+const BATCH_TRANSACTION_MAX_WAIT_MS = 60_000;
 
 @Injectable()
 export class SyncProductsFromBlingUseCase {
@@ -155,7 +165,7 @@ export class SyncProductsFromBlingUseCase {
         }
 
         return { created: batchCreated, updated: batchUpdated };
-      });
+      }, { timeout: BATCH_TRANSACTION_TIMEOUT_MS, maxWait: BATCH_TRANSACTION_MAX_WAIT_MS });
 
       created += batchResult.created;
       updated += batchResult.updated;
