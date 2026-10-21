@@ -11,6 +11,7 @@ import { STORE_CREDIT_GATEWAY } from "./application/ports/store-credit-gateway.p
 import { FindStoreCreditCustomerUseCase } from "./application/use-cases/find-store-credit-customer.use-case.js";
 import { GrantStoreCreditUseCase } from "./application/use-cases/grant-store-credit.use-case.js";
 import { GetStoreCreditBalanceUseCase } from "./application/use-cases/get-store-credit-balance.use-case.js";
+import { ListStoreCreditBalancesUseCase } from "./application/use-cases/list-store-credit-balances.use-case.js";
 import { AdjustStoreCreditUseCase } from "./application/use-cases/adjust-store-credit.use-case.js";
 
 /**
@@ -52,6 +53,7 @@ import { AdjustStoreCreditUseCase } from "./application/use-cases/adjust-store-c
     GrantStoreCreditUseCase,
     GetStoreCreditBalanceUseCase,
     AdjustStoreCreditUseCase,
+    ListStoreCreditBalancesUseCase,
   ],
   exports: [STORE_CREDIT_GATEWAY],
 })

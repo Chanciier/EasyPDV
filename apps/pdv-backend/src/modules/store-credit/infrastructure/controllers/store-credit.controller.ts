@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import {
   adjustStoreCreditSchema,
   createStoreCreditGrantSchema,
@@ -13,6 +13,7 @@ import { CurrentUser, type AuthenticatedUser } from "../../../identity/infrastru
 import { FindStoreCreditCustomerUseCase } from "../../application/use-cases/find-store-credit-customer.use-case.js";
 import { GrantStoreCreditUseCase } from "../../application/use-cases/grant-store-credit.use-case.js";
 import { GetStoreCreditBalanceUseCase } from "../../application/use-cases/get-store-credit-balance.use-case.js";
+import { ListStoreCreditBalancesUseCase } from "../../application/use-cases/list-store-credit-balances.use-case.js";
 import { AdjustStoreCreditUseCase } from "../../application/use-cases/adjust-store-credit.use-case.js";
 
 /**
@@ -31,6 +32,7 @@ export class StoreCreditController {
     private readonly grantStoreCreditUseCase: GrantStoreCreditUseCase,
     private readonly getStoreCreditBalanceUseCase: GetStoreCreditBalanceUseCase,
     private readonly adjustStoreCreditUseCase: AdjustStoreCreditUseCase,
+    private readonly listStoreCreditBalancesUseCase: ListStoreCreditBalancesUseCase,
   ) {}
 
   /** Consultado no portão de CPF da tela de Vale-Troca — decide se pede nome+telefone (CPF novo) ou segue direto. */
@@ -45,6 +47,13 @@ export class StoreCreditController {
   async balance(@Param("document") document: string) {
     const balance = await this.getStoreCreditBalanceUseCase.execute(document);
     return { balance };
+  }
+
+  /** Lista de clientes com vale-troca (aba "Clientes com saldo") — só gerência. */
+  @Get("balances")
+  @Roles("administrador", "gerente")
+  async balances(@Query("query") query?: string) {
+    return { items: await this.listStoreCreditBalancesUseCase.execute(query) };
   }
 
   @Post("grants")

@@ -9,6 +9,14 @@ export interface StoreCreditGrantItemInput {
   restock: boolean
 }
 
+export interface StoreCreditBalanceRow {
+  customerCpf: string
+  customerName: string | null
+  customerPhone: string | null
+  balance: number
+  updatedAt: string
+}
+
 export interface GrantStoreCreditResult {
   grantId: string
   totalAmount: number
@@ -66,6 +74,18 @@ export function useAdjustStoreCredit() {
       apiRequest<{ balance: number }>('/store-credit/adjustments', { method: 'POST', body: input }),
     onSuccess: (_result, variables) => {
       queryClient.invalidateQueries({ queryKey: ['store-credit', 'balance', variables.document] })
+      queryClient.invalidateQueries({ queryKey: ['store-credit', 'balances'] })
     },
+  })
+}
+
+/** Aba "Clientes com saldo" — lista de clientes com vale-troca > 0 (gerência), filtrada por nome/CPF no servidor. */
+export function useStoreCreditBalances(query: string) {
+  return useQuery({
+    queryKey: ['store-credit', 'balances', query],
+    queryFn: () =>
+      apiRequest<{ items: StoreCreditBalanceRow[] }>(
+        `/store-credit/balances${query ? `?query=${encodeURIComponent(query)}` : ''}`,
+      ).then((r) => r.items),
   })
 }

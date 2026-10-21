@@ -5,6 +5,7 @@ import { StoreCreditController } from "./infrastructure/controllers/store-credit
 import { PrismaStoreCreditRepository } from "./infrastructure/repositories/prisma-store-credit.repository.js";
 import { STORE_CREDIT_REPOSITORY } from "./application/ports/store-credit-repository.port.js";
 import { GetStoreCreditBalanceUseCase } from "./application/use-cases/get-store-credit-balance.use-case.js";
+import { ListStoreCreditBalancesUseCase } from "./application/use-cases/list-store-credit-balances.use-case.js";
 import { GrantStoreCreditUseCase } from "./application/use-cases/grant-store-credit.use-case.js";
 import { RedeemStoreCreditUseCase } from "./application/use-cases/redeem-store-credit.use-case.js";
 import { AdjustStoreCreditUseCase } from "./application/use-cases/adjust-store-credit.use-case.js";
@@ -19,6 +20,7 @@ import { AdjustStoreCreditUseCase } from "./application/use-cases/adjust-store-c
     // de OrganizationsModule. Ver docs/MODULES.md.
     TerminalApiKeyGuard,
     GetStoreCreditBalanceUseCase,
+    ListStoreCreditBalancesUseCase,
     GrantStoreCreditUseCase,
     RedeemStoreCreditUseCase,
     AdjustStoreCreditUseCase,

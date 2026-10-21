@@ -1,6 +1,14 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Nova aba "Clientes com saldo" na tela Vale-Troca (v1.5.32)
+Pedido do usuário: poder filtrar/ver quais clientes têm Vale-Troca. Até aqui só dava para consultar o saldo de um CPF por vez.
+
+- **Intermediador**: `GET /store-credit/balances?query=` — clientes da organização com saldo > 0 (nome/telefone via `Customer.document` = CPF), busca por nome ou CPF. Sem migration.
+- **pdv-backend**: mesma rota, restrita a `@Roles("administrador", "gerente")` (proprietário passa no `RolesGuard`).
+- **Frontend**: a tela Vale-Troca ganha as abas "Gerar crédito" e "Clientes com saldo"; a segunda só aparece para administrador/gerente/proprietário. Lista com total, busca com debounce e "Mostrar mais" (100 por vez).
+- Requer deploy do Intermediador antes de usar a aba (terminal novo contra Intermediador antigo mostra erro na aba, sem afetar o resto).
+
 ### "proprietario" continuava sem acesso ao ajuste de Vale-Troca e ao estorno de venda (2026-09-17)
 Achado real reportado pelo usuário: ajustar o saldo de Vale-Troca na tela Clientes "não estava sendo possível" — o controle inteiro (campos + botões Adicionar/Remover) simplesmente não aparecia. Mesma causa já documentada e corrigida em `cash-view.tsx` (forçar fechamento de caixa, 2026-09-16) e deixada pendente aqui de propósito: `RolesGuard` (backend) libera `"proprietario"` pra qualquer `@Roles(...)` desde 2026-09-16, mas as checagens de papel do FRONTEND (`STORE_CREDIT_ADJUST_ROLES` em `customers-view.tsx`, `VOID_ROLES` em `history-view.tsx`) continuavam com a lista antiga, sem `"proprietario"` — o dono da loja passa em qualquer checagem do servidor, mas a UI escondia o controle antes mesmo da requisição sair.
 

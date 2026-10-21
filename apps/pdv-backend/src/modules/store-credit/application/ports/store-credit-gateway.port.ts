@@ -7,6 +7,14 @@ export interface StoreCreditGrantItemInput {
   restock: boolean;
 }
 
+export interface StoreCreditBalanceRow {
+  customerCpf: string;
+  customerName: string | null;
+  customerPhone: string | null;
+  balance: number;
+  updatedAt: string;
+}
+
 export interface GrantStoreCreditInput {
   document: string;
   customerName?: string;
@@ -37,6 +45,8 @@ export interface AdjustStoreCreditInput {
 export interface StoreCreditGatewayPort {
   /** `null` = não deu pra saber (rede/identidade indisponível) — chamador trata como "sem saldo visível", nunca bloqueia a venda por isso. */
   getBalance(document: string): Promise<number | null>;
+  /** Clientes com saldo > 0. Lança se o Intermediador não responder (ex.: versão sem a rota) — a tela mostra o erro. */
+  listBalances(query?: string): Promise<StoreCreditBalanceRow[]>;
   grant(input: GrantStoreCreditInput): Promise<StoreCreditGrantResult>;
   /** Lança se o Intermediador recusar (saldo insuficiente, HTTP 409) — chamador precisa tratar. */
   redeem(input: RedeemStoreCreditInput): Promise<{ balance: number }>;
