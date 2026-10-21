@@ -11,6 +11,7 @@ import type {
   AdjustStoreCreditInput,
   GrantStoreCreditInput,
   RedeemStoreCreditInput,
+  StoreCreditBalanceRow,
   StoreCreditGatewayPort,
   StoreCreditGrantResult,
 } from "../../application/ports/store-credit-gateway.port.js";
@@ -41,6 +42,22 @@ export class HttpStoreCreditGateway implements StoreCreditGatewayPort {
     }
     const body = (await response.json()) as { balance: number };
     return body.balance;
+  }
+
+  async listBalances(query?: string): Promise<StoreCreditBalanceRow[]> {
+    const identity = await this.storeIdentityRepository.find();
+    if (!identity) {
+      throw new Error("Terminal não ativado — sem identidade de loja pra listar vale-troca.");
+    }
+    const qs = query?.trim() ? `?query=${encodeURIComponent(query.trim())}` : "";
+    const response = await fetch(`${this.baseUrl}/store-credit/balances${qs}`, {
+      headers: { "X-Terminal-Api-Key": identity.apiKey },
+      signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      await throwDescriptiveHttpError(response, "GET /store-credit/balances");
+    }
+    return ((await response.json()) as { items: StoreCreditBalanceRow[] }).items;
   }
 
   async grant(input: GrantStoreCreditInput): Promise<StoreCreditGrantResult> {

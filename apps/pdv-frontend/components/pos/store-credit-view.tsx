@@ -9,6 +9,8 @@ import { describeError } from '@/lib/api-client'
 import { findProductByBarcode, useProductPrices, useProductSearch } from '@/hooks/use-sales'
 import { useGrantStoreCredit, useStoreCreditCustomer, type GrantStoreCreditResult } from '@/hooks/use-store-credit'
 import { Modal } from './ui/modal'
+import { useAuthStore } from '@/lib/auth-store'
+import { StoreCreditBalancesTab } from './store-credit-balances-tab'
 
 interface TrocaItem {
   productId: string
@@ -32,7 +34,7 @@ type Step = 'cpf' | 'customer-info' | 'items'
  * contrário do carrinho da Venda que usa um store — decisão deliberada de
  * manter simples na primeira versão; ver Fase 2 no cofre Obsidian).
  */
-export function StoreCreditView() {
+function StoreCreditGrantTab() {
   const [step, setStep] = useState<Step>('cpf')
   const [cpfInput, setCpfInput] = useState('')
   const [document, setDocument] = useState<string | null>(null)
@@ -420,6 +422,46 @@ export function StoreCreditView() {
           </div>
         )}
       </Modal>
+    </div>
+  )
+}
+
+// Papel é só pra esconder a aba — a restrição real é @Roles no pdv-backend.
+// 'proprietario' precisa estar na lista (ver CHANGELOG 2026-09-17).
+const STORE_CREDIT_LIST_ROLES = ['administrador', 'gerente', 'proprietario'] as const
+
+export function StoreCreditView() {
+  const canList = useAuthStore((s) => {
+    const role = s.user?.role
+    return !!role && (STORE_CREDIT_LIST_ROLES as readonly string[]).includes(role)
+  })
+  const [tab, setTab] = useState<'gerar' | 'saldos'>('gerar')
+
+  if (!canList) return <StoreCreditGrantTab />
+
+  const tabs = [
+    { key: 'gerar', label: 'Gerar crédito' },
+    { key: 'saldos', label: 'Clientes com saldo' },
+  ] as const
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="mb-2 flex gap-1 border-b border-border">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+              tab === t.key
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="min-h-0 flex-1">{tab === 'gerar' ? <StoreCreditGrantTab /> : <StoreCreditBalancesTab />}</div>
     </div>
   )
 }

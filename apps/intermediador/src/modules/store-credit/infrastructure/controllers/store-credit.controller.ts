@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import {
   adjustStoreCreditSchema,
   grantStoreCreditSchema,
@@ -14,6 +14,7 @@ import {
   type AuthenticatedTerminal,
 } from "../../../organizations/infrastructure/decorators/current-terminal.decorator.js";
 import { GetStoreCreditBalanceUseCase } from "../../application/use-cases/get-store-credit-balance.use-case.js";
+import { ListStoreCreditBalancesUseCase } from "../../application/use-cases/list-store-credit-balances.use-case.js";
 import { GrantStoreCreditUseCase } from "../../application/use-cases/grant-store-credit.use-case.js";
 import { RedeemStoreCreditUseCase } from "../../application/use-cases/redeem-store-credit.use-case.js";
 import { AdjustStoreCreditUseCase } from "../../application/use-cases/adjust-store-credit.use-case.js";
@@ -31,6 +32,7 @@ import { AdjustStoreCreditUseCase } from "../../application/use-cases/adjust-sto
 export class StoreCreditController {
   constructor(
     private readonly getStoreCreditBalanceUseCase: GetStoreCreditBalanceUseCase,
+    private readonly listStoreCreditBalancesUseCase: ListStoreCreditBalancesUseCase,
     private readonly grantStoreCreditUseCase: GrantStoreCreditUseCase,
     private readonly redeemStoreCreditUseCase: RedeemStoreCreditUseCase,
     private readonly adjustStoreCreditUseCase: AdjustStoreCreditUseCase,
@@ -40,6 +42,11 @@ export class StoreCreditController {
   async balance(@Param("document") document: string, @CurrentTerminal() terminal: AuthenticatedTerminal) {
     const balance = await this.getStoreCreditBalanceUseCase.execute(terminal.organizationId, document);
     return { balance };
+  }
+
+  @Get("balances")
+  async balances(@Query("query") query: string | undefined, @CurrentTerminal() terminal: AuthenticatedTerminal) {
+    return { items: await this.listStoreCreditBalancesUseCase.execute(terminal.organizationId, query) };
   }
 
   @Post("grants")

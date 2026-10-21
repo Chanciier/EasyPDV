@@ -4,6 +4,7 @@ import type {
   AdjustStoreCreditData,
   CreateStoreCreditGrantData,
   RedeemStoreCreditData,
+  StoreCreditBalanceRow,
   StoreCreditGrantResult,
   StoreCreditRepositoryPort,
 } from "../../application/ports/store-credit-repository.port.js";
@@ -17,6 +18,31 @@ export class PrismaStoreCreditRepository implements StoreCreditRepositoryPort {
       where: { organizationId_customerCpf: { organizationId, customerCpf } },
     });
     return record?.balance ?? 0;
+  }
+
+  async listBalances(organizationId: string, query?: string): Promise<StoreCreditBalanceRow[]> {
+    const term = query?.trim() ?? "";
+    const digits = term.replace(/\D/g, "");
+    const like = `%${term}%`;
+    const likeDigits = `%${digits}%`;
+    return this.prisma.$queryRaw<StoreCreditBalanceRow[]>`
+      SELECT b."customerCpf" AS "customerCpf",
+             c.name AS "customerName",
+             c.phone AS "customerPhone",
+             b.balance AS balance,
+             b."updatedAt" AS "updatedAt"
+      FROM "StoreCreditBalance" b
+      LEFT JOIN "Customer" c
+        ON c."organizationId" = b."organizationId" AND c.document = b."customerCpf"
+      WHERE b."organizationId" = ${organizationId}
+        AND b.balance > 0
+        AND (
+          ${term} = ''
+          OR c.name ILIKE ${like}
+          OR (${digits} <> '' AND b."customerCpf" LIKE ${likeDigits})
+        )
+      ORDER BY c.name ASC NULLS LAST, b."customerCpf" ASC
+    `;
   }
 
   async grant(data: CreateStoreCreditGrantData): Promise<StoreCreditGrantResult> {

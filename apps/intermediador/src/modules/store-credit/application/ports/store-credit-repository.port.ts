@@ -35,6 +35,14 @@ export interface RedeemStoreCreditData {
   saleReference: string | null;
 }
 
+export interface StoreCreditBalanceRow {
+  customerCpf: string;
+  customerName: string | null;
+  customerPhone: string | null;
+  balance: number;
+  updatedAt: Date;
+}
+
 export interface AdjustStoreCreditData {
   organizationId: string;
   customerCpf: string;
@@ -54,6 +62,9 @@ export interface AdjustStoreCreditData {
  */
 export interface StoreCreditRepositoryPort {
   getBalance(organizationId: string, customerCpf: string): Promise<number>;
+
+  /** Clientes com saldo > 0 da organização (nome/telefone via Customer.document = CPF), opcionalmente filtrados por nome/CPF. */
+  listBalances(organizationId: string, query?: string): Promise<StoreCreditBalanceRow[]>;
 
   /** Cria o cabeçalho + itens e incrementa a projeção, tudo numa transação. */
   grant(data: CreateStoreCreditGrantData): Promise<StoreCreditGrantResult>;
