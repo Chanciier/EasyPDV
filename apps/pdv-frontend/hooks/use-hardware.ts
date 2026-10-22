@@ -16,6 +16,24 @@ export function isElectron(): boolean {
   return getBridge() !== null
 }
 
+/**
+ * Erro de `ipcRenderer.invoke` chega como "Error invoking remote method
+ * 'canal': Error: <mensagem>" — tira o prefixo técnico para o operador ver
+ * só a mensagem em português escrita no Main (ex.: validação do SEG-04).
+ */
+export function cleanIpcError(error: unknown): Error {
+  const raw = error instanceof Error ? error.message : String(error)
+  return new Error(raw.replace(/^Error invoking remote method '[^']+':\s*(?:\w*Error:\s*)?/, ''))
+}
+
+async function withCleanIpcError<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call()
+  } catch (error) {
+    throw cleanIpcError(error)
+  }
+}
+
 export function useHardwareSettings() {
   return useQuery({
     queryKey: ['hardware', 'settings'],
@@ -27,7 +45,7 @@ export function useHardwareSettings() {
 export function useUpdateHardwareSettings() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (partial: Partial<HardwareSettings>) => getBridge()!.setSettings(partial),
+    mutationFn: (partial: Partial<HardwareSettings>) => withCleanIpcError(() => getBridge()!.setSettings(partial)),
     onSuccess: (settings) => queryClient.setQueryData(['hardware', 'settings'], settings),
   })
 }
@@ -46,7 +64,7 @@ export function usePrintReceipt() {
     mutationFn: async (payload: ReceiptPrintPayload) => {
       const bridge = getBridge()
       if (!bridge) return
-      await bridge.printReceipt(payload)
+      await withCleanIpcError(() => bridge.printReceipt(payload))
     },
   })
 }
