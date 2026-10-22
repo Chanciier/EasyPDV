@@ -1,4 +1,3 @@
-import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Providers } from './providers'
@@ -24,6 +23,12 @@ export const viewport: Viewport = {
   themeColor: '#f5c518',
 }
 
+/**
+ * Sem `<Analytics />` (Vercel) desde 2026-10-22: o app roda em `file://`
+ * dentro do Electron — o script só falhava na rede no boot e mandaria
+ * telemetria de um PDV para terceiro. A dependência fica no package.json
+ * para não mexer no lockfile.
+ */
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -33,7 +38,6 @@ export default function RootLayout({
     <html lang="pt-BR" className={`light ${geistSans.variable} ${geistMono.variable}`}>
       <body className="bg-background font-sans antialiased">
         <Providers>{children}</Providers>
-        {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
   )

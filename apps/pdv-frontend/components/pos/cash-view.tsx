@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Wallet,
   ArrowDownCircle,
@@ -9,9 +9,9 @@ import {
   PlusCircle,
   MinusCircle,
 } from 'lucide-react'
-import type { CashMovementType, UserRole } from '@easypdv/shared-types'
+import type { CashMovementType, CashSession, UserRole } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
-import { ApiError } from '@/lib/api-client'
+import { describeError } from '@/lib/api-client'
 import { useAuthStore } from '@/lib/auth-store'
 import { useAppUpdateStore } from '@/lib/app-update-store'
 import {
@@ -61,8 +61,12 @@ export function CashView() {
   const [movType, setMovType] = useState<'suprimento' | 'sangria' | null>(null)
   const [movAmount, setMovAmount] = useState('')
   const [movNote, setMovNote] = useState('')
+  const [movError, setMovError] = useState<string | null>(null)
   const [closeModalOpen, setCloseModalOpen] = useState(false)
   const [countedAmount, setCountedAmount] = useState('')
+  const countedInputRef = useRef<HTMLInputElement>(null)
+  /** Resultado do fechamento (UX-14) — mostrado depois que a sessão some de `current`. */
+  const [closeSummary, setCloseSummary] = useState<CashSession | null>(null)
 
   const updateApplyRequested = useAppUpdateStore((s) => s.applyRequested)
   const clearUpdateApplyRequested = useAppUpdateStore((s) => s.clearApplyRequested)
@@ -90,14 +94,16 @@ export function CashView() {
       if (typing) return
       if (e.key === 'F2') {
         e.preventDefault()
-        setMovType('suprimento')
+        openMovModal('suprimento')
       } else if (e.key === 'F3') {
         e.preventDefault()
-        setMovType('sangria')
+        openMovModal('sangria')
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+    // openMovModal só chama setters/reset estáveis — não precisa re-registrar a cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
 
   /**
@@ -108,14 +114,41 @@ export function CashView() {
    */
   useEffect(() => {
     if (!updateApplyRequested || !isOpen || closeModalOpen) return
-    setCountedAmount(totals.saldo.toFixed(2).replace('.', ','))
-    setCloseModalOpen(true)
+    openCloseModal()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [updateApplyRequested, isOpen])
 
+  /**
+   * Valor contado continua pré-preenchido com o esperado (conferência cega
+   * fica para decisão do usuário — ver "Decisões e Riscos Abertos"), mas vem
+   * selecionado: digitar o valor contado substitui sem apagar à mão (UX-14).
+   */
+  useEffect(() => {
+    if (!closeModalOpen) return
+    const id = window.setTimeout(() => countedInputRef.current?.select(), 0)
+    return () => window.clearTimeout(id)
+  }, [closeModalOpen])
+
+  function openCloseModal() {
+    closeMutation.reset()
+    setCountedAmount(totals.saldo.toFixed(2).replace('.', ','))
+    setCloseModalOpen(true)
+  }
+
+  function openMovModal(type: 'suprimento' | 'sangria') {
+    movementMutation.reset()
+    setMovError(null)
+    setMovType(type)
+  }
+
   const confirmMov = () => {
+    if (!movType || movementMutation.isPending) return
     const amount = Number(movAmount.replace(',', '.')) || 0
-    if (amount <= 0 || !movType) return
+    if (amount <= 0) {
+      setMovError('Informe um valor maior que zero.')
+      return
+    }
+    setMovError(null)
     movementMutation.mutate(
       { type: movType, amount, reason: movNote || undefined },
       {
@@ -156,10 +189,12 @@ export function CashView() {
    * Fechamento "normal" (sem uma atualização pendente) não muda em nada.
    */
   const confirmClose = () => {
+    if (closeMutation.isPending) return
     const closingAmount = Number(countedAmount.replace(',', '.')) || 0
     closeMutation.mutate(closingAmount, {
-      onSuccess: () => {
+      onSuccess: (closed) => {
         setCloseModalOpen(false)
+        setCloseSummary(closed)
         if (updateApplyRequested) {
           clearUpdateApplyRequested()
           void window.easypdv?.applyUpdateNow()
@@ -168,6 +203,26 @@ export function CashView() {
     })
   }
 
+  const summaryModal = (
+    <Modal
+      open={closeSummary !== null}
+      onClose={() => setCloseSummary(null)}
+      title="Caixa fechado"
+      size="sm"
+      footer={
+        <button
+          autoFocus
+          onClick={() => setCloseSummary(null)}
+          className="rounded-lg bg-primary px-6 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+        >
+          OK
+        </button>
+      }
+    >
+      {closeSummary && <CloseSummary session={closeSummary} />}
+    </Modal>
+  )
+
   if (loadingSession) {
     return <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">Carregando…</div>
   }
@@ -175,6 +230,7 @@ export function CashView() {
   if (!isOpen) {
     return (
       <div className="flex h-full items-center justify-center p-6">
+        {summaryModal}
         <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
           <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-primary/15">
             <Wallet className="size-7 text-primary-foreground" />
@@ -194,9 +250,7 @@ export function CashView() {
           />
           {openMutation.isError && (
             <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {openMutation.error instanceof ApiError
-                ? openMutation.error.code
-                : 'Não foi possível abrir o caixa. Tente novamente.'}
+              {describeError(openMutation.error, 'Não foi possível abrir o caixa. Tente novamente.')}
             </p>
           )}
           <button
@@ -232,9 +286,7 @@ export function CashView() {
               </div>
               {forceCloseMutation.isError && (
                 <p className="mt-2 text-xs text-destructive">
-                  {forceCloseMutation.error instanceof ApiError
-                    ? forceCloseMutation.error.code
-                    : 'Erro ao forçar fechamento.'}
+                  {describeError(forceCloseMutation.error, 'Erro ao forçar fechamento.')}
                 </p>
               )}
             </div>
@@ -253,6 +305,7 @@ export function CashView() {
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
+      {summaryModal}
       {/* Resumo */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {cards.map((c) => {
@@ -279,24 +332,21 @@ export function CashView() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => setMovType('suprimento')}
+            onClick={() => openMovModal('suprimento')}
             className="flex items-center gap-2 rounded-lg bg-card px-4 py-2.5 text-sm font-semibold shadow-sm ring-1 ring-border transition-colors hover:bg-muted"
           >
             <PlusCircle className="size-4 text-primary-foreground" /> Suprimento
             <kbd className="rounded bg-muted px-1 font-mono text-[10px]">F2</kbd>
           </button>
           <button
-            onClick={() => setMovType('sangria')}
+            onClick={() => openMovModal('sangria')}
             className="flex items-center gap-2 rounded-lg bg-card px-4 py-2.5 text-sm font-semibold shadow-sm ring-1 ring-border transition-colors hover:bg-muted"
           >
             <MinusCircle className="size-4 text-accent" /> Sangria
             <kbd className="rounded bg-muted px-1 font-mono text-[10px]">F3</kbd>
           </button>
           <button
-            onClick={() => {
-              setCountedAmount(totals.saldo.toFixed(2).replace('.', ','))
-              setCloseModalOpen(true)
-            }}
+            onClick={openCloseModal}
             className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90"
           >
             <Lock className="size-4" /> Fechar caixa
@@ -391,6 +441,12 @@ export function CashView() {
               className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/40"
             />
           </div>
+          {(movError || movementMutation.isError) && (
+            <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {movError ??
+                describeError(movementMutation.error, 'Não foi possível registrar a movimentação. Tente novamente.')}
+            </p>
+          )}
         </div>
       </Modal>
 
@@ -426,10 +482,13 @@ export function CashView() {
           <p className="text-sm text-muted-foreground">
             Saldo esperado: <span className="font-mono font-semibold text-foreground">{formatBRL(totals.saldo)}</span>
           </p>
+          <p className="text-sm font-medium">Conte o dinheiro da gaveta e corrija o valor se for diferente.</p>
           <div>
             <label className="mb-1.5 block text-sm font-medium">Valor contado no caixa</label>
             <input
+              ref={countedInputRef}
               autoFocus
+              onFocus={(e) => e.currentTarget.select()}
               inputMode="decimal"
               value={countedAmount}
               onChange={(e) => setCountedAmount(e.target.value)}
@@ -443,13 +502,55 @@ export function CashView() {
             const diff = counted - totals.saldo
             if (Math.abs(diff) < 0.005) return null
             return (
-              <p className={`text-sm ${diff < 0 ? 'text-accent' : 'text-primary-foreground'}`}>
+              <p
+                className={`rounded-lg px-3 py-2 text-base font-semibold ${
+                  diff < 0 ? 'bg-destructive/10 text-destructive' : 'bg-primary/15 text-primary-foreground'
+                }`}
+              >
                 {diff < 0 ? 'Falta' : 'Sobra'} {formatBRL(Math.abs(diff))} em relação ao esperado.
               </p>
             )
           })()}
+          {closeMutation.isError && (
+            <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {describeError(closeMutation.error, 'Não foi possível fechar o caixa. Tente novamente.')}
+            </p>
+          )}
         </div>
       </Modal>
+    </div>
+  )
+}
+
+/**
+ * Resumo pós-fechamento (UX-14): esperado × contado × diferença, com os
+ * dados que o próprio PATCH de fechamento devolve — antes a divergência
+ * sumia junto com a tela do caixa aberto.
+ */
+function CloseSummary({ session }: { session: CashSession }) {
+  const expected = session.expectedAmount ?? 0
+  const counted = session.closingAmount ?? 0
+  const diff = counted - expected
+  const even = Math.abs(diff) < 0.005
+  const tone = even
+    ? 'bg-muted text-foreground'
+    : diff < 0
+      ? 'bg-destructive/10 text-destructive'
+      : 'bg-primary/15 text-primary-foreground'
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="flex justify-between">
+        <span className="text-muted-foreground">Esperado</span>
+        <span className="font-mono font-semibold">{formatBRL(expected)}</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-muted-foreground">Contado</span>
+        <span className="font-mono font-semibold">{formatBRL(counted)}</span>
+      </div>
+      <div className={`flex justify-between rounded-lg px-3 py-2 text-base font-semibold ${tone}`}>
+        <span>{even ? 'Sem diferença' : diff < 0 ? 'Falta' : 'Sobra'}</span>
+        <span className="font-mono">{formatBRL(Math.abs(diff))}</span>
+      </div>
     </div>
   )
 }

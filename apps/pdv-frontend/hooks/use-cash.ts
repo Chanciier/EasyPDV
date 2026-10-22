@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CashMovement, CashRegister, CashSession, Sale } from '@easypdv/shared-types'
+import type { CashMovement, CashRegister, CashSession } from '@easypdv/shared-types'
 import { apiRequest } from '@/lib/api-client'
 
 export function useCashRegisters() {
@@ -9,11 +9,15 @@ export function useCashRegisters() {
   })
 }
 
+/**
+ * Polling de 60 s só como rede de segurança (PERF-12): o realtime e as
+ * próprias mutations já invalidam `['cash-session']` quando algo muda.
+ */
 export function useCurrentCashSession() {
   return useQuery({
     queryKey: ['cash-session', 'current'],
     queryFn: () => apiRequest<CashSession | null>('/cash/sessions/current'),
-    refetchInterval: 15_000,
+    refetchInterval: 60_000,
   })
 }
 
@@ -25,20 +29,17 @@ export function useCashMovements(cashSessionId: string | undefined) {
   })
 }
 
-/** Não tem endpoint agregado dedicado — deriva do valor já embutido em cada venda confirmada da sessão. */
+/**
+ * Soma agregada no backend (PERF-08, contrato K4) — a mesma `sumCashPayments`
+ * usada no fechamento. Antes baixava `GET /sales` (teto de 100 vendas com
+ * itens e pagamentos) e somava aqui: errava a partir da 101ª venda da sessão.
+ */
 export function useCashSalesTotal(cashSessionId: string | undefined) {
   return useQuery({
     queryKey: ['cash-session', cashSessionId, 'cash-sales-total'],
     queryFn: async () => {
-      const sales = await apiRequest<Sale[]>('/sales', {
-        query: { cashSessionId, status: 'confirmed' },
-      })
-      return sales.reduce((sum, sale) => {
-        const cashPaid = sale.payments
-          .filter((p) => p.method === 'dinheiro' && p.status === 'aprovado')
-          .reduce((s, p) => s + p.amount, 0)
-        return sum + cashPaid
-      }, 0)
+      const { total } = await apiRequest<{ total: number }>(`/cash/sessions/${cashSessionId}/cash-sales-total`)
+      return total
     },
     enabled: !!cashSessionId,
   })
