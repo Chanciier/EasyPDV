@@ -417,11 +417,12 @@ export function SaleView() {
   }
 
   /** Clube: grava o % (10-90 pelo dígito, ou o fallback de 30%) sobre o subtotal ATUAL da linha e registra a decisão. */
-  function applyClubPercent(productId: string, percent: number) {
+  function applyClubPercent(productId: string, percent: number, onlyIfUndecided = false) {
     return runCartTask(async () => {
       const current = latestSale()
       const item = current?.items.find((i) => i.productId === productId)
       if (!current || !item || current.discountSource !== 'club') return
+      if (onlyIfUndecided && productId in useCartStore.getState().clubDecisions) return
       await applyItemDiscount.mutateAsync({
         saleId: current.id,
         itemId: item.id,
@@ -437,8 +438,8 @@ export function SaleView() {
    * selecionado (bipar OUTRO produto) — o último item cai no F4.
    */
   function finalizeClubItemDiscount(productId: string) {
-    if (productId in useCartStore.getState().clubDecisions) return
-    void applyClubPercent(productId, CLUB_DEFAULT_DISCOUNT_PERCENT)
+    // Rechecado dentro da fila: um dígito ainda enfileirado vence o fallback.
+    void applyClubPercent(productId, CLUB_DEFAULT_DISCOUNT_PERCENT, true)
   }
 
   /** Corpo do bipe/seleção — só roda dentro da fila. */

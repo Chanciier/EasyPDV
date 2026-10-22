@@ -242,6 +242,9 @@ export function PaymentDialog({
       // no meio da digitação.
       const found = METHODS.find((m) => m.num === e.key)
       if (found && step === 'method' && !fullyPaid && document.activeElement?.tagName !== 'INPUT') {
+        // O campo de valor recebe o foco logo em seguida (sem o atraso de
+        // 50 ms de antes) — sem preventDefault o próprio dígito ia parar nele.
+        e.preventDefault()
         selectMethod(found.key)
         return
       }
