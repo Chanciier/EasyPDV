@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
@@ -7,6 +7,7 @@ import { setupAutoUpdate } from "./auto-update.js";
 import { registerHardwareIpc } from "./hardware/ipc.js";
 import { registerBackupIpc } from "./backup-ipc.js";
 import { resolveDatabasePath, scheduleAutoBackup } from "./backup.js";
+import { configureIpcGuard, isAppFileUrl, isTrustedSender } from "./ipc-guard.js";
 
 /**
  * Processo Main — único com acesso a hardware (impressora, gaveta, leitor,
@@ -33,6 +34,17 @@ const BACKEND_PROVISIONING_STATUS_URL = `http://127.0.0.1:${BACKEND_PORT}/provis
 
 let backendProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * SEG-13 + UX-18 (2026-10-22): no app instalado, sem DevTools e sem o menu
+ * padrão do Electron (File/Edit/View em inglês, com "Toggle Developer
+ * Tools" e Ctrl+R — recarregar no meio de uma venda deixava o rascunho
+ * órfão). Com DevTools, qualquer pessoa no caixa lia o accessToken de quem
+ * estava logado e chamava `window.easypdv.*`. Suporte religa os dois com a
+ * variável de ambiente EASYPDV_DEVTOOLS=1. Em dev (não empacotado) fica tudo
+ * como sempre foi.
+ */
+const DEVTOOLS_ENABLED = !app.isPackaged || process.env.EASYPDV_DEVTOOLS === "1";
 
 /**
  * Dev: roda direto do monorepo (irmão de apps/electron). Empacotado:
@@ -115,7 +127,12 @@ function resolveJwtSecret(): string {
   return secret;
 }
 
-async function waitForHealth(url: string, timeoutMs = 30_000): Promise<void> {
+/**
+ * 90 s (PERF-10, 2026-10-22): o boot roda `prisma migrate deploy` num
+ * subprocesso antes de escutar a porta — em PC lento com antivírus, 30 s não
+ * bastavam e o app fechava com "não foi possível iniciar" sem nada errado.
+ */
+async function waitForHealth(url: string, timeoutMs = 90_000): Promise<void> {
   const start = Date.now();
   let lastError: unknown;
   while (Date.now() - start < timeoutMs) {
@@ -143,7 +160,7 @@ async function startBackend(): Promise<void> {
   const { entry, cwd } = resolveBackendEntry();
   const intermediadorUrl = resolveIntermediadorUrl();
 
-  backendProcess = spawn(process.execPath, [entry], {
+  const child = spawn(process.execPath, [entry], {
     cwd,
     env: {
       ...process.env,
@@ -162,17 +179,46 @@ async function startBackend(): Promise<void> {
     stdio: "inherit",
   });
 
-  backendProcess.on("exit", (code, signal) => {
+  backendProcess = child;
+
+  child.on("exit", (code, signal) => {
     console.error(`pdv-backend encerrou (code=${code}, signal=${signal})`);
-    backendProcess = null;
+    // Só limpa se ainda for o processo atual — depois de um restore, o
+    // "exit" do processo antigo não pode apagar a referência do novo.
+    if (backendProcess === child) backendProcess = null;
   });
 
   await waitForHealth(BACKEND_HEALTH_URL);
 }
 
-function stopBackend(): void {
-  backendProcess?.kill();
+const STOP_BACKEND_TIMEOUT_MS = 5_000;
+
+/**
+ * SEG-05 (2026-10-22): resolve só quando o processo do backend SAIU — antes
+ * só chamava `kill()` e o restore copiava o banco com o arquivo ainda
+ * travado pelo SQLite. Se não sair em 5 s, força (SIGKILL) e espera mais um
+ * pouco. O `kill()` acontece na hora, de forma síncrona, então quem não
+ * espera a Promise (fechamento do app) continua matando o processo igual.
+ */
+function stopBackend(): Promise<void> {
+  const child = backendProcess;
   backendProcess = null;
+  if (!child || child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const forceTimer = setTimeout(() => child.kill("SIGKILL"), STOP_BACKEND_TIMEOUT_MS);
+    const giveUpTimer = setTimeout(() => {
+      console.error("pdv-backend não saiu a tempo mesmo após SIGKILL — seguindo.");
+      resolve();
+    }, STOP_BACKEND_TIMEOUT_MS * 2);
+    child.once("exit", () => {
+      clearTimeout(forceTimer);
+      clearTimeout(giveUpTimer);
+      resolve();
+    });
+    child.kill();
+  });
 }
 
 async function isTerminalActivated(): Promise<boolean> {
@@ -200,9 +246,34 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      devTools: DEVTOOLS_ENABLED,
     },
   });
+  restrictNavigation(win);
   return win;
+}
+
+/**
+ * SEG-04 (2026-10-22): janela aberta por `target="_blank"`/`window.open`
+ * herda o preload — uma página remota (ex.: DANFE do Bling) ganharia
+ * `window.easypdv`. Links https abrem no navegador do Windows; nenhuma
+ * janela nova é criada pelo app. A janela principal também não navega para
+ * fora dos arquivos do próprio app.
+ */
+function restrictNavigation(win: BrowserWindow): void {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://")) {
+      void shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+  win.webContents.on("will-navigate", (event, url) => {
+    if (!isAppFileUrl(url)) {
+      event.preventDefault();
+      if (url.startsWith("https://")) void shell.openExternal(url);
+    }
+  });
+  win.webContents.on("will-attach-webview", (event) => event.preventDefault());
 }
 
 /**
@@ -223,6 +294,9 @@ async function boot(): Promise<void> {
   if (app.isPackaged) {
     ensureAutoLaunch();
   }
+  if (!DEVTOOLS_ENABLED) {
+    Menu.setApplicationMenu(null);
+  }
 
   try {
     await startBackend();
@@ -232,10 +306,6 @@ async function boot(): Promise<void> {
     return;
   }
 
-  // Backup local automático (Sprint 15) — só depois do backend confirmar
-  // health (migrations já aplicadas, banco em estado consistente).
-  scheduleAutoBackup();
-
   mainWindow = createWindow();
   const activated = await isTerminalActivated();
   if (activated) {
@@ -243,6 +313,12 @@ async function boot(): Promise<void> {
   } else {
     await mainWindow.loadFile(resolveActivationPage());
   }
+
+  // Backup local automático (Sprint 15) — só depois do backend confirmar
+  // health (migrations já aplicadas). PERF-09 (2026-10-22): agendado depois
+  // da janela carregar, e o primeiro backup só roda ~1 min depois — a cópia
+  // do banco não atrasa mais a abertura do caixa.
+  scheduleAutoBackup();
 
   // Auto-update só faz sentido num app empacotado de verdade (precisa de
   // build.publish com uma release real por trás) — em dev, checkForUpdates()
@@ -254,8 +330,19 @@ async function boot(): Promise<void> {
 
 // Disparado por resources/activation.html (via preload) depois de
 // POST /provisioning/activate ter sucesso — troca pra janela do app real.
-ipcMain.on("activation:completed", () => {
+ipcMain.on("activation:completed", (event) => {
+  if (!isTrustedSender(event)) {
+    console.warn("activation:completed ignorado: origem não confiável.");
+    return;
+  }
   void mainWindow?.loadFile(resolveFrontendIndex());
+});
+
+// SEG-04: só o frame principal da janela do PDV, mostrando o export do
+// pdv-frontend ou resources/ (activation.html), fala com o Main.
+configureIpcGuard({
+  allowedRoots: [path.dirname(resolveFrontendIndex()), path.dirname(resolveActivationPage())],
+  getMainWebContents: () => mainWindow?.webContents,
 });
 
 registerHardwareIpc();
@@ -268,12 +355,12 @@ registerBackupIpc({
 app.whenReady().then(boot);
 
 app.on("window-all-closed", () => {
-  stopBackend();
+  void stopBackend();
   if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
 app.on("before-quit", () => {
-  stopBackend();
+  void stopBackend();
 });
