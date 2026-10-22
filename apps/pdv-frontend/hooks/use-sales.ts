@@ -8,17 +8,11 @@ import type {
   ResolvedPrice,
   Sale,
   SaleStatus,
+  VoidSaleResult,
 } from '@easypdv/shared-types'
 import { apiRequest } from '@/lib/api-client'
 
-/**
- * Resposta do estorno (contrato K6, frente A): a venda estornada e, quando ela
- * usou Vale-Troca, o resultado da devolução do saldo na central.
- * TODO(integração): trocar pelo tipo `VoidSaleResult` de @easypdv/shared-types.
- */
-export type VoidSaleResult = Sale & {
-  storeCreditRefund?: { status: 'refunded' | 'pending'; amount: number }
-}
+export type { VoidSaleResult }
 
 /**
  * `finalizedOnly` (contrato K3): só vendas que chegaram a ser confirmadas
