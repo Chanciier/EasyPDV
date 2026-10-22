@@ -15,7 +15,7 @@ export function FiscalPrintWatcher() {
   const pending = useFiscalPrintStore((s) => s.pending)
   const clear = useFiscalPrintStore((s) => s.clear)
   const printReceipt = usePrintReceipt()
-  const { data: status } = useFiscalStatus(pending?.saleId ?? null, { pollWhilePending: true })
+  const { data: status } = useFiscalStatus(pending?.saleId ?? null, { poll: 'until-final' })
 
   // Assim que a NFC-e ficar "issued", imprime sozinho. "error" (ex:
   // NCM/CSC faltando na conta Bling) desiste da espera automática; ainda dá
