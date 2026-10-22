@@ -1,6 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { IsUserActiveSpecification } from "../../domain/specifications/is-user-active.specification.js";
-import { InactiveUserError, InvalidCredentialsError } from "../../domain/errors.js";
+import {
+  CentralLoginThrottledError,
+  InactiveUserError,
+  InvalidCredentialsError,
+  LocalLoginThrottledError,
+} from "../../domain/errors.js";
 import type { User } from "../../domain/entities/user.entity.js";
 import type { LoginResponseDto } from "../dtos/auth-response.dto.js";
 import { toUserResponseDto } from "../dtos/user-response.dto.js";
@@ -11,6 +16,7 @@ import {
   USER_VERIFICATION_GATEWAY,
   type UserVerificationGatewayPort,
 } from "../ports/user-verification-gateway.port.js";
+import { LoginAttemptLimiterService } from "../services/login-attempt-limiter.service.js";
 import { TokenIssuerService } from "../services/token-issuer.service.js";
 
 export interface LoginCommand {
@@ -27,6 +33,8 @@ export interface LoginCommand {
  * quando ele confirma "credenciais inválidas" de propósito (senão uma senha
  * local desatualizada continuaria funcionando mesmo trocada/revogada
  * centralmente). Ver user-verification-gateway.port.ts `CentralLoginResult`.
+ * SEG-02 (2026-10-22): 429 central → "Muitas tentativas" sem fallback; o
+ * caminho local tem limite próprio (LoginAttemptLimiterService).
  */
 @Injectable()
 export class LoginUseCase {
@@ -38,6 +46,7 @@ export class LoginUseCase {
     @Inject(PASSWORD_HASHER) private readonly passwordHasher: PasswordHasherPort,
     @Inject(USER_VERIFICATION_GATEWAY) private readonly userVerificationGateway: UserVerificationGatewayPort,
     private readonly tokenIssuer: TokenIssuerService,
+    private readonly attemptLimiter: LoginAttemptLimiterService,
   ) {}
 
   async execute(command: LoginCommand): Promise<LoginResponseDto> {
@@ -76,6 +85,13 @@ export class LoginUseCase {
       throw new InvalidCredentialsError();
     }
 
+    // SEG-02 / K9: 429 do Intermediador NUNCA cai pro espelho local — antes
+    // caía, e da 6ª tentativa em diante a senha era testada sem limite
+    // contra o hash local, furando o rate-limit e o bloqueio de conta.
+    if (central.status === "throttled") {
+      throw new CentralLoginThrottledError();
+    }
+
     if (central.status === "verified") {
       // Casa por e-mail (nunca cria linha nova a cada login) e sempre
       // reescreve o hash local com a senha que acabou de ser confirmada
@@ -92,14 +108,22 @@ export class LoginUseCase {
 
     // Intermediador inalcançável — cai pro espelho local. Só funciona se essa
     // pessoa já logou neste terminal específico pelo menos uma vez.
+    // SEG-02: limitado a 5 falhas em 5 minutos por e-mail (ver
+    // LoginAttemptLimiterService) — checado antes do bcrypt.
+    if (this.attemptLimiter.isBlocked(command.email)) {
+      throw new LocalLoginThrottledError();
+    }
     const local = await this.userRepository.findByEmail(command.email);
     if (!local) {
+      this.attemptLimiter.recordFailure(command.email);
       throw new InvalidCredentialsError();
     }
     const passwordMatches = await this.passwordHasher.compare(command.password, local.passwordHash);
     if (!passwordMatches) {
+      this.attemptLimiter.recordFailure(command.email);
       throw new InvalidCredentialsError();
     }
+    this.attemptLimiter.reset(command.email);
     return local;
   }
 }

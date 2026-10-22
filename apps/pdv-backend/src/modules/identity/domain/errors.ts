@@ -9,6 +9,22 @@ export class InvalidCredentialsError extends DomainError {
   }
 }
 
+/** SEG-02 / K9 — o Intermediador respondeu 429 (5 tentativas/min por terminal+e-mail). Sem fallback local. */
+export class CentralLoginThrottledError extends DomainError {
+  readonly kind: DomainErrorKind = "too_many_requests";
+  constructor() {
+    super("Muitas tentativas. Aguarde 1 minuto e tente de novo.");
+  }
+}
+
+/** SEG-02 — limite do login offline (espelho local): 5 falhas em 5 minutos por e-mail neste terminal. */
+export class LocalLoginThrottledError extends DomainError {
+  readonly kind: DomainErrorKind = "too_many_requests";
+  constructor() {
+    super("Muitas tentativas de senha neste caixa. Aguarde 5 minutos ou peça a um gerente.");
+  }
+}
+
 export class InactiveUserError extends DomainError {
   readonly kind: DomainErrorKind = "forbidden";
   constructor() {

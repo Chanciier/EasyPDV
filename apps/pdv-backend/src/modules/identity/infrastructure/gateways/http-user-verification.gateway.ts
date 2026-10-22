@@ -38,7 +38,7 @@ export class HttpUserVerificationGateway implements UserVerificationGatewayPort 
 
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}/organizations/${identity.organizationId}/users/verify-login`, {
+      response = await fetch(`${this.baseUrl}/organizations/${encodeURIComponent(identity.organizationId)}/users/verify-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
         body: JSON.stringify({ email, password }),
@@ -49,12 +49,22 @@ export class HttpUserVerificationGateway implements UserVerificationGatewayPort 
       return { status: "unreachable" };
     }
 
-    if (response.status === 401) {
-      return { status: "invalid" };
-    }
+    // SEG-02 / K9: só cai pro espelho local quando o Intermediador não pôde
+    // decidir (≥ 500) ou não conhece o e-mail (404, usuário só-local). 429
+    // vira "throttled" (sem fallback) e qualquer outro 4xx vira "invalid" —
+    // antes todo não-401 caía no hash local, sem limite de tentativas.
     if (!response.ok) {
-      this.logger.warn(`verify-login: Intermediador respondeu ${response.status}`);
-      return { status: "unreachable" };
+      if (response.status >= 500 || response.status === 404) {
+        this.logger.warn(`verify-login: Intermediador respondeu ${response.status} — usando espelho local`);
+        return { status: "unreachable" };
+      }
+      if (response.status === 429) {
+        return { status: "throttled" };
+      }
+      if (response.status !== 401) {
+        this.logger.warn(`verify-login: Intermediador respondeu ${response.status} — tratado como credencial inválida`);
+      }
+      return { status: "invalid" };
     }
     const user = (await response.json()) as OrgUserPayload;
     return { status: "verified", user };
@@ -66,7 +76,7 @@ export class HttpUserVerificationGateway implements UserVerificationGatewayPort 
       return null;
     }
     try {
-      const response = await fetch(`${this.baseUrl}/organizations/${identity.organizationId}/users`, {
+      const response = await fetch(`${this.baseUrl}/organizations/${encodeURIComponent(identity.organizationId)}/users`, {
         headers: { "X-Terminal-Api-Key": identity.apiKey },
         signal: AbortSignal.timeout(5000),
       });
@@ -90,7 +100,7 @@ export class HttpUserVerificationGateway implements UserVerificationGatewayPort 
       return false;
     }
     try {
-      const response = await fetch(`${this.baseUrl}/organizations/${identity.organizationId}/users`, {
+      const response = await fetch(`${this.baseUrl}/organizations/${encodeURIComponent(identity.organizationId)}/users`, {
         headers: { "X-Terminal-Api-Key": identity.apiKey },
         signal: AbortSignal.timeout(3000),
       });
@@ -112,7 +122,7 @@ export class HttpUserVerificationGateway implements UserVerificationGatewayPort 
     }
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}/organizations/${identity.organizationId}/users`, {
+      response = await fetch(`${this.baseUrl}/organizations/${encodeURIComponent(identity.organizationId)}/users`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
         body: JSON.stringify(input),
@@ -138,7 +148,7 @@ export class HttpUserVerificationGateway implements UserVerificationGatewayPort 
     }
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}/organizations/${identity.organizationId}/users/${orgUserId}`, {
+      response = await fetch(`${this.baseUrl}/organizations/${encodeURIComponent(identity.organizationId)}/users/${encodeURIComponent(orgUserId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
         body: JSON.stringify({ role }),
@@ -161,7 +171,7 @@ export class HttpUserVerificationGateway implements UserVerificationGatewayPort 
     }
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}/organizations/${identity.organizationId}/users/${orgUserId}/password`, {
+      response = await fetch(`${this.baseUrl}/organizations/${encodeURIComponent(identity.organizationId)}/users/${encodeURIComponent(orgUserId)}/password`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
         body: JSON.stringify({ newPassword }),

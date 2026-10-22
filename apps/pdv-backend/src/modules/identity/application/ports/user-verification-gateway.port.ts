@@ -8,10 +8,17 @@ import type { OrgUserPayload, UserRole } from "@easypdv/shared-types";
  * pro espelho local (senão uma senha local desatualizada continuaria
  * funcionando mesmo depois de trocada/revogada centralmente) — só falha de
  * rede/timeout genuína cai pro fallback local. Ver login.use-case.ts.
+ *
+ * SEG-02 / K9 (2026-10-22): `unreachable` = rede/timeout, status ≥ 500
+ * (Railway fora devolve 502/503 — login offline tem que continuar) ou 404
+ * (usuário só-local, decisão de 2026-08-21). `throttled` = 429 do
+ * Intermediador — antes caía no espelho local e furava o rate-limit e o
+ * bloqueio de conta centrais. 401 e demais 4xx = `invalid`.
  */
 export type CentralLoginResult =
   | { status: "verified"; user: OrgUserPayload }
   | { status: "invalid" }
+  | { status: "throttled" }
   | { status: "unreachable" };
 
 /** Porta — isola o Intermediador do caso de uso. Implementação em infrastructure/gateways. */

@@ -5,6 +5,7 @@ import {
   ExceptionFilter,
   ForbiddenException,
   HttpException,
+  HttpStatus,
   InternalServerErrorException,
   Logger,
   NotFoundException,
@@ -13,11 +14,19 @@ import {
 import type { Response } from "express";
 import { DomainError, type DomainErrorKind } from "../domain-error.js";
 
+/** O Nest não tem classe pronta para 429; mesmo formato de corpo das outras (`{ message, error, statusCode }`). */
+class TooManyRequestsException extends HttpException {
+  constructor(message: string) {
+    super({ message, error: "Too Many Requests", statusCode: HttpStatus.TOO_MANY_REQUESTS }, HttpStatus.TOO_MANY_REQUESTS);
+  }
+}
+
 const KIND_TO_EXCEPTION: Record<DomainErrorKind, new (message: string) => HttpException> = {
   not_found: NotFoundException,
   conflict: ConflictException,
   unauthorized: UnauthorizedException,
   forbidden: ForbiddenException,
+  too_many_requests: TooManyRequestsException,
 };
 
 /**
