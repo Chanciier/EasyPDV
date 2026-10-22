@@ -40,6 +40,10 @@ export class BlingStockSyncWorker {
 
   @Interval(POLL_INTERVAL_MS)
   async poll(): Promise<void> {
+    // Sync manual em andamento (PERF-06) — pula este ciclo; o próximo pega o resto.
+    if (this.syncProductsFromBlingUseCase.isRunning) {
+      return;
+    }
     const identity = await this.prisma.storeIdentity.findFirst();
     if (!identity?.lastBlingSyncAt) {
       return;
@@ -49,7 +53,7 @@ export class BlingStockSyncWorker {
       const result = await this.syncProductsFromBlingUseCase.execute(identity.lastBlingSyncAt);
       if (result.created > 0 || result.updated > 0) {
         this.logger.log(
-          `Poll incremental Bling: ${result.created} produto(s) novo(s), ${result.updated} atualizado(s) (estoque/preço/nome)`,
+          `Poll incremental Bling: ${result.created} produto(s) novo(s), ${result.updated} atualizado(s) (estoque/preço/nome), ${result.unchanged} inalterado(s)`,
         );
       }
     } catch (error) {
