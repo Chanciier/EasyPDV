@@ -12,6 +12,10 @@ export interface SyncOutboxRepositoryPort {
   findMany(params?: { status?: SyncOutboxStatus; limit?: number }): Promise<SyncOutboxEntry[]>;
   markSent(id: string): Promise<void>;
   markFailed(id: string, error: string): Promise<void>;
+  /** Falha de rede/central fora (PERF-05): guarda o erro sem contar tentativa — a entrada não teve culpa. */
+  recordTransientError(id: string, error: string): Promise<void>;
+  /** Só a contagem (PERF-04) — o indicador de contingência não precisa das linhas nem do payload. */
+  countByStatus(status: SyncOutboxStatus): Promise<number>;
   /**
    * Retry manual (Central de Erros, Sprint 8): zera attempts e volta pra
    * "pending". UPDATE condicional (só aplica se status atual for "failed")

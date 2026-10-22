@@ -24,10 +24,18 @@ export interface RegisterPaymentData {
   authorizationCode: string | null;
 }
 
+export interface FindSalesParams {
+  status?: SaleStatus | SaleStatus[];
+  cashSessionId?: string;
+  /** Só vendas que chegaram a ser confirmadas (confirmadas e estornadas) — exclui rascunho cancelado. */
+  finalizedOnly?: boolean;
+  limit?: number;
+}
+
 export interface SaleRepositoryPort {
   findById(id: string): Promise<Sale | null>;
   /** Histórico (Sprint 9) — mais recente primeiro. */
-  findMany(params?: { status?: SaleStatus | SaleStatus[]; cashSessionId?: string; limit?: number }): Promise<Sale[]>;
+  findMany(params?: FindSalesParams): Promise<Sale[]>;
   start(data: StartSaleData): Promise<Sale>;
   addItem(data: AddSaleItemData): Promise<Sale>;
   removeItem(saleId: string, itemId: string): Promise<Sale>;
@@ -41,6 +49,12 @@ export interface SaleRepositoryPort {
   applyDiscount(saleId: string, discountAmount: number, source: SaleDiscountSource | null): Promise<Sale>;
   /** Desconto por item (2026-09-01) — recalcula SaleItem.totalAmount = max(0, quantity*unitPrice - discountAmount), independente do desconto da venda inteira (os dois coexistem). */
   applyItemDiscount(saleId: string, itemId: string, discountAmount: number): Promise<Sale>;
+  /**
+   * Muda a quantidade de um item mantendo id e unitPrice gravados (PERF-03c).
+   * `discountAmount` já vem decidido pelo use case (validado contra o novo
+   * subtotal) — o repositório só grava e recalcula, numa transação.
+   */
+  updateItemQuantity(saleId: string, itemId: string, quantity: number, discountAmount: number): Promise<Sale>;
   /** "CPF na nota" (2026-08-19) — anexa/troca o cliente de uma venda já iniciada (o seletor da tela de Venda só seta isso no início; o pagamento pode chegar depois). */
   attachCustomer(saleId: string, customerId: string): Promise<Sale>;
   registerPayment(data: RegisterPaymentData): Promise<Sale>;

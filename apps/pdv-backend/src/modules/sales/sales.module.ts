@@ -38,6 +38,14 @@ import { ApplyItemDiscountUseCase } from "./application/use-cases/apply-item-dis
 import { ApplyClubDiscountUseCase } from "./application/use-cases/apply-club-discount.use-case.js";
 import { VoidConfirmedSaleUseCase } from "./application/use-cases/void-confirmed-sale.use-case.js";
 import { AttachCustomerToSaleUseCase } from "./application/use-cases/attach-customer-to-sale.use-case.js";
+import { UpdateSaleItemQuantityUseCase } from "./application/use-cases/update-sale-item-quantity.use-case.js";
+import { GetCashSalesTotalUseCase } from "./application/use-cases/get-cash-sales-total.use-case.js";
+import { HttpFiscalGateway } from "../fiscal/infrastructure/gateways/http-fiscal.gateway.js";
+import { FISCAL_GATEWAY } from "../fiscal/application/ports/fiscal-gateway.port.js";
+import { PrismaFiscalDocumentRepository } from "../fiscal/infrastructure/repositories/prisma-fiscal-document.repository.js";
+import { FISCAL_DOCUMENT_REPOSITORY } from "../fiscal/application/ports/fiscal-document-repository.port.js";
+import { PrismaStoreIdentityRepository } from "../provisioning/infrastructure/repositories/prisma-store-identity.repository.js";
+import { STORE_IDENTITY_REPOSITORY } from "../provisioning/application/ports/store-identity-repository.port.js";
 
 @Module({
   imports: [CatalogModule, InventoryModule, AuditModule, RealtimeModule, CustomersModule, ClubModule, StoreCreditModule],
@@ -67,9 +75,19 @@ import { AttachCustomerToSaleUseCase } from "./application/use-cases/attach-cust
     ApplyClubDiscountUseCase,
     VoidConfirmedSaleUseCase,
     AttachCustomerToSaleUseCase,
+    UpdateSaleItemQuantityUseCase,
+    GetCashSalesTotalUseCase,
     { provide: CASH_REPOSITORY, useClass: PrismaCashRepository },
     { provide: SALE_REPOSITORY, useClass: PrismaSaleRepository },
     { provide: FISCAL_STATUS_READER, useClass: PrismaFiscalStatusReader },
+    // Guarda fiscal do estorno (F-2, 2026-10-22) consulta a central. Não dá
+    // pra importar FiscalModule (ciclo Sales -> Fiscal -> Provisioning ->
+    // Sales, ver FiscalStatusReaderPort) — registra as mesmas classes aqui,
+    // instâncias próprias, mesmo padrão de StoreCreditModule/CustomersModule
+    // com o STORE_IDENTITY_REPOSITORY (wrappers sem estado sobre o PrismaService).
+    { provide: STORE_IDENTITY_REPOSITORY, useClass: PrismaStoreIdentityRepository },
+    { provide: FISCAL_GATEWAY, useClass: HttpFiscalGateway },
+    { provide: FISCAL_DOCUMENT_REPOSITORY, useClass: PrismaFiscalDocumentRepository },
   ],
   // GetTerminalBusyStatusUseCase é consumido pelo ProvisioningController —
   // leitura entre módulos, mesmo padrão de ResolvePriceUseCase. Ver docs/MODULES.md.

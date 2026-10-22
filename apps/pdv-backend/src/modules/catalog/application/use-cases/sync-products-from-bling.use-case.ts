@@ -1,11 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
+import { BlingSyncAlreadyRunningError } from "../../domain/errors.js";
 import { BLING_CATALOG_GATEWAY, type BlingCatalogGatewayPort } from "../ports/bling-catalog-gateway.port.js";
 import { PRICE_LIST_REPOSITORY, type PriceListRepositoryPort } from "../ports/price-list-repository.port.js";
 
 export interface SyncProductsFromBlingResult {
   created: number;
+  /** Produtos existentes que de fato mudaram (nome, ativo, preço ou estoque). */
   updated: number;
+  /** Produtos existentes idênticos ao Bling — nada reescrito (PERF-06). */
+  unchanged: number;
   deactivated: number;
   total: number;
 }
@@ -46,6 +50,15 @@ export interface SyncProductsFromBlingResult {
  * sync inteiro. Efeito colateral aceitável: um crash no meio do sync deixa
  * o catálogo parcialmente atualizado — inofensivo, é um espelho idempotente
  * do Bling, o próximo sync (manual ou o poll incremental) completa o resto.
+ *
+ * **Só escreve o que mudou** (2026-10-22, PERF-06): o poll incremental
+ * reprocessa uma janela de pelo menos 24 h a cada 5 min, e antes cada produto
+ * visto custava ~5 statements e 2 escritas incondicionais mesmo idêntico ao
+ * Bling. Agora cada lote pré-carrega produto/preço/estoque com 3 `findMany` e
+ * só grava a diferença. "Bling sobrescreve catálogo" continua valendo — só
+ * deixamos de reescrever valores iguais. `blingSyncedAt` continua marcado em
+ * todo produto visto num sync COMPLETO (um `updateMany` por lote), senão a
+ * varredura de desativação no fim desligaria o catálogo inteiro.
  */
 const BATCH_SIZE = 50;
 
@@ -61,6 +74,9 @@ const BATCH_TRANSACTION_MAX_WAIT_MS = 60_000;
 
 @Injectable()
 export class SyncProductsFromBlingUseCase {
+  /** Trava em memória (PERF-06): botão manual e poll nunca escrevem ao mesmo tempo. Liberada no `finally`. */
+  private running = false;
+
   constructor(
     @Inject(BLING_CATALOG_GATEWAY) private readonly blingCatalogGateway: BlingCatalogGatewayPort,
     @Inject(PRICE_LIST_REPOSITORY) private readonly priceListRepository: PriceListRepositoryPort,
@@ -77,7 +93,25 @@ export class SyncProductsFromBlingUseCase {
    * (em vez de no worker) pra ter uma fonte só de verdade: qualquer chamador
    * que sincronizar com sucesso empurra o marcador pra frente.
    */
+  /** O poll consulta antes para pular o ciclo em silêncio enquanto um sync manual roda. */
+  get isRunning(): boolean {
+    return this.running;
+  }
+
   async execute(since?: Date): Promise<SyncProductsFromBlingResult> {
+    if (this.running) {
+      throw new BlingSyncAlreadyRunningError();
+    }
+    this.running = true;
+    try {
+      return await this.run(since);
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async run(since?: Date): Promise<SyncProductsFromBlingResult> {
+    const isFullSync = !since;
     // Capturado ANTES de qualquer escrita — é o corte usado depois pra achar
     // produtos que ficaram de fora deste sync (ver `blingSyncedAt` abaixo).
     const syncStartedAt = new Date();
@@ -101,38 +135,81 @@ export class SyncProductsFromBlingUseCase {
 
     let created = 0;
     let updated = 0;
+    let unchanged = 0;
 
     for (let i = 0; i < products.length; i += BATCH_SIZE) {
       const batch = products.slice(i, i + BATCH_SIZE);
       const batchResult = await this.prisma.$transaction(async (tx) => {
         let batchCreated = 0;
         let batchUpdated = 0;
+        let batchUnchanged = 0;
+        // Existentes sem nenhuma mudança que ainda precisam do carimbo
+        // `blingSyncedAt` (todos num sync completo; só os nunca carimbados
+        // num incremental).
+        const stampIds: string[] = [];
+
+        const existingProducts = await tx.product.findMany({
+          where: { sku: { in: batch.map((item) => item.code) } },
+          select: { id: true, sku: true, name: true, active: true, blingSyncedAt: true },
+        });
+        const productBySku = new Map(existingProducts.map((product) => [product.sku, product]));
+        const existingIds = existingProducts.map((product) => product.id);
+        const [priceItems, stockItems] = await Promise.all([
+          tx.priceListItem.findMany({
+            where: { priceListId, productId: { in: existingIds } },
+            select: { productId: true, price: true },
+          }),
+          warehouse
+            ? tx.stockItem.findMany({
+                where: { warehouseId: warehouse.id, productId: { in: existingIds } },
+                select: { productId: true, quantity: true },
+              })
+            : Promise.resolve([]),
+        ]);
+        const priceByProduct = new Map(priceItems.map((row) => [row.productId, row.price]));
+        const stockByProduct = new Map(stockItems.map((row) => [row.productId, row.quantity]));
 
         for (const item of batch) {
-          const existing = await tx.product.findUnique({ where: { sku: item.code } });
+          const existing = productBySku.get(item.code);
           let productId: string;
+          let changed = false;
 
           if (existing) {
-            await tx.product.update({
-              where: { id: existing.id },
-              data: { name: item.name, active: true, blingSyncedAt: syncStartedAt },
-            });
             productId = existing.id;
-            batchUpdated++;
+            if (existing.name !== item.name || !existing.active) {
+              await tx.product.update({
+                where: { id: existing.id },
+                data: { name: item.name, active: true, blingSyncedAt: syncStartedAt },
+              });
+              existing.name = item.name;
+              existing.active = true;
+              existing.blingSyncedAt = syncStartedAt;
+              changed = true;
+            }
           } else {
             const product = await tx.product.create({
               data: { sku: item.code, name: item.name, categoryId: null, unit: "un", blingSyncedAt: syncStartedAt },
             });
             productId = product.id;
+            // SKU repetido no mesmo lote cai no ramo "existente" na próxima vez.
+            productBySku.set(item.code, {
+              id: product.id,
+              sku: product.sku,
+              name: product.name,
+              active: product.active,
+              blingSyncedAt: syncStartedAt,
+            });
             batchCreated++;
           }
 
-          if (item.price !== null) {
+          if (item.price !== null && priceByProduct.get(productId) !== item.price) {
             await tx.priceListItem.upsert({
               where: { priceListId_productId: { priceListId, productId } },
               create: { priceListId, productId, price: item.price },
               update: { price: item.price },
             });
+            priceByProduct.set(productId, item.price);
+            changed = true;
           }
 
           // Bling é a fonte da verdade do estoque nesta direção (mesma decisão
@@ -141,10 +218,7 @@ export class SyncProductsFromBlingUseCase {
           // pra não quebrar a invariante "StockItem é projeção do ledger"
           // (ver docs/DATABASE.md).
           if (warehouse && item.stock !== null) {
-            const current = await tx.stockItem.findUnique({
-              where: { warehouseId_productId: { warehouseId: warehouse.id, productId } },
-            });
-            const delta = item.stock - (current?.quantity ?? 0);
+            const delta = item.stock - (stockByProduct.get(productId) ?? 0);
             if (delta !== 0) {
               await tx.stockMovement.create({
                 data: {
@@ -160,15 +234,38 @@ export class SyncProductsFromBlingUseCase {
                 create: { warehouseId: warehouse.id, productId, quantity: item.stock },
                 update: { quantity: item.stock },
               });
+              stockByProduct.set(productId, item.stock);
+              changed = true;
+            }
+          }
+
+          if (existing) {
+            if (changed) {
+              batchUpdated++;
+            } else {
+              batchUnchanged++;
+            }
+            // Carimbo sem reescrever o produto: num sync completo todo
+            // existente visto (senão a desativação no fim o pegaria); num
+            // incremental só quem nunca foi carimbado.
+            const alreadyStamped = existing.blingSyncedAt !== null && existing.blingSyncedAt >= syncStartedAt;
+            if (!alreadyStamped && (isFullSync || existing.blingSyncedAt === null)) {
+              stampIds.push(existing.id);
+              existing.blingSyncedAt = syncStartedAt;
             }
           }
         }
 
-        return { created: batchCreated, updated: batchUpdated };
+        if (stampIds.length > 0) {
+          await tx.product.updateMany({ where: { id: { in: stampIds } }, data: { blingSyncedAt: syncStartedAt } });
+        }
+
+        return { created: batchCreated, updated: batchUpdated, unchanged: batchUnchanged };
       }, { timeout: BATCH_TRANSACTION_TIMEOUT_MS, maxWait: BATCH_TRANSACTION_MAX_WAIT_MS });
 
       created += batchResult.created;
       updated += batchResult.updated;
+      unchanged += batchResult.unchanged;
     }
 
     /**
@@ -184,7 +281,7 @@ export class SyncProductsFromBlingUseCase {
      * histórico ligado).
      */
     let deactivated = 0;
-    if (!since) {
+    if (isFullSync) {
       const result = await this.prisma.product.updateMany({
         where: { active: true, blingSyncedAt: { not: null, lt: syncStartedAt } },
         data: { active: false },
@@ -198,6 +295,6 @@ export class SyncProductsFromBlingUseCase {
     // próximo poll incremental volta a puxar um pouco mais de trás.
     await this.prisma.storeIdentity.updateMany({ data: { lastBlingSyncAt: new Date() } });
 
-    return { created, updated, deactivated, total: products.length };
+    return { created, updated, unchanged, deactivated, total: products.length };
   }
 }

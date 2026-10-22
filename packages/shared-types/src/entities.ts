@@ -173,6 +173,18 @@ export interface Sale {
   payments: Payment[];
 }
 
+// Resposta de POST /sales/:id/void (2026-10-22, risco #35). O estorno local
+// acontece primeiro; se a venda tinha perna "vale_troca" aprovada, o saldo
+// é devolvido à central DEPOIS (ajuste positivo). `pending` = a devolução
+// falhou (sem internet/central fora) — a venda JÁ está estornada e a tela
+// orienta o ajuste manual em Clientes. Campo ausente = venda sem Vale-Troca.
+export type VoidSaleResult = Sale & {
+  storeCreditRefund?: {
+    status: "refunded" | "pending";
+    amount: number;
+  };
+};
+
 export interface SaleItem {
   id: string;
   saleId: string;
@@ -418,9 +430,13 @@ export interface SalesReportEntry {
   totalAmount: number;
 }
 
+// sku/name (2026-10-22) vêm do próprio relatório — antes a tela Relatórios
+// fazia um GET /products/:id por linha (milhares de requisições no PC da loja).
 export interface StockReportEntry {
   warehouseId: string;
   productId: string;
+  sku: string;
+  name: string;
   quantity: number;
 }
 

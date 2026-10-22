@@ -6,12 +6,14 @@ import {
   attachCustomerToSaleSchema,
   registerPaymentSchema,
   startSaleSchema,
+  updateSaleItemQuantitySchema,
   voidSaleSchema,
   type AddSaleItemInput,
   type ApplySaleDiscountInput,
   type AttachCustomerToSaleInput,
   type RegisterPaymentInput,
   type StartSaleInput,
+  type UpdateSaleItemQuantityInput,
   type VoidSaleInput,
 } from "@easypdv/shared-validation";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe.js";
@@ -34,6 +36,7 @@ import { ApplyItemDiscountUseCase } from "../../application/use-cases/apply-item
 import { ApplyClubDiscountUseCase } from "../../application/use-cases/apply-club-discount.use-case.js";
 import { VoidConfirmedSaleUseCase } from "../../application/use-cases/void-confirmed-sale.use-case.js";
 import { AttachCustomerToSaleUseCase } from "../../application/use-cases/attach-customer-to-sale.use-case.js";
+import { UpdateSaleItemQuantityUseCase } from "../../application/use-cases/update-sale-item-quantity.use-case.js";
 
 @Controller("sales")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -53,12 +56,18 @@ export class SalesController {
     private readonly applyClubDiscountUseCase: ApplyClubDiscountUseCase,
     private readonly voidConfirmedSaleUseCase: VoidConfirmedSaleUseCase,
     private readonly attachCustomerToSaleUseCase: AttachCustomerToSaleUseCase,
+    private readonly updateSaleItemQuantityUseCase: UpdateSaleItemQuantityUseCase,
     private readonly realtimeGateway: RealtimeGateway,
   ) {}
 
+  /** `finalizedOnly=true` (F6/K3): só vendas que chegaram a ser confirmadas — o Histórico não mostra rascunho abandonado. */
   @Get()
-  list(@Query("status") status?: SaleStatus | SaleStatus[], @Query("cashSessionId") cashSessionId?: string) {
-    return this.listSalesUseCase.execute({ status, cashSessionId });
+  list(
+    @Query("status") status?: SaleStatus | SaleStatus[],
+    @Query("cashSessionId") cashSessionId?: string,
+    @Query("finalizedOnly") finalizedOnly?: string,
+  ) {
+    return this.listSalesUseCase.execute({ status, cashSessionId, finalizedOnly: finalizedOnly === "true" });
   }
 
   @Get(":id")
@@ -74,6 +83,17 @@ export class SalesController {
   @Post(":id/items")
   addItem(@Param("id") id: string, @Body(new ZodValidationPipe(addSaleItemSchema)) body: AddSaleItemInput) {
     return this.addSaleItemUseCase.execute(id, body);
+  }
+
+  /** Muda a quantidade mantendo o mesmo item (PERF-03c/K2) — substitui o DELETE + POST do re-bipe. */
+  @Patch(":id/items/:itemId")
+  updateItemQuantity(
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+    @Body(new ZodValidationPipe(updateSaleItemQuantitySchema)) body: UpdateSaleItemQuantityInput,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.updateSaleItemQuantityUseCase.execute(id, itemId, body, user.userId);
   }
 
   @Delete(":id/items/:itemId")
@@ -143,6 +163,10 @@ export class SalesController {
     return this.cancelSaleUseCase.execute(id, user.userId);
   }
 
+  /**
+   * Resposta = `VoidSaleResult` (K6): a venda + `storeCreditRefund` quando ela
+   * teve Vale-Troca (`refunded` ou `pending` — ver VoidConfirmedSaleUseCase).
+   */
   @Post(":id/void")
   @Roles("administrador", "gerente")
   async voidSale(
@@ -150,8 +174,8 @@ export class SalesController {
     @Body(new ZodValidationPipe(voidSaleSchema)) body: VoidSaleInput,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    const sale = await this.voidConfirmedSaleUseCase.execute(id, user.userId, body.reason);
+    const { sale, storeCreditRefund } = await this.voidConfirmedSaleUseCase.execute(id, user.userId, body.reason);
     this.realtimeGateway.emitSaleVoided({ saleId: sale.id, reason: body.reason });
-    return sale;
+    return storeCreditRefund ? { ...sale, storeCreditRefund } : sale;
   }
 }

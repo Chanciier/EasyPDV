@@ -61,15 +61,35 @@ export class PrismaReportingRepository implements ReportingRepositoryPort {
     }));
   }
 
+  /**
+   * sku/name na própria linha (2026-10-22, PERF-01) — antes a tela fazia um
+   * GET /products/:id por item (milhares de requisições depois do sync Bling,
+   * que cria StockItem para quase todo o catálogo). StockItem não tem relação
+   * Prisma com Product, então são 2 queries + Map; o catálogo inteiro (só
+   * id/sku/name) evita um `IN` com dezenas de milhares de ids. Ordenado por
+   * quantidade crescente: negativos e zerados primeiro, que é o que o
+   * gerente procura.
+   */
   async getStockReport(warehouseId?: string): Promise<StockReportEntry[]> {
-    const items = await this.prisma.stockItem.findMany({
-      where: warehouseId ? { warehouseId } : undefined,
+    const [items, products] = await Promise.all([
+      this.prisma.stockItem.findMany({
+        where: warehouseId ? { warehouseId } : undefined,
+        select: { warehouseId: true, productId: true, quantity: true },
+        orderBy: { quantity: "asc" },
+      }),
+      this.prisma.product.findMany({ select: { id: true, sku: true, name: true } }),
+    ]);
+    const productById = new Map(products.map((product) => [product.id, product]));
+    return items.map((item) => {
+      const product = productById.get(item.productId);
+      return {
+        warehouseId: item.warehouseId,
+        productId: item.productId,
+        sku: product?.sku ?? "",
+        name: product?.name ?? "",
+        quantity: item.quantity,
+      };
     });
-    return items.map((item) => ({
-      warehouseId: item.warehouseId,
-      productId: item.productId,
-      quantity: item.quantity,
-    }));
   }
 
   /**

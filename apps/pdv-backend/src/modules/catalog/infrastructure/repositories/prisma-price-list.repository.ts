@@ -39,4 +39,11 @@ export class PrismaPriceListRepository implements PriceListRepositoryPort {
     });
     return record ? toDomainPriceListItem(record) : null;
   }
+
+  async findItems(priceListId: string, productIds: string[]): Promise<PriceListItem[]> {
+    const records = await this.prisma.priceListItem.findMany({
+      where: { priceListId, productId: { in: productIds } },
+    });
+    return records.map(toDomainPriceListItem);
+  }
 }
