@@ -19,6 +19,8 @@ export interface PriceListRepositoryPort {
   create(name: string): Promise<PriceListRecord>;
   upsertItem(data: UpsertPriceListItemData): Promise<PriceListItem>;
   findItem(priceListId: string, productId: string): Promise<PriceListItem | null>;
+  /** Lote (PERF-02) — só devolve os produtos que têm preço na lista; ordem não garantida. */
+  findItems(priceListId: string, productIds: string[]): Promise<PriceListItem[]>;
 }
 
 export const PRICE_LIST_REPOSITORY = Symbol("PRICE_LIST_REPOSITORY");

@@ -7,6 +7,7 @@ import {
   type CreateProductInput,
   type UpdateProductInput,
 } from "@easypdv/shared-validation";
+import { z } from "zod";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe.js";
 import { JwtAuthGuard } from "../../../identity/infrastructure/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../../identity/infrastructure/guards/roles.guard.js";
@@ -16,10 +17,24 @@ import { CreateProductUseCase } from "../../application/use-cases/create-product
 import { FindProductByBarcodeUseCase } from "../../application/use-cases/find-product-by-barcode.use-case.js";
 import { GetProductUseCase } from "../../application/use-cases/get-product.use-case.js";
 import { ResolvePriceUseCase } from "../../application/use-cases/resolve-price.use-case.js";
+import { ResolvePricesUseCase } from "../../application/use-cases/resolve-prices.use-case.js";
 import { SearchProductsUseCase } from "../../application/use-cases/search-products.use-case.js";
 import { UpdateProductUseCase } from "../../application/use-cases/update-product.use-case.js";
 import { SyncProductsFromBlingUseCase } from "../../application/use-cases/sync-products-from-bling.use-case.js";
 import { toProductResponseDto } from "../../application/dtos/product-response.dto.js";
+
+/**
+ * `?ids=a,b,c` (PERF-02) — no máximo 200 ids, cada um no formato de id. Sem
+ * esse limite o parâmetro vira vetor de carga (um `IN` gigante no SQLite).
+ */
+const MAX_PRICE_BATCH = 200;
+const resolvePricesQuerySchema = z.object({
+  ids: z
+    .string()
+    .transform((raw) => raw.split(",").map((id) => id.trim()).filter((id) => id.length > 0))
+    .pipe(z.array(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)).min(1).max(MAX_PRICE_BATCH)),
+});
+type ResolvePricesQuery = z.infer<typeof resolvePricesQuerySchema>;
 
 @Controller("products")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -31,6 +46,7 @@ export class ProductsController {
     private readonly findProductByBarcodeUseCase: FindProductByBarcodeUseCase,
     private readonly searchProductsUseCase: SearchProductsUseCase,
     private readonly resolvePriceUseCase: ResolvePriceUseCase,
+    private readonly resolvePricesUseCase: ResolvePricesUseCase,
     private readonly getProductUseCase: GetProductUseCase,
     private readonly syncProductsFromBlingUseCase: SyncProductsFromBlingUseCase,
   ) {}
@@ -48,6 +64,12 @@ export class ProductsController {
     const product = await this.findProductByBarcodeUseCase.execute(code);
     const price = await this.resolvePriceUseCase.execute(product.id);
     return { product: toProductResponseDto(product), price };
+  }
+
+  /** Declarada ANTES de `@Get(":id")` de propósito — senão "prices" cairia como id de produto. */
+  @Get("prices")
+  prices(@Query(new ZodValidationPipe(resolvePricesQuerySchema)) query: ResolvePricesQuery) {
+    return this.resolvePricesUseCase.execute(query.ids);
   }
 
   @Get(":id/price")
