@@ -24,6 +24,7 @@ import { GetCurrentCashSessionUseCase } from "../../application/use-cases/get-cu
 import { GetCashSessionUseCase } from "../../application/use-cases/get-cash-session.use-case.js";
 import { ListCashMovementsUseCase } from "../../application/use-cases/list-cash-movements.use-case.js";
 import { GetOpenSessionForRegisterUseCase } from "../../application/use-cases/get-open-session-for-register.use-case.js";
+import { GetCashSalesTotalUseCase } from "../../application/use-cases/get-cash-sales-total.use-case.js";
 
 @Controller("cash")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -38,6 +39,7 @@ export class CashController {
     private readonly getCashSessionUseCase: GetCashSessionUseCase,
     private readonly listCashMovementsUseCase: ListCashMovementsUseCase,
     private readonly getOpenSessionForRegisterUseCase: GetOpenSessionForRegisterUseCase,
+    private readonly getCashSalesTotalUseCase: GetCashSalesTotalUseCase,
     private readonly realtimeGateway: RealtimeGateway,
   ) {}
 
@@ -77,6 +79,12 @@ export class CashController {
     return this.getCashSessionUseCase.execute(id);
   }
 
+  /** Total em dinheiro da sessão (PERF-08/K4) — `{ total }`, mesma soma do fechamento. */
+  @Get("sessions/:id/cash-sales-total")
+  getCashSalesTotal(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.getCashSalesTotalUseCase.execute(id, user.userId, user.role);
+  }
+
   @Post("sessions")
   async openSession(
     @Body(new ZodValidationPipe(openCashSessionSchema)) body: OpenCashSessionInput,
@@ -96,7 +104,7 @@ export class CashController {
     @Body(new ZodValidationPipe(closeCashSessionSchema)) body: CloseCashSessionInput,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    const session = await this.closeCashSessionUseCase.execute(id, body.closingAmount, user.userId);
+    const session = await this.closeCashSessionUseCase.execute(id, body.closingAmount, user.userId, user.role);
     this.realtimeGateway.emitCashSessionClosed({
       sessionId: session.id,
       cashRegisterId: session.cashRegisterId,
@@ -110,7 +118,7 @@ export class CashController {
     @Body(new ZodValidationPipe(registerCashMovementSchema)) body: RegisterCashMovementInput,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.registerCashMovementUseCase.execute(id, body, user.userId);
+    return this.registerCashMovementUseCase.execute(id, body, user.userId, user.role);
   }
 
   @Get("sessions/:id/movements")
