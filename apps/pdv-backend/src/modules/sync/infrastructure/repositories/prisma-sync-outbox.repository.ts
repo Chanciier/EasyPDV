@@ -33,17 +33,24 @@ export class PrismaSyncOutboxRepository implements SyncOutboxRepositoryPort {
     });
   }
 
+  /** Incremento atômico no próprio UPDATE (sem read-modify-write); o teto vira "failed" no mesmo passo. */
   async markFailed(id: string, error: string): Promise<void> {
-    const current = await this.prisma.syncOutbox.findUniqueOrThrow({ where: { id } });
-    const attempts = current.attempts + 1;
-    await this.prisma.syncOutbox.update({
+    const updated = await this.prisma.syncOutbox.update({
       where: { id },
-      data: {
-        attempts,
-        lastError: error,
-        status: attempts >= MAX_ATTEMPTS ? "failed" : "pending",
-      },
+      data: { attempts: { increment: 1 }, lastError: error },
+      select: { attempts: true },
     });
+    if (updated.attempts >= MAX_ATTEMPTS) {
+      await this.prisma.syncOutbox.update({ where: { id }, data: { status: "failed" } });
+    }
+  }
+
+  async recordTransientError(id: string, error: string): Promise<void> {
+    await this.prisma.syncOutbox.update({ where: { id }, data: { lastError: error } });
+  }
+
+  countByStatus(status: SyncOutboxStatus): Promise<number> {
+    return this.prisma.syncOutbox.count({ where: { status } });
   }
 
   async resetToPending(id: string): Promise<boolean> {
