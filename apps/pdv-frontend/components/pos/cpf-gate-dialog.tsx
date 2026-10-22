@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import { UserCheck } from 'lucide-react'
 import { formatCpf, onlyDigits, isValidCpf } from '@easypdv/shared-validation'
 
@@ -11,17 +11,30 @@ import { formatCpf, onlyDigits, isValidCpf } from '@easypdv/shared-validation'
  * sempre fecha com Esc/clique fora, e aqui a escolha precisa ser explícita
  * (mesmo "sem CPF" é uma decisão, não um "fechar sem decidir"). Renderizado
  * inline no lugar da busca, não como overlay por cima dela.
+ *
+ * `inputRef` (UX-01, 2026-10-22): o SaleView devolve o foco pra cá quando o
+ * recibo fecha ("Nova venda") e encaminha pra cá os dígitos digitados sem
+ * nenhum campo focado — antes eles iam pra busca invisível e reapareciam
+ * como lixo quando a venda começava.
  */
 export function CpfGateDialog({
   submitting,
   error,
   onSubmit,
+  inputRef,
 }: {
   submitting: boolean
   error: string | null
   onSubmit: (document: string | null) => void
+  inputRef?: RefObject<HTMLInputElement | null>
 }) {
   const [cpf, setCpf] = useState('')
+
+  // O input fica `disabled` enquanto envia e perde o foco; se der erro
+  // (gate continua na tela), o foco volta pra ele sem precisar de clique.
+  useEffect(() => {
+    if (!submitting) inputRef?.current?.focus()
+  }, [submitting, error, inputRef])
   const cpfDigits = onlyDigits(cpf)
   const cpfIsValid = cpfDigits.length === 0 || isValidCpf(cpfDigits)
 
@@ -42,6 +55,7 @@ export function CpfGateDialog({
       </div>
       <div className="w-full max-w-xs space-y-2">
         <input
+          ref={inputRef}
           autoFocus
           value={cpf}
           onChange={(e) => setCpf(formatCpf(onlyDigits(e.target.value).slice(0, 11)))}
