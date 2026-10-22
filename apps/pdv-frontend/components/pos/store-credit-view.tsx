@@ -53,7 +53,13 @@ function StoreCreditGrantTab() {
   const cpfDigits = onlyDigits(cpfInput)
   const cpfIsValid = cpfDigits.length === 11 && isValidCpf(cpfDigits)
 
-  const { data: lookup, isFetching: checkingCustomer } = useStoreCreditCustomer(document)
+  const {
+    data: lookup,
+    isFetching: checkingCustomer,
+    isError: lookupFailed,
+    error: lookupError,
+    refetch: refetchLookup,
+  } = useStoreCreditCustomer(document)
   const grant = useGrantStoreCredit()
 
   // Assim que o lookup resolve, decide o próximo passo — "CPF já cadastrado
@@ -76,12 +82,29 @@ function StoreCreditGrantTab() {
     return () => clearTimeout(t)
   }, [term])
 
+  /**
+   * UX-03: o campo de busca fica `readOnly` (não `disabled`) durante o bipe —
+   * `disabled` tirava o foco e o próximo bipe ia pro nada. Ao terminar,
+   * devolve o foco pro campo para o leitor seguir bipando sem clique.
+   */
+  useEffect(() => {
+    if (!scanning && step === 'items') searchRef.current?.focus()
+  }, [scanning, step])
+
   const { data: searchResults = [] } = useProductSearch(debouncedTerm)
   const matches = useMemo(() => searchResults.slice(0, 6), [searchResults])
   const priceQueries = useProductPrices(matches.map((p) => p.id))
 
+  /**
+   * Redigitar o mesmo CPF depois de uma falha não mudava a queryKey, então
+   * não reconsultava — "Continuar" não fazia nada (UX-10). Mesmo documento → refetch.
+   */
   function submitCpf() {
-    if (!cpfIsValid) return
+    if (!cpfIsValid || checkingCustomer) return
+    if (document === cpfDigits) {
+      void refetchLookup()
+      return
+    }
     setDocument(cpfDigits)
   }
 
@@ -125,14 +148,17 @@ function StoreCreditGrantTab() {
       if (price) addProduct(matches[0], price.effectivePrice)
       return
     }
-    if (term.trim()) {
+    const code = term.trim()
+    if (code && !scanning) {
       setScanError(null)
       setScanning(true)
       try {
-        const { product, price } = await findProductByBarcode(term.trim())
+        const { product, price } = await findProductByBarcode(code)
         addProduct(product, price.effectivePrice)
       } catch {
-        setScanError('Produto não encontrado.')
+        // UX-02: limpa o campo — senão o próximo bipe é concatenado ao código que falhou.
+        setTerm('')
+        setScanError(`Produto não encontrado: ${code}. Confira o código ou busque pelo nome.`)
       } finally {
         setScanning(false)
       }
@@ -219,6 +245,21 @@ function StoreCreditGrantTab() {
             aria-label="CPF do cliente"
           />
           {cpfInput && !cpfIsValid && <p className="text-xs text-destructive">CPF inválido.</p>}
+          {lookupFailed && !checkingCustomer && document === cpfDigits && (
+            <div role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
+              <p>
+                Não foi possível consultar o CPF agora (sem conexão com a central?).{' '}
+                {describeError(lookupError, '')}
+              </p>
+              <button
+                type="button"
+                onClick={() => void refetchLookup()}
+                className="mt-2 rounded-md border border-destructive/40 px-3 py-1 text-xs font-semibold hover:bg-destructive/10"
+              >
+                Tentar de novo
+              </button>
+            </div>
+          )}
         </div>
         <button
           onClick={submitCpf}
@@ -300,11 +341,12 @@ function StoreCreditGrantTab() {
           onChange={(e) => setTerm(e.target.value)}
           onKeyDown={handleSearchKeyDown}
           placeholder="Bipar ou buscar produto…"
-          disabled={scanning}
+          readOnly={scanning}
+          aria-busy={scanning}
           className="pos-input w-full"
           aria-label="Buscar produto pra troca"
         />
-        {scanError && <p className="mt-1 text-xs text-destructive">{scanError}</p>}
+        {scanError && <p role="alert" className="mt-1 text-sm text-destructive">{scanError}</p>}
         {debouncedTerm === term.trim() && matches.length > 0 && (
           <div className="mt-2 divide-y divide-border rounded-lg border border-border bg-card">
             {matches.map((p, idx) => (
