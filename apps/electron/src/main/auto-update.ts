@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from "electron";
 import { autoUpdater } from "electron-updater";
+import { assertTrustedSender } from "./ipc-guard.js";
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h — terminal de loja, não precisa ser agressivo
 const INSTALL_RETRY_INTERVAL_MS = 10 * 60 * 1000; // 10min — reavalia se o caixa liberou
@@ -43,7 +44,10 @@ export function setupAutoUpdate(windowGetter: () => BrowserWindow | null): void 
     console.error("electron-updater:", error);
   });
 
-  ipcMain.handle("update:apply-now", () => applyUpdateNow());
+  ipcMain.handle("update:apply-now", (event) => {
+    assertTrustedSender(event);
+    return applyUpdateNow();
+  });
 
   checkForUpdates();
   setInterval(checkForUpdates, CHECK_INTERVAL_MS);
