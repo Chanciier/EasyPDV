@@ -35,8 +35,9 @@ export interface OrgLoginResult {
  * `OrgUser`. Checado só aqui, nunca em `verify-login`/`VerifyOrgUserLoginUseCase`
  * — o operador de caixa no terminal continua livre pra logar com a própria
  * conta, essa restrição é só do painel admin. Sem a env configurada, sem
- * restrição extra nenhuma (conveniência de dev local) — produção PRECISA
- * dela configurada.
+ * restrição extra nenhuma em dev local; em produção (SEG-06, 2026-10-22)
+ * sem a env o login no painel é negado. Papel também é checado nas rotas
+ * (OrgRolesGuard).
  */
 @Injectable()
 export class OrgLoginUseCase {
@@ -86,14 +87,15 @@ export class OrgLoginUseCase {
     const raw = this.configService.get<string>("ADMIN_PANEL_ALLOWED_EMAILS");
     if (!raw) {
       // Mesmo padrão de JWT_SECRET/REDIS_URL (getOrThrow, achado M6) seria
-      // quebrar o boot — mas essa env é opcional por design em dev. Em
-      // produção sem ela, QUALQUER OrgUser com credencial válida loga no
-      // painel admin (a allowlist inteira vira no-op) — alto o bastante pra
-      // avisar alto em vez de falhar em silêncio.
+      // quebrar o boot — mas essa env é opcional por design em dev. SEG-06
+      // (2026-10-22): em produção sem ela, NEGA (fail-closed) em vez de
+      // liberar qualquer OrgUser — antes só avisava. Só afeta o painel;
+      // `verify-login` dos terminais não passa por aqui.
       if (this.configService.get<string>("NODE_ENV") === "production") {
-        this.logger.warn(
-          "ADMIN_PANEL_ALLOWED_EMAILS não configurada em produção — login no painel admin liberado pra qualquer OrgUser com credencial válida.",
+        this.logger.error(
+          "ADMIN_PANEL_ALLOWED_EMAILS não configurada em produção — login no painel admin NEGADO para todos até a env ser definida.",
         );
+        return false;
       }
       return true;
     }

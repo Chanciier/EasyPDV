@@ -1,5 +1,7 @@
 import { Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { OrgJwtAuthGuard } from "../../../organizations/infrastructure/guards/org-jwt-auth.guard.js";
+import { OrgRolesGuard } from "../../../organizations/infrastructure/guards/org-roles.guard.js";
+import { OrgRoles } from "../../../organizations/infrastructure/decorators/org-roles.decorator.js";
 import {
   CurrentOrgUser,
   type AuthenticatedOrgUser,
@@ -13,7 +15,8 @@ import { WhatsappProvider } from "../../whatsapp.provider.js";
  * terminal). `organizationId` sempre do token, nunca da URL/corpo.
  */
 @Controller("admin/whatsapp")
-@UseGuards(OrgJwtAuthGuard)
+@UseGuards(OrgJwtAuthGuard, OrgRolesGuard)
+@OrgRoles("administrador", "gerente")
 export class AdminWhatsappController {
   constructor(private readonly whatsappProvider: WhatsappProvider) {}
 

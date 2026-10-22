@@ -1,5 +1,7 @@
 import { Controller, Post, UseGuards } from "@nestjs/common";
 import { OrgJwtAuthGuard } from "../../../organizations/infrastructure/guards/org-jwt-auth.guard.js";
+import { OrgRolesGuard } from "../../../organizations/infrastructure/guards/org-roles.guard.js";
+import { OrgRoles } from "../../../organizations/infrastructure/decorators/org-roles.decorator.js";
 import {
   CurrentOrgUser,
   type AuthenticatedOrgUser,
@@ -19,7 +21,8 @@ import { SweepClubRemindersUseCase } from "../../application/use-cases/sweep-clu
  * organização.
  */
 @Controller("admin/club-reminders")
-@UseGuards(OrgJwtAuthGuard)
+@UseGuards(OrgJwtAuthGuard, OrgRolesGuard)
+@OrgRoles("administrador", "gerente")
 export class AdminClubRemindersController {
   constructor(private readonly sweepClubRemindersUseCase: SweepClubRemindersUseCase) {}
 
