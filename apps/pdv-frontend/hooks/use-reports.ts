@@ -35,10 +35,18 @@ export function useCashSessionsReport(params: { from?: string; to?: string }) {
   })
 }
 
+/**
+ * Linha do relatório de estoque já com nome/SKU do produto (PERF-01, contrato
+ * K5): antes a tela buscava `GET /products/:id` uma vez por item de estoque —
+ * milhares de requisições depois do sync do Bling.
+ */
+// TODO(integração): trocar pelo tipo de @easypdv/shared-types quando `StockReportEntry` ganhar `sku`/`name` (frente A).
+export type StockReportRow = StockReportEntry & { sku: string; name: string }
+
 /** V1 tem 1 depósito por loja — sem seletor de depósito na tela, warehouseId fica sempre indefinido (retorna tudo). */
 export function useStockReport() {
   return useQuery({
     queryKey: ['reports', 'stock'],
-    queryFn: () => apiRequest<StockReportEntry[]>('/reports/stock'),
+    queryFn: () => apiRequest<StockReportRow[]>('/reports/stock'),
   })
 }
