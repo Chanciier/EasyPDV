@@ -69,8 +69,41 @@ function normalizeSpaces(value: string): string {
     .join("");
 }
 
+/** Símbolos comuns sem decomposição NFD — viram o equivalente ASCII em vez de "?". */
+const ASCII_FALLBACKS: Record<string, string> = {
+  "º": "o",
+  "ª": "a",
+  "°": "o",
+  "–": "-",
+  "—": "-",
+  "‘": "'",
+  "’": "'",
+  "“": '"',
+  "”": '"',
+  "…": "...",
+  "•": "*",
+};
+
+/**
+ * SEG-12 (2026-10-22): nome de produto vem do Bling e nome de cliente é
+ * digitado — um byte de controle cru (ESC, GS...) no meio do texto vira
+ * comando na impressora (`ESC p` abre a gaveta, `GS V` corta o papel). E
+ * `Buffer.from(…, "ascii")` só usa o byte baixo de cada caractere, então até
+ * um caractere Unicode "U+xx1B" chegava como ESC. Tudo fora do ASCII
+ * imprimível (0x20-0x7E) vira "?" — antes já saía lixo no papel.
+ */
+function toPrintableAscii(value: string): string {
+  return Array.from(value)
+    .map((char) => {
+      const code = char.codePointAt(0) ?? 0;
+      if (code >= 0x20 && code <= 0x7e) return char;
+      return ASCII_FALLBACKS[char] ?? "?";
+    })
+    .join("");
+}
+
 export function text(line: string): Buffer {
-  return Buffer.from(`${stripAccents(normalizeSpaces(line))}\n`, "ascii");
+  return Buffer.from(`${toPrintableAscii(stripAccents(normalizeSpaces(line)))}\n`, "ascii");
 }
 
 export function separator(width = 42, char = "-"): Buffer {
