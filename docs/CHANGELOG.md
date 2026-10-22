@@ -1,6 +1,41 @@
 # Changelog — EasyPDV
 
 ## [Unreleased]
+### Rodada de segurança, desempenho e eficiência do operador (v1.5.33, 2026-10-22)
+Três análises (segurança, desempenho, UX do caixa), revisão cruzada entre elas e plano único; implementado em 5 frentes. Sem migration (SQLite e Postgres); Intermediador compatível com terminais N-1. Detalhe no cofre Obsidian, "Rodada de Melhorias 2026-10-22 (v1.5.33)".
+
+**Segurança**
+- Logs (pino) dos dois backends sem headers de credencial (`authorization`, `x-terminal-api-key`, `x-ecommerce-api-key`) e com CPF mascarado na URL; `/health` e `/sync/status` fora do log.
+- Login no terminal: só cai pro hash local em rede/timeout/5xx/404; 429 da central vira "Muitas tentativas…"; limite local de 5 falhas/5 min por e-mail.
+- `encodeURIComponent` em todo id/documento interpolado nos gateways HTTP do pdv-backend (path traversal com a apiKey do terminal).
+- Painel admin: `OrgRolesGuard` (administrador/gerente; proprietário sempre passa) em `/admin/*`, `/sync/jobs*` e `/integrations/bling/connect|status`; sem `ADMIN_PANEL_ALLOWED_EMAILS` em produção o login no painel é negado. Só proprietário dá/tira o papel de proprietário; ninguém muda o próprio papel.
+- `JwtStrategy` usa papel e `active` do banco; logout confere o segredo do refresh.
+- Electron: IPC só aceita a janela principal mostrando arquivos do app; links externos abrem no navegador; sem menu e sem DevTools no instalador (`EASYPDV_DEVTOOLS=1` religa); `settings:set` validado; ESC/POS sem bytes de controle.
+- Restaurar backup só para gerência (papel conferido no main via `/auth/me`), com mutex e try/finally que sempre religa o backend.
+- Fechar caixa / lançar movimento em sessão de outro operador: só gerência (403).
+- Estorno: transição condicional (Enter duplo não estorna duas vezes); só NFC-e emitida ou em emissão bloqueia — comprovante não fiscal não bloqueia mais; venda com cliente consulta a central antes.
+- Estorno devolve o Vale-Troca usado na venda (estorno local primeiro, depois `adjust`); se a devolução falhar, a tela avisa e pede ajuste manual (risco #35).
+- Proprietário vê Auditoria e Administração (risco #38).
+
+**Desempenho**
+- Relatório de estoque com nome/SKU no backend (antes 1 requisição por produto), negativos primeiro, 100 por vez.
+- Preços em lote: `GET /products/prices?ids=` (até 200) e hook agrupando por tick.
+- Bipe: produto semeado no cache, uma transação por mudança no carrinho, `PATCH` de quantidade mantendo o item (e o desconto do sócio).
+- Sync do Bling incremental grava só o que mudou e tem trava contra execuções sobrepostas.
+- Outbox: contagem por `COUNT`, sem execuções sobrepostas, falha de rede não queima tentativa nem trava a fila.
+- Total em dinheiro do caixa calculado no backend (antes errava depois da 100ª venda); polling mais espaçado; consulta fiscal do Histórico para quando não há nota (o watcher de impressão continua até a NFC-e sair).
+- Backup assíncrono depois da janela abrir; boot espera o backend até 90 s e loga a duração da migration; N+1 do clube no Intermediador removido; telemetria Vercel removida.
+
+**Operador**
+- Foco volta ao CPF depois de "Nova venda"; código não encontrado é limpo; busca nunca fica desabilitada (bipes rápidos em fila, sem perder nem duplicar); Esc duplo para descartar venda com itens; +/−/Del/setas independentes do foco; F-keys ignoradas com diálogo aberto; venda em andamento sobrevive a recarregar a tela.
+- Desconto de sócio por item preserva a decisão do operador ao mudar quantidade ou trocar de aba (não reaplica 30% sobre desconto removido).
+- Pagamento: Enter = dinheiro exato, 1–5 só na escolha da forma, Vale-Troca sugere o menor entre restante e saldo, Enter segurado não confirma sozinho.
+- Mensagens em português no lugar de "Internal Server Error"/"Failed to fetch"; textos de contingência quando a central cai.
+- Histórico sem rascunhos abandonados, CPF mascarado na tela, busca por valor/hora, "Imprimir cupom" sempre disponível.
+- Caixa: erros visíveis no fechamento e na sangria, valor contado selecionado com "conte a gaveta", resumo depois de fechar, "Abrir caixa (F6)" na Venda.
+
+**Fora desta rodada**: conferência cega no fechamento (decisão pendente), fila de impressão fiscal, organizationId no SyncJob (C3), devolução ao estoque do Vale-Troca subir pro Bling (#36), relatórios em UTC (#40), testes automatizados.
+
 ### Nova aba "Clientes com saldo" na tela Vale-Troca (v1.5.32)
 Pedido do usuário: poder filtrar/ver quais clientes têm Vale-Troca. Até aqui só dava para consultar o saldo de um CPF por vez.
 
