@@ -51,6 +51,17 @@ export const applySaleDiscountSchema = z.object({
   discountAmount: z.number().nonnegative(),
 });
 
+// Mudar a quantidade de um item (2026-10-22, PERF-03c) — antes o frontend
+// fazia DELETE + POST, o item ganhava id novo e perdia o desconto. O
+// unitPrice é sempre o já gravado no item (nunca vem do cliente).
+// `discountAmount` opcional: o frontend manda junto quando precisa reaplicar
+// o % de clube sobre a nova quantidade, numa chamada só; sem ele o backend
+// mantém o desconto em R$ limitado ao novo subtotal da linha.
+export const updateSaleItemQuantitySchema = z.object({
+  quantity: z.number().positive().finite(),
+  discountAmount: z.number().nonnegative().finite().optional(),
+});
+
 // Estorno de venda confirmada (Sprint 14) — motivo obrigatório, diferente do
 // motivo opcional de movimento de caixa, já que reverte uma transação
 // completa e possivelmente já sincronizada com o Bling.
@@ -73,5 +84,6 @@ export type StartSaleInput = z.infer<typeof startSaleSchema>;
 export type AddSaleItemInput = z.infer<typeof addSaleItemSchema>;
 export type RegisterPaymentInput = z.infer<typeof registerPaymentSchema>;
 export type ApplySaleDiscountInput = z.infer<typeof applySaleDiscountSchema>;
+export type UpdateSaleItemQuantityInput = z.infer<typeof updateSaleItemQuantitySchema>;
 export type VoidSaleInput = z.infer<typeof voidSaleSchema>;
 export type AttachCustomerToSaleInput = z.infer<typeof attachCustomerToSaleSchema>;
