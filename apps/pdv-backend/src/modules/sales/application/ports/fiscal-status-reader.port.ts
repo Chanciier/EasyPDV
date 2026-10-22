@@ -13,9 +13,11 @@
  *   comprovante não fiscal nunca bloqueia o estorno;
  * - `refreshRemote` consulta a central antes (a NFC-e pode ter sido emitida em
  *   background sem que este terminal saiba) e atualiza o espelho local;
- * - `"unknown"` = a central não respondeu e o espelho local não mostra NFC-e.
+ * - `"unknown"` = a central não respondeu e o espelho local não mostra NFC-e;
+ * - `"nfce_pending"` (revisão final) = NFC-e ainda em emissão no Bling — estornar
+ *   agora deixaria uma nota autorizada logo depois sem venda por trás.
  */
-export type NfceIssuedCheck = "nfce_issued" | "none" | "unknown";
+export type NfceIssuedCheck = "nfce_issued" | "nfce_pending" | "none" | "unknown";
 
 export interface FiscalStatusReaderPort {
   checkIssuedNfce(saleId: string, options: { refreshRemote: boolean }): Promise<NfceIssuedCheck>;

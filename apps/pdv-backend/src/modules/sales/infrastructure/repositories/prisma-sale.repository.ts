@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import type { SaleDiscountSource, SaleSyncPayload, SaleVoidSyncPayload } from "@easypdv/shared-types";
 import { Sale } from "../../domain/entities/sale.entity.js";
-import { SaleWarehouseNotResolvableError } from "../../domain/errors.js";
+import { SaleNotVoidableError, SaleWarehouseNotResolvableError } from "../../domain/errors.js";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
 import type {
   AddSaleItemData,
@@ -14,6 +14,14 @@ import type {
 import { toDomainSale } from "../mappers/sales.mapper.js";
 
 const SALE_INCLUDE = { items: true, payments: true } as const;
+
+/**
+ * Timeout folgado pras transações do carrinho (revisão final, 2026-10-22): o
+ * default do Prisma (5 s / maxWait 2 s) estourava num PC lento quando um lote
+ * do sync do Bling segurava o lock de escrita do SQLite — o operador via
+ * "Erro ao adicionar item" e tinha de bipar de novo.
+ */
+const CART_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 15_000 };
 
 @Injectable()
 export class PrismaSaleRepository implements SaleRepositoryPort {
@@ -71,21 +79,21 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
         },
       });
       return this.recalculateTotal(tx, data.saleId);
-    });
+    }, CART_TRANSACTION_OPTIONS);
   }
 
   removeItem(saleId: string, itemId: string): Promise<Sale> {
     return this.prisma.$transaction(async (tx) => {
       await tx.saleItem.delete({ where: { id: itemId } });
       return this.recalculateTotal(tx, saleId);
-    });
+    }, CART_TRANSACTION_OPTIONS);
   }
 
   applyDiscount(saleId: string, discountAmount: number, source: SaleDiscountSource | null): Promise<Sale> {
     return this.prisma.$transaction(async (tx) => {
       await tx.sale.update({ where: { id: saleId }, data: { discountAmount, discountSource: source } });
       return this.recalculateTotal(tx, saleId);
-    });
+    }, CART_TRANSACTION_OPTIONS);
   }
 
   applyItemDiscount(saleId: string, itemId: string, discountAmount: number): Promise<Sale> {
@@ -95,7 +103,7 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
       const totalAmount = Math.max(0, lineSubtotal - discountAmount);
       await tx.saleItem.update({ where: { id: itemId }, data: { discountAmount, totalAmount } });
       return this.recalculateTotal(tx, saleId);
-    });
+    }, CART_TRANSACTION_OPTIONS);
   }
 
   updateItemQuantity(saleId: string, itemId: string, quantity: number, discountAmount: number): Promise<Sale> {
@@ -104,7 +112,7 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
       const totalAmount = Math.max(0, quantity * item.unitPrice - discountAmount);
       await tx.saleItem.update({ where: { id: itemId }, data: { quantity, discountAmount, totalAmount } });
       return this.recalculateTotal(tx, saleId);
-    });
+    }, CART_TRANSACTION_OPTIONS);
   }
 
   async attachCustomer(saleId: string, customerId: string): Promise<Sale> {
@@ -273,28 +281,12 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     }
     const warehouseByProduct = new Map(originalMovements.map((m) => [m.productId, m.warehouseId]));
 
-    const stockOperations = sale.items.flatMap((item) => {
+    const restockPlan = sale.items.map((item) => {
       const warehouseId = warehouseByProduct.get(item.productId);
       if (!warehouseId) {
         throw new SaleWarehouseNotResolvableError(saleId);
       }
-      return [
-        this.prisma.stockMovement.create({
-          data: {
-            warehouseId,
-            productId: item.productId,
-            type: "devolucao",
-            quantity: item.quantity,
-            referenceType: "sale",
-            referenceId: saleId,
-          },
-        }),
-        this.prisma.stockItem.upsert({
-          where: { warehouseId_productId: { warehouseId, productId: item.productId } },
-          create: { warehouseId, productId: item.productId, quantity: item.quantity },
-          update: { quantity: { increment: item.quantity } },
-        }),
-      ];
+      return { warehouseId, productId: item.productId, quantity: item.quantity };
     });
 
     const products = await this.prisma.product.findMany({
@@ -316,13 +308,30 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
       }),
     };
 
-    await this.prisma.$transaction([
-      this.prisma.sale.update({ where: { id: saleId }, data: { status: "cancelled" } }),
-      ...stockOperations,
-      this.prisma.syncOutbox.create({
+    // Revisão final (2026-10-22): transição condicional `confirmed → cancelled`
+    // dentro da transação. Entre o `canBeVoided` do use case e este ponto há
+    // consultas à central (até 8 s); um segundo pedido (Enter duplo) passava
+    // pela mesma checagem e estornava de novo — estoque devolvido 2×, dois
+    // `sale_void` e Vale-Troca creditado 2×. Só um pedido vence o updateMany.
+    await this.prisma.$transaction(async (tx) => {
+      const transitioned = await tx.sale.updateMany({ where: { id: saleId, status: "confirmed" }, data: { status: "cancelled" } });
+      if (transitioned.count === 0) {
+        throw new SaleNotVoidableError(saleId);
+      }
+      for (const { warehouseId, productId, quantity } of restockPlan) {
+        await tx.stockMovement.create({
+          data: { warehouseId, productId, type: "devolucao", quantity, referenceType: "sale", referenceId: saleId },
+        });
+        await tx.stockItem.upsert({
+          where: { warehouseId_productId: { warehouseId, productId } },
+          create: { warehouseId, productId, quantity },
+          update: { quantity: { increment: quantity } },
+        });
+      }
+      await tx.syncOutbox.create({
         data: { entityType: "sale_void", entityId: saleId, payload: JSON.stringify(voidPayload) },
-      }),
-      this.prisma.auditLog.create({
+      });
+      await tx.auditLog.create({
         data: {
           userId: actorUserId,
           action: "sale.voided",
@@ -330,8 +339,8 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
           entityId: saleId,
           metadata: JSON.stringify({ reason, totalAmount: sale.totalAmount, itemCount: sale.items.length }),
         },
-      }),
-    ]);
+      });
+    });
 
     const voided = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
     return toDomainSale(voided);

@@ -153,6 +153,14 @@ export class SaleNotVoidableError extends DomainError {
 // é uma ação fiscal real perante a SEFAZ — o sistema não permite estornar
 // localmente uma venda cuja NFC-e já saiu. Desde 2026-10-22 (UX-11) só NFC-e
 // conta; comprovante não fiscal nunca bloqueia. Ver docs/DATABASE.md.
+/** Revisão final (2026-10-22): NFC-e ainda sendo emitida — esperar o veredito da SEFAZ antes de estornar. */
+export class SaleNfcePendingError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor(_id: string) {
+    super("A NFC-e desta venda ainda está sendo emitida. Aguarde alguns segundos e tente estornar de novo.");
+  }
+}
+
 export class SaleHasIssuedFiscalDocumentError extends DomainError {
   readonly kind: DomainErrorKind = "conflict";
   constructor(_id: string) {

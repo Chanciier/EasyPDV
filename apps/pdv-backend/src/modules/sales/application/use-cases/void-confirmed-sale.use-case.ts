@@ -3,6 +3,7 @@ import { toErrorMessage } from "../../../../common/to-error-message.js";
 import {
   FiscalStatusUnverifiableError,
   SaleHasIssuedFiscalDocumentError,
+  SaleNfcePendingError,
   SaleNotFoundError,
   SaleNotVoidableError,
 } from "../../domain/errors.js";
@@ -122,6 +123,9 @@ export class VoidConfirmedSaleUseCase {
   private assertNoIssuedNfce(saleId: string, check: NfceIssuedCheck, customer: Customer | null | undefined): void {
     if (check === "nfce_issued") {
       throw new SaleHasIssuedFiscalDocumentError(saleId);
+    }
+    if (check === "nfce_pending") {
+      throw new SaleNfcePendingError(saleId);
     }
     if (check === "unknown") {
       const customerHasNoDocument = customer !== undefined && !customer?.document;

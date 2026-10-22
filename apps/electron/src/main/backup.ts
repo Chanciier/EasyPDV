@@ -106,7 +106,8 @@ export async function withBackupLock<T>(task: () => Promise<T>): Promise<T> {
 // ---------------------------------------------------------------------------
 
 /** Cria um backup SEM pegar o lock — só para quem já está dentro de `withBackupLock` (restore). */
-export async function createBackupUnlocked(): Promise<BackupInfo> {
+/** `keepFileName`: backup que não pode ser podado (o alvo de um restore em andamento). */
+export async function createBackupUnlocked(keepFileName?: string): Promise<BackupInfo> {
   const dbPath = resolveDatabasePath();
   const backupsDir = resolveBackupsDir();
   await fsp.mkdir(backupsDir, { recursive: true });
@@ -118,7 +119,7 @@ export async function createBackupUnlocked(): Promise<BackupInfo> {
     await copyIfExists(`${dbPath}${suffix}`, `${destPath}${suffix}`);
   }
 
-  await pruneOldBackups(backupsDir);
+  await pruneOldBackups(backupsDir, keepFileName);
   return toBackupInfo(backupsDir, fileName);
 }
 
@@ -126,15 +127,16 @@ export function createBackup(): Promise<BackupInfo> {
   return withBackupLock(createBackupUnlocked);
 }
 
-async function pruneOldBackups(backupsDir: string): Promise<void> {
-  const files = (await fsp.readdir(backupsDir)).filter((f) => f.endsWith(".db"));
-  if (files.length <= MAX_BACKUPS) return;
+async function pruneOldBackups(backupsDir: string, keepFileName?: string): Promise<void> {
+  const files = (await fsp.readdir(backupsDir)).filter((f) => f.endsWith(".db") && f !== keepFileName);
+  const limit = keepFileName ? MAX_BACKUPS - 1 : MAX_BACKUPS;
+  if (files.length <= limit) return;
 
   const withMtime = await Promise.all(
     files.map(async (f) => ({ f, mtimeMs: (await fsp.stat(path.join(backupsDir, f))).mtimeMs })),
   );
   withMtime.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  for (const { f } of withMtime.slice(MAX_BACKUPS)) {
+  for (const { f } of withMtime.slice(limit)) {
     await fsp.rm(path.join(backupsDir, f), { force: true });
     for (const suffix of SIDECAR_SUFFIXES) {
       await fsp.rm(path.join(backupsDir, `${f}${suffix}`), { force: true });

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { Search, Receipt, TrendingUp, Hash, CheckCircle2, Clock3, AlertCircle, Ban, ExternalLink } from 'lucide-react'
 import type { FiscalDocument, Sale, UserRole } from '@easypdv/shared-types'
-import { onlyDigits } from '@easypdv/shared-validation'
+import { formatCpf, onlyDigits } from '@easypdv/shared-validation'
 import { formatBRL, normalize } from '@/lib/pos-data'
 import { isElectron } from '@/hooks/use-hardware'
 import { ApiError, describeError } from '@/lib/api-client'
@@ -153,7 +153,8 @@ export function HistoryView() {
    * também no topo da tela até o operador dispensar.
    */
   async function handleVoidSale() {
-    if (!detail) return
+    // Enter repetido enquanto o estorno ainda roda não dispara um segundo pedido.
+    if (!detail || voidSale.isPending) return
     if (!voidReason.trim()) {
       setVoidError('Informe o motivo do estorno.')
       return
@@ -197,7 +198,8 @@ export function HistoryView() {
       payments: sale.payments
         .filter((p) => p.status === 'aprovado')
         .map((p) => ({ label: paymentLabel(p), amount: p.amount })),
-      customerDocument: maskCpf(detailCustomer?.document) ?? undefined,
+      // 2ª via igual ao cupom original (CPF completo, como a NFC-e); a máscara é só na tela.
+      customerDocument: detailCustomer?.document ? formatCpf(detailCustomer.document) : undefined,
     }
   }
 

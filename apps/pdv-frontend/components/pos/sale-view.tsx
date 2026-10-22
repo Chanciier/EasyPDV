@@ -679,6 +679,7 @@ export function SaleView() {
 
     if (e.key === 'F2') {
       e.preventDefault()
+      if (dialogOpen) return
       if (cashOpen && !sale) cpfInputRef.current?.focus()
       searchRef.current?.focus()
       searchRef.current?.select()

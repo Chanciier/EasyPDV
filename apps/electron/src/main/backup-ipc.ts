@@ -87,7 +87,7 @@ export function registerBackupIpc(deps: BackupIpcDeps): void {
 
     await withBackupLock(async () => {
       // Falhou o backup de segurança → nada foi parado ainda, só propaga.
-      await createBackupUnlocked();
+      await createBackupUnlocked(fileName);
       await deps.stopBackend();
       try {
         await restoreBackupUnlocked(fileName);

@@ -250,6 +250,8 @@ export function PaymentDialog({
       }
       if (e.key === 'Enter') {
         e.preventDefault()
+        // Segurar Enter não pode atravessar seleção → valor → confirmação sozinho.
+        if (e.repeat) return
         if (fullyPaid) confirm()
         else if (step === 'amount') void addLeg()
         else selectMethod(selectedKey)

@@ -249,7 +249,7 @@ function StoreCreditGrantTab() {
             <div role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
               <p>
                 Não foi possível consultar o CPF agora (sem conexão com a central?).{' '}
-                {describeError(lookupError, '')}
+                {describeError(lookupError, 'Tente de novo em instantes.')}
               </p>
               <button
                 type="button"

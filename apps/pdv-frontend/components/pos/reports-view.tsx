@@ -18,8 +18,11 @@ function compareStockRows(a: StockReportRow, b: StockReportRow): number {
   const rb = rank(b.quantity)
   if (ra !== rb) return ra - rb
   if (ra === 0 && a.quantity !== b.quantity) return a.quantity - b.quantity
-  return (a.name ?? '').localeCompare(b.name ?? '', 'pt-BR')
+  return nameCollator.compare(a.name ?? '', b.name ?? '')
 }
+
+/** Um Collator só: `localeCompare` com locale cria um por comparação e travava a ordenação de dezenas de milhares de linhas. */
+const nameCollator = new Intl.Collator('pt-BR')
 
 function defaultFrom(): string {
   const d = new Date()

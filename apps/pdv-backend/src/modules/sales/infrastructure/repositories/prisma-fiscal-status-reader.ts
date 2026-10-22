@@ -8,8 +8,11 @@ import {
 } from "../../../fiscal/application/ports/fiscal-document-repository.port.js";
 import type { FiscalStatusReaderPort, NfceIssuedCheck } from "../../application/ports/fiscal-status-reader.port.js";
 
-function isIssuedNfce(doc: { type: string; status: string } | null | undefined): boolean {
-  return doc?.type === "nfce" && doc.status === "issued";
+function classifyNfce(doc: { type: string; status: string } | null | undefined): NfceIssuedCheck | null {
+  if (doc?.type !== "nfce") return null;
+  if (doc.status === "issued") return "nfce_issued";
+  if (doc.status === "pending") return "nfce_pending";
+  return null;
 }
 
 /**
@@ -32,8 +35,9 @@ export class PrismaFiscalStatusReader implements FiscalStatusReaderPort {
       where: { saleId },
       select: { type: true, status: true },
     });
-    if (isIssuedNfce(local)) {
-      return "nfce_issued";
+    const localCheck = classifyNfce(local);
+    if (localCheck) {
+      return localCheck;
     }
     if (!options.refreshRemote) {
       return "none";
@@ -49,7 +53,7 @@ export class PrismaFiscalStatusReader implements FiscalStatusReaderPort {
         ...remote,
         issuedAt: remote.issuedAt ? new Date(remote.issuedAt) : null,
       });
-      return isIssuedNfce(remote) ? "nfce_issued" : "none";
+      return classifyNfce(remote) ?? "none";
     } catch (error) {
       this.logger.warn(`Estorno: status fiscal da venda ${saleId} indisponível na central: ${toErrorMessage(error)}`);
       return "unknown";
