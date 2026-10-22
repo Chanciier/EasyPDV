@@ -32,7 +32,7 @@ export class HttpActivationCodeGateway implements ActivationCodeGatewayPort {
       throw new Error("Terminal ainda não foi ativado — sem apiKey pra gerar código de ativação");
     }
 
-    const response = await fetch(`${this.baseUrl}/organizations/${identity.organizationId}/activation-codes`, {
+    const response = await fetch(`${this.baseUrl}/organizations/${encodeURIComponent(identity.organizationId)}/activation-codes`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": identity.apiKey },
       body: JSON.stringify({ storeId: identity.storeId }),
