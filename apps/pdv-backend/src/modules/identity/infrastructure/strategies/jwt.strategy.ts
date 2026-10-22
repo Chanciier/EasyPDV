@@ -31,12 +31,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
    * emitido antes da troca. Usuário deletado depois do token ser emitido
    * (raro, mas possível) invalida a sessão em vez de confiar cegamente no
    * claim assinado.
+   *
+   * SEG-10 (2026-10-22): papel e `active` também vêm da linha do banco, não
+   * do claim — sem isso, rebaixar ou desativar alguém só valia quando o
+   * access token expirava (até 15 min). Custo zero: a consulta já existia.
    */
   async validate(payload: JwtPayload) {
     const user = await this.userRepository.findById(payload.sub);
-    if (!user) {
+    if (!user || !user.active) {
       throw new UnauthorizedException();
     }
-    return { userId: payload.sub, role: payload.role, mustChangePassword: user.mustChangePassword };
+    return { userId: payload.sub, role: user.role, mustChangePassword: user.mustChangePassword };
   }
 }
