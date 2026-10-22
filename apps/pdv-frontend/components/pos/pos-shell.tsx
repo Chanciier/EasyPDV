@@ -25,6 +25,7 @@ import type { UserRole } from '@easypdv/shared-types'
 import { usePOS } from './pos-provider'
 import { formatBRL } from '@/lib/pos-data'
 import { useAuthStore } from '@/lib/auth-store'
+import { useCartStore } from '@/lib/cart-store'
 import { useAppUpdateStore } from '@/lib/app-update-store'
 import { useCurrentCashSession } from '@/hooks/use-cash'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -55,13 +56,15 @@ const NAV = [
 ] as const
 
 const AUDIT_NAV = { key: 'auditoria', label: 'Auditoria', icon: ShieldCheck, hint: 'F2' } as const
-const AUDIT_ROLES: UserRole[] = ['administrador', 'gerente', 'auditor']
+// SEG-14 / UX-16 (risco #38): o backend já libera "proprietario" — sem ele
+// aqui o dono da loja não via Auditoria nem Administração.
+const AUDIT_ROLES: UserRole[] = ['administrador', 'gerente', 'auditor', 'proprietario']
 
 const REPORTS_NAV = { key: 'relatorios', label: 'Relatórios', icon: BarChart3, hint: 'F5' } as const
 const REPORTS_ROLES: UserRole[] = ['administrador', 'gerente', 'proprietario']
 
 const ADMIN_NAV = { key: 'administracao', label: 'Administração', icon: UserCog, hint: 'F3' } as const
-const ADMIN_ROLES: UserRole[] = ['administrador']
+const ADMIN_ROLES: UserRole[] = ['administrador', 'proprietario']
 
 // F2/F3 já têm significado próprio dentro de algumas telas (ver
 // shortcuts-bar.tsx: Venda/Caixa/Produtos/Clientes usam F2, Caixa também usa
@@ -81,6 +84,9 @@ export function POSShell() {
   const logout = useAuthStore((s) => s.clear)
   const [today, setToday] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const saleInProgress = useCartStore((s) => s.saleId !== null)
+  const resetCart = useCartStore((s) => s.reset)
+  const [logoutArmed, setLogoutArmed] = useState(false)
   const canSeeAudit = !!user && AUDIT_ROLES.includes(user.role)
   const canSeeReports = !!user && REPORTS_ROLES.includes(user.role)
   const canSeeAdmin = !!user && ADMIN_ROLES.includes(user.role)
@@ -102,7 +108,31 @@ export function POSShell() {
   }, [])
 
   useEffect(() => {
+    if (!logoutArmed) return
+    const t = setTimeout(() => setLogoutArmed(false), 4000)
+    return () => clearTimeout(t)
+  }, [logoutArmed])
+
+  /**
+   * "Sair" com venda em andamento pede um segundo clique (UX-18): sair na hora
+   * largava o rascunho no meio. Ao sair, o carrinho é zerado pra o próximo
+   * usuário não retomar a venda de outro.
+   */
+  function handleLogout() {
+    if (saleInProgress && !logoutArmed) {
+      setLogoutArmed(true)
+      return
+    }
+    setLogoutArmed(false)
+    resetCart()
+    logout()
+  }
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // UX-04 / ux-revisao §2.7: com diálogo aberto (pagamento, recibo,
+      // estorno…) as F-keys de navegação não tiram o operador do meio dele.
+      if (document.querySelector('[role="dialog"]')) return
       const map: Record<string, (typeof visibleNav)[number]['key']> = {
         F1: 'venda',
         F6: 'caixa',
@@ -203,7 +233,9 @@ export function POSShell() {
             </span>
           </div>
           <div className="mt-2 flex items-center justify-between gap-2">
-            <p className="truncate text-sidebar-foreground/50">{user?.name}</p>
+            <p className={`truncate ${logoutArmed ? 'font-medium text-sidebar-foreground' : 'text-sidebar-foreground/50'}`}>
+              {logoutArmed ? 'Venda em andamento — clique em Sair de novo' : user?.name}
+            </p>
             <div className="flex shrink-0 items-center gap-1">
               <button
                 onClick={() => setSettingsOpen(true)}
@@ -213,8 +245,8 @@ export function POSShell() {
                 <Settings className="size-3.5" />
               </button>
               <button
-                onClick={logout}
-                title="Sair"
+                onClick={handleLogout}
+                title={logoutArmed ? 'Clique de novo para sair (a venda em andamento fica para trás)' : 'Sair'}
                 className="rounded p-1 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               >
                 <LogOut className="size-3.5" />
@@ -241,15 +273,22 @@ export function POSShell() {
                 Atualização disponível
               </button>
             )}
+            {/* UX-10 (5): o badge diz o que aconteceu e o que fazer, não só "sincronização". */}
             {syncStatus && syncStatus.failedCount > 0 ? (
-              <span className="flex items-center gap-1.5 rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive">
+              <span
+                title="Algumas vendas não foram aceitas pela central depois de várias tentativas. Avise o gerente — elas continuam salvas neste caixa."
+                className="flex items-center gap-1.5 rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive"
+              >
                 <AlertTriangle className="size-3.5" />
-                Falha de sincronização ({syncStatus.failedCount})
+                Envio à central falhou ({syncStatus.failedCount}) — avise o gerente
               </span>
             ) : syncStatus && syncStatus.pendingCount > 0 ? (
-              <span className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+              <span
+                title="Vendas ainda não enviadas à central (sem internet, servidor fora do ar ou só aguardando a próxima rodada). Pode continuar vendendo: as vendas ficam salvas neste caixa e são enviadas quando a conexão voltar."
+                className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground"
+              >
                 <WifiOff className="size-3.5" />
-                Sincronização pendente ({syncStatus.pendingCount})
+                Aguardando envio à central ({syncStatus.pendingCount}) — vendas salvas neste caixa
               </span>
             ) : null}
             <span className="text-muted-foreground" suppressHydrationWarning>

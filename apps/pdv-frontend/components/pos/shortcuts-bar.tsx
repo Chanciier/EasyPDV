@@ -9,14 +9,17 @@ const SHORTCUTS: Record<string, { key: string; label: string }[]> = {
     { key: '↑ / ↓', label: 'Selecionar item' },
     { key: '+ / -', label: 'Quantidade' },
     { key: 'Del', label: 'Remover item' },
-    { key: 'Esc', label: 'Cancelar venda' },
+    { key: '1–9', label: 'Desconto do sócio (Clube)' },
+    { key: 'Esc', label: 'Reiniciar venda (2× com itens)' },
+    { key: 'F6', label: 'Caixa' },
   ],
   caixa: [
     { key: 'F2', label: 'Suprimento' },
     { key: 'F3', label: 'Sangria' },
   ],
   produtos: [{ key: 'F2', label: 'Novo produto' }],
-  historico: [{ key: 'Enter', label: 'Ver detalhes' }],
+  historico: [{ key: 'Enter', label: 'Abrir a 1ª venda da busca' }],
+  'vale-troca': [{ key: 'Enter', label: 'Confirmar CPF / bipe' }],
   clientes: [{ key: 'F2', label: 'Novo cliente' }],
 }
 

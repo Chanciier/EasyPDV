@@ -76,7 +76,7 @@ export function PaymentDialog({
   /** Disparado logo após cada perna ser registrada com sucesso — `received` é o valor recebido em dinheiro (não persistido), usado só pra montar o cupom/recibo depois. */
   onPaymentRegistered?: (payment: Payment, received: number) => void
   /** CPF (2026-08-25) já foi anexado no início da venda, antes do pagamento — ver CpfGateDialog em sale-view.tsx. */
-  onConfirm: () => void
+  onConfirm: () => void | Promise<void>
 }) {
   const registerPayment = useRegisterPayment()
   const removePayment = useRemovePayment()
@@ -93,6 +93,10 @@ export function PaymentDialog({
   const [installments, setInstallments] = useState(1)
   const [addError, setAddError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // UX-19: dois Enter rápidos chegam antes do re-render que desabilita o
+  // botão — trava síncrona pra não registrar a perna / confirmar duas vezes.
+  const addLegLockRef = useRef(false)
+  const confirmLockRef = useRef(false)
 
   const isCard = selectedKey === 'credito' || selectedKey === 'debito'
   const method: PaymentMethod = isCard ? 'cartao' : selectedKey
@@ -115,11 +119,17 @@ export function PaymentDialog({
 
   // Reseta os campos da perna atual sempre que o restante mudar (perna
   // adicionada ou removida) — o valor sugerido acompanha o que ainda falta.
+  // UX-09: no Vale-Troca sugere min(restante, saldo) — antes vinha o restante
+  // inteiro, o Enter ficava bloqueado por "maior que o saldo" e o operador
+  // tinha de apagar e redigitar. UX-08: foco no campo na hora (sem o atraso
+  // de 50 ms em que um dígito ainda trocava a forma de pagamento).
+  const suggestedAmount =
+    selectedKey === 'vale_troca' && creditBalance !== null ? Math.min(remaining, creditBalance) : remaining
   useEffect(() => {
-    setAmount(remaining > 0 ? remaining.toFixed(2).replace('.', ',') : '')
+    setAmount(suggestedAmount > 0 ? suggestedAmount.toFixed(2).replace('.', ',') : '')
     setReceived('')
-    if (open && step === 'amount' && remaining > 0) setTimeout(() => inputRef.current?.focus(), 50)
-  }, [remaining, open, step])
+    if (open && step === 'amount' && remaining > 0) inputRef.current?.focus()
+  }, [suggestedAmount, remaining, open, step])
 
   /** Escolher uma forma (clique ou tecla numérica) já avança pra tela de valor — não é só um destaque visual. */
   function selectMethod(key: MethodKey) {
@@ -131,7 +141,9 @@ export function PaymentDialog({
 
   const isCash = selectedKey === 'dinheiro'
   const amountNum = Number(amount.replace(',', '.')) || 0
-  const receivedNum = Number(received.replace(',', '.')) || 0
+  // UX-08: "Valor recebido" vazio + Enter = dinheiro exato (troco zero), sem
+  // precisar clicar em "Exato".
+  const receivedNum = received.trim() === '' ? remaining : Number(received.replace(',', '.')) || 0
   const appliedAmount = roundMoney(isCash ? Math.min(receivedNum, remaining) : amountNum)
   const change = isCash ? Math.max(0, roundMoney(receivedNum - remaining)) : 0
 
@@ -157,7 +169,8 @@ export function PaymentDialog({
   const canConfirm = fullyPaid && !submitting
 
   async function addLeg() {
-    if (!sale || !canAddLeg) return
+    if (!sale || !canAddLeg || addLegLockRef.current) return
+    addLegLockRef.current = true
     setAddError(null)
     const receivedForThisLeg = isCash ? receivedNum : appliedAmount
     try {
@@ -188,6 +201,8 @@ export function PaymentDialog({
       }
     } catch (e) {
       setAddError(describeError(e, 'Erro ao registrar pagamento.'))
+    } finally {
+      addLegLockRef.current = false
     }
   }
 
@@ -202,8 +217,11 @@ export function PaymentDialog({
   }
 
   function confirm() {
-    if (!canConfirm) return
-    onConfirm()
+    if (!canConfirm || confirmLockRef.current) return
+    confirmLockRef.current = true
+    void Promise.resolve(onConfirm()).finally(() => {
+      confirmLockRef.current = false
+    })
   }
 
   /** Esc no passo de valor volta pra seleção de forma (corrigir escolha errada) em vez de fechar o diálogo inteiro — só fecha de verdade na seleção ou já com tudo pago. */
@@ -219,8 +237,14 @@ export function PaymentDialog({
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
+      // UX-08: 1-5 só escolhem a forma no passo de seleção — no passo de valor
+      // (foco num botão, ou antes do foco chegar no campo) trocavam a forma
+      // no meio da digitação.
       const found = METHODS.find((m) => m.num === e.key)
-      if (found && document.activeElement?.tagName !== 'INPUT') {
+      if (found && step === 'method' && !fullyPaid && document.activeElement?.tagName !== 'INPUT') {
+        // O campo de valor recebe o foco logo em seguida (sem o atraso de
+        // 50 ms de antes) — sem preventDefault o próprio dígito ia parar nele.
+        e.preventDefault()
         selectMethod(found.key)
         return
       }
@@ -454,7 +478,7 @@ export function PaymentDialog({
                   </p>
                 ) : (
                   <>
-                    <div className="flex items-center justify-between rounded-lg bg-primary/10 px-4 py-2.5 text-sm text-primary">
+                    <div className="flex items-center justify-between rounded-lg bg-primary/15 px-4 py-2.5 text-sm font-medium text-primary-foreground">
                       <span>Saldo disponível</span>
                       <span className="font-mono font-semibold">{formatBRL(creditBalance)}</span>
                     </div>
@@ -497,7 +521,7 @@ export function PaymentDialog({
                     value={received}
                     onChange={(e) => setReceived(e.target.value)}
                     disabled={registerPayment.isPending}
-                    placeholder="0,00"
+                    placeholder={`${remaining.toFixed(2).replace('.', ',')} (Enter = exato)`}
                     className="w-full rounded-lg border border-input bg-background px-4 py-3 font-mono text-2xl font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-ring/40 disabled:opacity-50"
                   />
                 </div>
