@@ -62,7 +62,8 @@ export function isTrustedSender(event: IpcMainEvent | IpcMainInvokeEvent): boole
   const main = config.getMainWebContents();
   if (!main || event.sender !== main) return false;
   const frame = event.senderFrame;
-  if (!frame || frame !== main.mainFrame) return false;
+  // Frame de topo (sem pai): iframe dentro da página não fala com o Main.
+  if (!frame || frame.parent !== null) return false;
   return isAppFileUrl(frame.url);
 }
 
