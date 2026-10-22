@@ -10,6 +10,8 @@ export interface UpsertClubMembershipData {
 
 export interface ClubMembershipRepositoryPort {
   findByCpf(organizationId: string, provider: ErpProviderCode, customerCpf: string): Promise<ClubMembership | null>;
+  /** PERF-15 (2026-10-22): uma query para a lista inteira de sócios, sempre escopada por organização+provider. */
+  findManyByCpfs(organizationId: string, provider: ErpProviderCode, customerCpfs: string[]): Promise<ClubMembership[]>;
   upsert(data: UpsertClubMembershipData): Promise<ClubMembership>;
   delete(organizationId: string, provider: ErpProviderCode, customerCpf: string): Promise<void>;
   deleteExpired(before: Date): Promise<number>;
