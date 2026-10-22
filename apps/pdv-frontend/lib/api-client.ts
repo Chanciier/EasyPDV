@@ -14,12 +14,55 @@ export class ApiError extends Error {
 }
 
 /**
+ * `statusText` HTTP genéricos (em inglês) que chegam como `ApiError.code`
+ * quando o corpo do erro não traz `message` — nunca devem ir pra tela.
+ */
+const GENERIC_STATUS_TEXTS = new Set([
+  "",
+  "Bad Request",
+  "Unauthorized",
+  "Forbidden",
+  "Not Found",
+  "Conflict",
+  "Too Many Requests",
+  "Internal Server Error",
+  "Bad Gateway",
+  "Service Unavailable",
+  "Gateway Timeout",
+]);
+
+const NETWORK_ERROR_MESSAGE =
+  "Sem comunicação com o sistema do caixa. Feche e abra o EasyPDV; se continuar, chame o suporte.";
+
+/** `fetch` rejeita com TypeError ("Failed to fetch") quando o backend local não responde. */
+function isNetworkError(error: unknown): boolean {
+  if (!(error instanceof TypeError)) return false;
+  return /failed to fetch|networkerror|load failed|network request failed/i.test(error.message);
+}
+
+function withRetryHint(fallback: string): string {
+  const base = fallback.trim().replace(/[.!]?$/, ".");
+  return `${base} Tente de novo em instantes.`;
+}
+
+/**
  * Extrai uma mensagem de erro amigável — antes copiada (com pelo menos uma
  * variante mais fraca, que não checava `ApiError` e só funcionava por
  * `ApiError.message` coincidir com `.code`) em 11+ componentes.
+ *
+ * UX-07 / K8 (2026-10-22): a `message` real do backend passa direto; erro de
+ * rede ("Failed to fetch") e statusText genérico ("Internal Server Error",
+ * "Too Many Requests"…) viram texto em português — o operador via o inglês
+ * cru exatamente quando a central ou o backend local caíam.
  */
 export function describeError(error: unknown, fallback = "Erro inesperado"): string {
-  if (error instanceof ApiError) return error.code;
+  if (error instanceof ApiError) {
+    if (!GENERIC_STATUS_TEXTS.has(error.code.trim())) return error.code;
+    if (error.status === 429) return "Muitas tentativas. Aguarde 1 minuto e tente de novo.";
+    if (error.status === 403) return "Você não tem permissão para esta ação. Peça a um gerente.";
+    return withRetryHint(fallback);
+  }
+  if (isNetworkError(error)) return NETWORK_ERROR_MESSAGE;
   if (error instanceof Error) return error.message;
   return fallback;
 }
