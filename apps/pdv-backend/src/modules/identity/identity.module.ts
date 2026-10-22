@@ -27,6 +27,7 @@ import { ChangePasswordUseCase } from "./application/use-cases/change-password.u
 import { ResetUserPasswordUseCase } from "./application/use-cases/reset-user-password.use-case.js";
 import { MustChangePasswordInterceptor } from "./infrastructure/interceptors/must-change-password.interceptor.js";
 import { TokenIssuerService } from "./application/services/token-issuer.service.js";
+import { LoginAttemptLimiterService } from "./application/services/login-attempt-limiter.service.js";
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { TokenIssuerService } from "./application/services/token-issuer.service.
   providers: [
     JwtStrategy,
     TokenIssuerService,
+    LoginAttemptLimiterService,
     LoginUseCase,
     RefreshTokenUseCase,
     LogoutUseCase,

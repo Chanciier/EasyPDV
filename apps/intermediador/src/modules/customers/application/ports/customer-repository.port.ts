@@ -30,6 +30,8 @@ export interface CustomerRepositoryPort {
   findById(organizationId: string, id: string): Promise<Customer | null>;
   /** Match exato de `document`, escopado à organização. */
   findByDocument(organizationId: string, document: string): Promise<Customer | null>;
+  /** PERF-15 (2026-10-22): match exato de vários documentos numa query só, escopado à organização. */
+  findManyByDocuments(organizationId: string, documents: string[]): Promise<Customer[]>;
   /** Sem `query` devolve todos da organização; com `query`, filtra por nome/documento. */
   search(organizationId: string, query?: string): Promise<Customer[]>;
   create(data: CreateCustomerData): Promise<Customer>;

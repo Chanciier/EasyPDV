@@ -19,6 +19,14 @@ export class PrismaClubMembershipRepository implements ClubMembershipRepositoryP
     return record ? toDomainClubMembership(record) : null;
   }
 
+  async findManyByCpfs(organizationId: string, provider: ErpProviderCode, customerCpfs: string[]): Promise<ClubMembership[]> {
+    if (customerCpfs.length === 0) return [];
+    const records = await this.prisma.clubMembership.findMany({
+      where: { organizationId, provider, customerCpf: { in: customerCpfs } },
+    });
+    return records.map(toDomainClubMembership);
+  }
+
   async upsert(data: UpsertClubMembershipData): Promise<ClubMembership> {
     const record = await this.prisma.clubMembership.upsert({
       where: {

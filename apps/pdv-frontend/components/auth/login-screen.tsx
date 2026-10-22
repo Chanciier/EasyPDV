@@ -27,11 +27,16 @@ export function LoginScreen() {
     onSuccess: (data) => setSession(data.user, data.tokens),
   })
 
+  // 429 (SEG-02): o backend manda o tempo certo na `message` ("Aguarde 1
+  // minuto" central, "Aguarde 5 minutos" no limite local) — só cai no texto
+  // genérico se vier sem corpo.
   const errorMessage =
     mutation.error instanceof ApiError
       ? mutation.error.status === 401
         ? 'E-mail ou senha incorretos.'
-        : mutation.error.message
+        : mutation.error.status === 429 && mutation.error.message === 'Too Many Requests'
+          ? 'Muitas tentativas. Aguarde 1 minuto e tente de novo.'
+          : mutation.error.message
       : mutation.error
         ? 'Não foi possível conectar ao servidor local. Verifique se o backend está rodando.'
         : null

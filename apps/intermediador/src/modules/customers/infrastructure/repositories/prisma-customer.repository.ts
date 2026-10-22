@@ -38,6 +38,14 @@ export class PrismaCustomerRepository implements CustomerRepositoryPort {
     return record ? toDomain(record) : null;
   }
 
+  async findManyByDocuments(organizationId: string, documents: string[]): Promise<Customer[]> {
+    if (documents.length === 0) return [];
+    const records = await this.prisma.customer.findMany({
+      where: { organizationId, document: { in: documents } },
+    });
+    return records.map(toDomain);
+  }
+
   async search(organizationId: string, query?: string): Promise<Customer[]> {
     const records = await this.prisma.customer.findMany({
       where: {

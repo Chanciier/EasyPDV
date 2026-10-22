@@ -64,12 +64,12 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
 
   async findById(id: string): Promise<Customer | null> {
     const { apiKey } = await this.headers();
-    const response = await fetch(`${this.baseUrl}/customers/${id}`, {
+    const response = await fetch(`${this.baseUrl}/customers/${encodeURIComponent(id)}`, {
       headers: { "X-Terminal-Api-Key": apiKey },
       signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`Intermediador respondeu ${response.status} para GET /customers/${id}`);
+    if (!response.ok) throw new Error(`Intermediador respondeu ${response.status} para GET /customers/:id`);
     const body = await this.parseJsonOrNull(response);
     return body ? this.toCustomer(body) : null;
   }
@@ -80,7 +80,7 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
       headers: { "X-Terminal-Api-Key": apiKey },
       signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
-    if (!response.ok) throw new Error(`Intermediador respondeu ${response.status} para GET /customers/by-document/${document}`);
+    if (!response.ok) throw new Error(`Intermediador respondeu ${response.status} para GET /customers/by-document/:document`);
     const body = await this.parseJsonOrNull(response);
     return body ? this.toCustomer(body) : null;
   }
@@ -130,26 +130,26 @@ export class HttpCustomerRepository implements CustomerRepositoryPort, CustomerB
 
   async update(id: string, data: UpdateCustomerData): Promise<Customer> {
     const { apiKey } = await this.headers();
-    const response = await fetch(`${this.baseUrl}/customers/${id}`, {
+    const response = await fetch(`${this.baseUrl}/customers/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "X-Terminal-Api-Key": apiKey },
       body: JSON.stringify(data),
       signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) {
-      await throwDescriptiveHttpError(response, `PATCH /customers/${id}`);
+      await throwDescriptiveHttpError(response, "PATCH /customers/:id");
     }
     return this.toCustomer(await response.json());
   }
 
   async delete(id: string): Promise<void> {
     const { apiKey } = await this.headers();
-    const response = await fetch(`${this.baseUrl}/customers/${id}`, {
+    const response = await fetch(`${this.baseUrl}/customers/${encodeURIComponent(id)}`, {
       method: "DELETE",
       headers: { "X-Terminal-Api-Key": apiKey },
       signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
-    if (!response.ok) throw new Error(`Intermediador respondeu ${response.status} para DELETE /customers/${id}`);
+    if (!response.ok) throw new Error(`Intermediador respondeu ${response.status} para DELETE /customers/:id`);
   }
 
   /**

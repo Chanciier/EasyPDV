@@ -434,10 +434,16 @@ export class BlingSyncTargetAdapter implements SyncTargetPort {
     const clubTipoId = await this.resolveClubTipoContatoId(accessToken, organizationId);
     const contacts = await this.blingApiClient.listContactsByTipo(accessToken, clubTipoId);
 
+    // PERF-15 (2026-10-22): uma query para todos os CPFs em vez de uma por
+    // sócio — mesma resposta, mesma ordem (a do Bling).
+    const cpfs = contacts.map((contact) => contact.numeroDocumento).filter((doc): doc is string => Boolean(doc));
+    const memberships = await this.clubMembershipRepository.findManyByCpfs(organizationId, PROVIDER, [...new Set(cpfs)]);
+    const membershipByCpf = new Map(memberships.map((m) => [m.customerCpf, m]));
+
     const summaries: ClubMemberSummary[] = [];
     for (const contact of contacts) {
       if (!contact.numeroDocumento) continue; // clube exige CPF - contato sem documento não é rastreável aqui
-      const membership = await this.clubMembershipRepository.findByCpf(organizationId, PROVIDER, contact.numeroDocumento);
+      const membership = membershipByCpf.get(contact.numeroDocumento);
       summaries.push({
         document: contact.numeroDocumento,
         name: contact.nome,

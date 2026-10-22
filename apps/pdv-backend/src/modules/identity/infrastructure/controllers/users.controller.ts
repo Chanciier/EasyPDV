@@ -37,8 +37,11 @@ export class UsersController {
 
   @Post()
   @Roles("administrador")
-  async create(@Body(new ZodValidationPipe(createUserSchema)) body: CreateUserInput) {
-    const user = await this.createUserUseCase.execute(body);
+  async create(
+    @Body(new ZodValidationPipe(createUserSchema)) body: CreateUserInput,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    const user = await this.createUserUseCase.execute(body, actor.role);
     return toUserResponseDto(user);
   }
 
@@ -49,7 +52,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(updateUserRoleSchema)) body: UpdateUserRoleInput,
     @CurrentUser() actor: AuthenticatedUser,
   ) {
-    const user = await this.updateUserRoleUseCase.execute(id, body.role, actor.userId);
+    const user = await this.updateUserRoleUseCase.execute(id, body.role, actor.userId, actor.role);
     return toUserResponseDto(user);
   }
 
