@@ -25,6 +25,14 @@ export class LocalLoginThrottledError extends DomainError {
   }
 }
 
+/** SEG-15 — só o proprietário mexe no papel `proprietario`, e ninguém altera o próprio papel. */
+export class ForbiddenRoleChangeError extends DomainError {
+  readonly kind: DomainErrorKind = "forbidden";
+  constructor(message: string) {
+    super(message);
+  }
+}
+
 export class InactiveUserError extends DomainError {
   readonly kind: DomainErrorKind = "forbidden";
   constructor() {

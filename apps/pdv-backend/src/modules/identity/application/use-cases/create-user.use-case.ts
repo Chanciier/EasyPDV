@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { CreateUserInput } from "@easypdv/shared-validation";
-import { EmailAlreadyInUseError } from "../../domain/errors.js";
+import { EmailAlreadyInUseError, ForbiddenRoleChangeError } from "../../domain/errors.js";
 import type { User } from "../../domain/entities/user.entity.js";
 import { PASSWORD_HASHER, type PasswordHasherPort } from "../ports/password-hasher.port.js";
 import { USER_REPOSITORY, type UserRepositoryPort } from "../ports/user-repository.port.js";
@@ -24,7 +24,11 @@ export class CreateUserUseCase {
     @Inject(USER_VERIFICATION_GATEWAY) private readonly userVerificationGateway: UserVerificationGatewayPort,
   ) {}
 
-  async execute(input: CreateUserInput): Promise<User> {
+  /** SEG-15 (2026-10-22): só um proprietário cria outro proprietário. */
+  async execute(input: CreateUserInput, actorRole?: string): Promise<User> {
+    if (input.role === "proprietario" && actorRole !== "proprietario") {
+      throw new ForbiddenRoleChangeError("Só o proprietário pode criar outro proprietário.");
+    }
     const existing = await this.userRepository.findByEmail(input.email);
     if (existing) {
       throw new EmailAlreadyInUseError(input.email);
