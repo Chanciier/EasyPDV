@@ -1,17 +1,18 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, Plus, Minus, Trash2, ShoppingCart, Lock, Percent, Gift } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Lock, Percent, Gift, Wallet } from 'lucide-react'
 import type { Product, ReceiptPrintPayload, Sale, SaleItem } from '@easypdv/shared-types'
 import { formatBRL } from '@/lib/pos-data'
-import { describeError } from '@/lib/api-client'
+import { ApiError, describeError } from '@/lib/api-client'
 import { paymentDisplayLabel } from '@/lib/payment-labels'
 import { percentToAmount } from '@/lib/money'
-import { useCartStore } from '@/lib/cart-store'
+import { readStoredSaleId, useCartStore, type ClubDecision } from '@/lib/cart-store'
 import { useFiscalPrintStore } from '@/lib/fiscal-print-store'
 import { useCurrentCashSession } from '@/hooks/use-cash'
 import { useCustomer } from '@/hooks/use-customers'
-import { useHardwareSettings, useOpenDrawer, usePrintReceipt } from '@/hooks/use-hardware'
+import { isElectron, useHardwareSettings, useOpenDrawer, usePrintReceipt } from '@/hooks/use-hardware'
 import {
   findProductByBarcode,
   useAddSaleItem,
@@ -27,14 +28,17 @@ import {
   useRemoveSaleItem,
   useSale,
   useStartSale,
+  useUpdateSaleItemQuantity,
 } from '@/hooks/use-sales'
 import { useStoreCreditBalance } from '@/hooks/use-store-credit'
 import { formatCpf } from '@easypdv/shared-validation'
 import { CpfGateDialog } from './cpf-gate-dialog'
 import { PaymentDialog } from './payment-dialog'
 import { ReceiptDialog } from './receipt-dialog'
+import { usePOS } from './pos-provider'
 
-type Receipt = { sale: Sale; changeTotal: number }
+type PrintBasePayload = Omit<ReceiptPrintPayload, 'fiscal'>
+type Receipt = { sale: Sale; changeTotal: number; printPayload: PrintBasePayload }
 
 /** Desconto padrão do item de venda de sócio (30%) quando o operador não digita nada — ver `finalizeClubItemDiscount` em SaleView. */
 const CLUB_DEFAULT_DISCOUNT_PERCENT = 30
@@ -48,12 +52,42 @@ const CLUB_DEFAULT_DISCOUNT_PERCENT = 30
  */
 const CLUB_DISCOUNT_DIGIT_DELAY_MS = 300
 
+/** UX-05: janela do "Esc de novo pra cancelar" numa venda com itens/pagamentos. */
+const CANCEL_CONFIRM_WINDOW_MS = 3000
+
+const CPF_ATTACH_OFFLINE_MESSAGE =
+  'Não foi possível consultar o CPF agora (sem conexão com a central). A venda segue sem CPF: sai só o comprovante e não tem desconto do Clube. Para tentar de novo, Reiniciar venda (Esc).'
+const CLUB_CHECK_OFFLINE_MESSAGE =
+  'Não foi possível consultar o Clube Saldão agora. A venda segue sem o desconto do Clube; para tentar de novo, Reiniciar venda (Esc).'
+
+/** Erro que veio do backend com motivo de verdade (validação/domínio), não queda de rede/servidor. */
+function isDomainError(e: unknown): boolean {
+  return e instanceof ApiError && e.status < 500 && e.status !== 429
+}
+
+function isTypingTarget(el: Element | null): boolean {
+  return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement
+}
+
 export function SaleView() {
+  const { setView } = usePOS()
+  const queryClient = useQueryClient()
   const { data: cashSession } = useCurrentCashSession()
   const cashOpen = cashSession?.status === 'open'
 
-  const { saleId, selectedProductId, setSaleId, setSelectedProductId, reset } = useCartStore()
-  const { data: sale } = useSale(saleId)
+  // Seletores (não o store inteiro): o store agora guarda decisões de clube e
+  // recebidos — sem seletor, qualquer `set` re-renderizaria a tela toda.
+  const saleId = useCartStore((s) => s.saleId)
+  const selectedProductId = useCartStore((s) => s.selectedProductId)
+  const setSaleId = useCartStore((s) => s.setSaleId)
+  const setSelectedProductId = useCartStore((s) => s.setSelectedProductId)
+  const setClubDecision = useCartStore((s) => s.setClubDecision)
+  const setClubDecisions = useCartStore((s) => s.setClubDecisions)
+  const forgetClubDecision = useCartStore((s) => s.forgetClubDecision)
+  const setReceived = useCartStore((s) => s.setReceived)
+  const reset = useCartStore((s) => s.reset)
+
+  const { data: sale, error: saleError } = useSale(saleId)
   const { data: saleCustomer } = useCustomer(sale?.customerId ?? null)
   // Fase 3 (2026-09-10) — saldo de Vale-Troca visível assim que o CPF é
   // anexado à venda; validação de verdade acontece no payment-dialog.tsx.
@@ -63,11 +97,13 @@ export function SaleView() {
   const startSale = useStartSale()
   const addItem = useAddSaleItem()
   const removeItemMut = useRemoveSaleItem()
+  const updateQty = useUpdateSaleItemQuantity()
   const confirmSale = useConfirmSale()
   const attachCustomer = useAttachCustomer()
   const applyClubDiscount = useApplyClubDiscount()
   const cancelSale = useCancelSale()
   const applyDiscount = useApplySaleDiscount()
+  const applyItemDiscount = useApplyItemDiscount()
   const { data: hardwareSettings } = useHardwareSettings()
   const printReceipt = usePrintReceipt()
   const openDrawer = useOpenDrawer()
@@ -75,18 +111,15 @@ export function SaleView() {
   const [term, setTerm] = useState('')
   const [debouncedTerm, setDebouncedTerm] = useState('')
   const [highlight, setHighlight] = useState(0)
-  const [adding, setAdding] = useState(false)
+  const [busyCount, setBusyCount] = useState(0)
+  const adding = busyCount > 0
   const [pendingProductId, setPendingProductId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [paymentSubmitting, setPaymentSubmitting] = useState(false)
   const [paymentError, setPaymentError] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
-  // Pagamento dividido (2026-08-21) — "recebido" (pra calcular troco) só
-  // existe na tela, nunca é persistido (Payment guarda só `amount`, o valor
-  // efetivamente aplicado). Populado por PaymentDialog a cada perna em
-  // dinheiro registrada, lido de volta ao montar o recibo/cupom.
-  const [receivedByPaymentId, setReceivedByPaymentId] = useState<Record<string, number>>({})
+  const [printError, setPrintError] = useState<string | null>(null)
   const [discountOpen, setDiscountOpen] = useState(false)
   const [discountValue, setDiscountValue] = useState('')
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount')
@@ -95,26 +128,19 @@ export function SaleView() {
   const [itemDiscountValue, setItemDiscountValue] = useState('')
   const [itemDiscountMode, setItemDiscountMode] = useState<'amount' | 'percent'>('amount')
   const [itemDiscountError, setItemDiscountError] = useState<string | null>(null)
-  const applyItemDiscount = useApplyItemDiscount()
-  // Clube Saldão — quais itens já tiveram o desconto DECIDIDO (manualmente
-  // ou pelo fallback de 30%), pra distinguir de "ainda pendente". Sem isso,
-  // `discountAmount === 0` era o único sinal usado em finalizeClubItemDiscount/
-  // openPayment — indistinguível de "operador removeu o desconto de
-  // propósito" (achado real de produção, 2026-09-17: tirar o desconto de um
-  // item e finalizar a venda reaplicava os 30% sozinho, cobrando a menos e
-  // deixando saldo de Vale-Troca sobrando no cliente).
-  const [resolvedDiscountItemIds, setResolvedDiscountItemIds] = useState<Set<string>>(new Set())
-  useEffect(() => {
-    setResolvedDiscountItemIds(new Set())
-  }, [saleId])
   // CPF no início da venda (2026-08-25) — ver CpfGateDialog. `gateSubmitting`/
   // `gateError` cobrem só o passo de iniciar a venda em si; falha ao anexar
   // CPF/checar clube DEPOIS da venda já criada nunca bloqueia (mostrado no
   // banner de erro normal da tela, a venda já existe e pode seguir).
   const [gateSubmitting, setGateSubmitting] = useState(false)
   const [gateError, setGateError] = useState<string | null>(null)
-  const [clubNotice, setClubNotice] = useState<'member' | 'non-member' | null>(null)
+  // Aviso do Clube: "sócio" é derivado da própria venda (sobrevive à troca de
+  // aba); "não é sócio" só aparece logo depois da consulta.
+  const [clubHintDismissed, setClubHintDismissed] = useState(false)
+  const [nonMemberNotice, setNonMemberNotice] = useState(false)
+  const [cancelArmed, setCancelArmed] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  const cpfInputRef = useRef<HTMLInputElement>(null)
   // "Imprimir nota no momento da venda" (2026-08-21) — a NFC-e emite em
   // segundo plano (passa pelo Bling de forma assíncrona), então "no
   // momento da venda" na prática é "assim que ficar pronta, sem precisar
@@ -155,6 +181,80 @@ export function SaleView() {
   }, [allProductIds, productQueries])
 
   /**
+   * UX-18 (2026-10-22): o `saleId` fica em sessionStorage (ver cart-store),
+   * então um Ctrl+R no meio da venda retoma o rascunho em vez de deixá-lo
+   * órfão. `restoredSaleIdRef` marca que o id veio do storage e ainda precisa
+   * ser validado (pode já ter sido confirmado/cancelado ou não existir mais).
+   */
+  const restoredSaleIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (useCartStore.getState().saleId) return
+    const stored = readStoredSaleId()
+    if (stored) {
+      restoredSaleIdRef.current = stored
+      setSaleId(stored)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  /**
+   * Validação do rascunho retomado. Decisões de clube não sobrevivem ao reload
+   * (ux-revisao §2, regra 6): item que já tem desconto conta como decidido
+   * (`fixed`, nunca é sobrescrito); item sem desconto volta a ser pendente e
+   * cai nos 30% no próximo bipe de outro produto ou no F4.
+   */
+  useEffect(() => {
+    const restored = restoredSaleIdRef.current
+    if (!restored || restored !== saleId) return
+    if (saleError) {
+      restoredSaleIdRef.current = null
+      reset()
+      return
+    }
+    if (!sale) return
+    restoredSaleIdRef.current = null
+    if (sale.status !== 'draft' && sale.status !== 'pending') {
+      reset()
+      return
+    }
+    if (sale.discountSource === 'club') {
+      const decided: Record<string, ClubDecision> = {}
+      for (const item of sale.items) {
+        if (item.discountAmount > 0) decided[item.productId] = { kind: 'fixed' }
+      }
+      setClubDecisions(decided)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sale, saleError, saleId])
+
+  /**
+   * Fila das mutações do carrinho (fusão F1, 2026-10-22). A busca não fica
+   * mais `disabled` durante a adição (o foco saía do campo e o Enter do 2º
+   * bipe se perdia), então dois bipes podem chegar com o 1º ainda em voo.
+   * Tudo que mexe no carrinho (bipe, +/-, remover, descontos, cancelar) passa
+   * por aqui, um de cada vez, e cada tarefa lê a venda mais recente do cache
+   * (`latestSale`), nunca a do closure — sem linhas duplicadas e sem uma
+   * resposta antiga sobrescrevendo a venda no cache.
+   */
+  const queueRef = useRef<Promise<unknown>>(Promise.resolve())
+  function enqueue<T>(task: () => Promise<T>): Promise<T> {
+    setBusyCount((c) => c + 1)
+    const run = queueRef.current.then(task)
+    queueRef.current = run.catch(() => undefined)
+    return run.finally(() => setBusyCount((c) => c - 1))
+  }
+
+  /** Enfileira e mostra o erro no banner da tela (nunca rejeita). */
+  function runCartTask(task: () => Promise<void>, fallback: string): Promise<void> {
+    return enqueue(task).catch((e) => setError(describeError(e, fallback)))
+  }
+
+  function latestSale(): Sale | undefined {
+    const id = useCartStore.getState().saleId
+    return id ? queryClient.getQueryData<Sale>(['sale', id]) : undefined
+  }
+
+  /**
    * `discountMode: 'percent'` (2026-09-01) é só uma conveniência de entrada
    * — converte pra R$ aqui antes de mandar pro backend, que continua só
    * conhecendo `discountAmount` em reais (mesmo contrato de sempre, sem
@@ -174,14 +274,19 @@ export function SaleView() {
     const amount = discountMode === 'percent' ? percentToAmount(subtotal, raw) : raw
     setDiscountError(null)
     try {
-      await applyDiscount.mutateAsync({ saleId: sale.id, discountAmount: amount })
+      await enqueue(() => applyDiscount.mutateAsync({ saleId: sale.id, discountAmount: amount }))
       setDiscountOpen(false)
     } catch (e) {
       setDiscountError(describeError(e, 'Erro ao aplicar desconto.'))
     }
   }
 
-  /** Desconto por item (2026-09-01) — mesmo esquema de conversão %→R$ do handleApplyDiscount acima, escopado à linha (quantity * unitPrice) em vez do subtotal da venda. */
+  /**
+   * Desconto por item (2026-09-01) — mesmo esquema de conversão %→R$ do
+   * handleApplyDiscount acima, escopado à linha (quantity * unitPrice). Numa
+   * venda de sócio vira decisão de clube (ux-revisao §2): % → acompanha a
+   * quantidade; R$ → fixo; zero (qualquer modo) → "sem desconto" de propósito.
+   */
   async function handleApplyItemDiscount(item: SaleItem) {
     if (!sale) return
     const raw = Number(itemDiscountValue.replace(',', '.'))
@@ -189,29 +294,29 @@ export function SaleView() {
       setItemDiscountError('Valor inválido.')
       return
     }
-    const lineSubtotal = item.quantity * item.unitPrice
-    const amount = itemDiscountMode === 'percent' ? percentToAmount(lineSubtotal, raw) : raw
     setItemDiscountError(null)
     try {
-      await applyItemDiscount.mutateAsync({ saleId: sale.id, itemId: item.id, discountAmount: amount })
-      setResolvedDiscountItemIds((prev) => new Set(prev).add(item.id))
+      await enqueue(async () => {
+        const current = latestSale()?.items.find((i) => i.productId === item.productId) ?? item
+        const lineSubtotal = current.quantity * current.unitPrice
+        const amount = itemDiscountMode === 'percent' ? percentToAmount(lineSubtotal, raw) : raw
+        const updated = await applyItemDiscount.mutateAsync({ saleId: sale.id, itemId: current.id, discountAmount: amount })
+        if (updated.discountSource === 'club') {
+          setClubDecision(
+            current.productId,
+            amount === 0
+              ? { kind: 'percent', percent: 0 }
+              : itemDiscountMode === 'percent'
+                ? { kind: 'percent', percent: raw }
+                : { kind: 'fixed' },
+          )
+        }
+      })
       setItemDiscountId(null)
+      searchRef.current?.focus()
     } catch (e) {
       setItemDiscountError(describeError(e, 'Erro ao aplicar desconto.'))
     }
-  }
-
-  /**
-   * A venda em si só existe depois do CpfGateDialog resolver (ver render
-   * abaixo — a busca/carrinho só ficam visíveis quando `sale` já existe),
-   * então isso é só uma checagem defensiva, não cria mais a venda de forma
-   * lazy no primeiro item como antes (2026-08-25).
-   */
-  function ensureSale(): Sale {
-    if (!sale) {
-      throw new Error('Inicie a venda informando o CPF (ou "sem CPF") antes de adicionar itens.')
-    }
-    return sale
   }
 
   /**
@@ -228,19 +333,34 @@ export function SaleView() {
     }
     setGateSubmitting(true)
     setGateError(null)
-    setClubNotice(null)
+    setError(null)
+    setNonMemberNotice(false)
+    setClubHintDismissed(false)
     try {
       const newSale = await startSale.mutateAsync({ cashSessionId: cashSession.id })
       setSaleId(newSale.id)
       if (document) {
+        // CPF/clube nunca bloqueiam a venda em si — ela já foi criada e pode
+        // seguir. UX-10 (2026-10-22): a mensagem diz o que isso significa pro
+        // operador (sem NFC-e, sem Clube) e como tentar de novo.
+        let attached = false
         try {
           await attachCustomer.mutateAsync({ saleId: newSale.id, document })
-          const withDiscount = await applyClubDiscount.mutateAsync({ saleId: newSale.id })
-          setClubNotice(withDiscount.discountSource === 'club' ? 'member' : 'non-member')
+          attached = true
         } catch (e) {
-          // CPF/clube nunca bloqueia a venda em si — ela já foi criada e
-          // pode seguir normalmente, só avisa via banner de erro comum.
-          setError(describeError(e, 'Não foi possível vincular o CPF a essa venda.'))
+          setError(
+            isDomainError(e)
+              ? `${describeError(e, 'Não foi possível vincular o CPF a essa venda.')} A venda segue sem CPF.`
+              : CPF_ATTACH_OFFLINE_MESSAGE,
+          )
+        }
+        if (attached) {
+          try {
+            const withDiscount = await applyClubDiscount.mutateAsync({ saleId: newSale.id })
+            setNonMemberNotice(withDiscount.discountSource !== 'club')
+          } catch (e) {
+            setError(isDomainError(e) ? describeError(e, CLUB_CHECK_OFFLINE_MESSAGE) : CLUB_CHECK_OFFLINE_MESSAGE)
+          }
         }
       }
     } catch (e) {
@@ -250,85 +370,160 @@ export function SaleView() {
     }
   }
 
-  async function changeQty(currentSaleId: string, item: SaleItem, newQty: number) {
+  /**
+   * Muda a quantidade (PERF-03c / K2): PATCH mantém o mesmo item (id, preço,
+   * desconto). Regra do Clube (ux-revisao §2): decisão em % > 0 reaplica o %
+   * sobre a nova quantidade na mesma chamada; % 0, R$ fixo ou item ainda
+   * pendente → só a quantidade (o backend limita o desconto ao subtotal).
+   * Venda sem clube: desconto manual fica em R$ (decisão de 2026-09-01).
+   * Quantidade 0 remove a linha e esquece a decisão. Só roda dentro da fila.
+   */
+  async function applyQuantity(current: Sale, item: SaleItem, newQty: number) {
     setPendingProductId(item.productId)
     try {
       if (newQty <= 0) {
-        await removeItemMut.mutateAsync({ saleId: currentSaleId, itemId: item.id })
-        if (selectedProductId === item.productId) setSelectedProductId(null)
-      } else {
-        await removeItemMut.mutateAsync({ saleId: currentSaleId, itemId: item.id })
-        await addItem.mutateAsync({ saleId: currentSaleId, productId: item.productId, quantity: newQty })
+        await removeItemMut.mutateAsync({ saleId: current.id, itemId: item.id })
+        forgetClubDecision(item.productId)
+        if (useCartStore.getState().selectedProductId === item.productId) setSelectedProductId(null)
+        return
       }
-    } catch (e) {
-      setError(describeError(e, 'Erro ao atualizar quantidade.'))
+      const decision = current.discountSource === 'club' ? useCartStore.getState().clubDecisions[item.productId] : undefined
+      const discountAmount =
+        decision?.kind === 'percent' && decision.percent > 0
+          ? percentToAmount(newQty * item.unitPrice, decision.percent)
+          : undefined
+      await updateQty.mutateAsync({ saleId: current.id, itemId: item.id, quantity: newQty, discountAmount })
     } finally {
       setPendingProductId(null)
     }
   }
 
-  async function removeLine(item: SaleItem) {
-    if (!sale) return
-    setPendingProductId(item.productId)
-    try {
-      await removeItemMut.mutateAsync({ saleId: sale.id, itemId: item.id })
-      if (selectedProductId === item.productId) setSelectedProductId(null)
-    } catch (e) {
-      setError(describeError(e, 'Erro ao remover item.'))
-    } finally {
-      setPendingProductId(null)
-    }
+  function changeQty(productId: string, delta: number) {
+    return runCartTask(async () => {
+      const current = latestSale()
+      const item = current?.items.find((i) => i.productId === productId)
+      if (!current || !item) return
+      await applyQuantity(current, item, item.quantity + delta)
+    }, 'Erro ao atualizar quantidade.')
   }
 
-  /** Converte a % (10-90, escolhida pelo operador ou o fallback de 30%) num valor em R$ sobre o subtotal ATUAL da linha, e aplica via o mesmo endpoint do desconto manual por item. */
-  function applyClubItemDiscountPercent(item: SaleItem, percent: number) {
-    if (!sale) return
-    const lineSubtotal = item.quantity * item.unitPrice
-    const discountAmount = percentToAmount(lineSubtotal, percent)
-    applyItemDiscount.mutate({ saleId: sale.id, itemId: item.id, discountAmount })
-    setResolvedDiscountItemIds((prev) => new Set(prev).add(item.id))
+  function removeLine(productId: string) {
+    return runCartTask(async () => {
+      const current = latestSale()
+      const item = current?.items.find((i) => i.productId === productId)
+      if (!current || !item) return
+      await applyQuantity(current, item, 0)
+    }, 'Erro ao remover item.')
+  }
+
+  /** Clube: grava o % (10-90 pelo dígito, ou o fallback de 30%) sobre o subtotal ATUAL da linha e registra a decisão. */
+  function applyClubPercent(productId: string, percent: number, onlyIfUndecided = false) {
+    return runCartTask(async () => {
+      const current = latestSale()
+      const item = current?.items.find((i) => i.productId === productId)
+      if (!current || !item || current.discountSource !== 'club') return
+      if (onlyIfUndecided && productId in useCartStore.getState().clubDecisions) return
+      await applyItemDiscount.mutateAsync({
+        saleId: current.id,
+        itemId: item.id,
+        discountAmount: percentToAmount(item.quantity * item.unitPrice, percent),
+      })
+      setClubDecision(productId, { kind: 'percent', percent })
+    }, 'Erro ao aplicar o desconto do Clube.')
   }
 
   /**
-   * Clube Saldão — fecha o desconto de um item "pendente" (nunca teve o
-   * desconto decidido — ver `resolvedDiscountItemIds`) em 30% de fallback.
-   * Chamado ao trocar de item selecionado (bipar o próximo
-   * produto) e antes de abrir o pagamento, pro último item da venda — que
-   * nunca tem um "próximo bip" pra disparar isso sozinho.
+   * Clube Saldão — fecha o desconto de um item "pendente" (sem decisão em
+   * `clubDecisions`) em 30% de fallback. Chamado ao trocar de item
+   * selecionado (bipar OUTRO produto) — o último item cai no F4.
    */
-  function finalizeClubItemDiscount(item: SaleItem | undefined) {
-    if (!item || resolvedDiscountItemIds.has(item.id)) return
-    applyClubItemDiscountPercent(item, CLUB_DEFAULT_DISCOUNT_PERCENT)
+  function finalizeClubItemDiscount(productId: string) {
+    // Rechecado dentro da fila: um dígito ainda enfileirado vence o fallback.
+    void applyClubPercent(productId, CLUB_DEFAULT_DISCOUNT_PERCENT, true)
   }
 
-  async function addProduct(product: Product) {
-    setError(null)
-    setAdding(true)
-    try {
-      const currentSale = ensureSale()
-      const existing = currentSale.items.find((i) => i.productId === product.id)
-      if (existing) {
-        await changeQty(currentSale.id, existing, existing.quantity + 1)
-      } else {
-        await addItem.mutateAsync({ saleId: currentSale.id, productId: product.id, quantity: 1 })
-      }
-      // Clube Saldão — trocar de item selecionado fecha a decisão do
-      // anterior (30% se o operador não digitou nada pra ele). Só quando é
-      // de fato outro produto — bipar o MESMO produto de novo (aumenta
-      // quantidade) não conta como "próximo item".
-      if (sale?.discountSource === 'club' && selectedProductId && selectedProductId !== product.id) {
-        finalizeClubItemDiscount(sale.items.find((i) => i.productId === selectedProductId))
-      }
-      setSelectedProductId(product.id)
-      setTerm('')
-      setDebouncedTerm('')
-      setHighlight(0)
-      searchRef.current?.focus()
-    } catch (e) {
-      setError(describeError(e, 'Erro ao adicionar item.'))
-    } finally {
-      setAdding(false)
+  /** Corpo do bipe/seleção — só roda dentro da fila. */
+  async function addProductNow(product: Product) {
+    const current = latestSale()
+    if (!current) {
+      throw new Error('Inicie a venda informando o CPF (ou "sem CPF") antes de adicionar itens.')
     }
+    const existing = current.items.find((i) => i.productId === product.id)
+    if (existing) {
+      await applyQuantity(current, existing, existing.quantity + 1)
+    } else {
+      await addItem.mutateAsync({ saleId: current.id, productId: product.id, quantity: 1, product })
+    }
+    // Clube Saldão — trocar de item selecionado fecha a decisão do anterior
+    // (30% se o operador não digitou nada pra ele). Bipar o MESMO produto de
+    // novo (aumenta quantidade) não conta como "próximo item".
+    const previous = useCartStore.getState().selectedProductId
+    if (current.discountSource === 'club' && previous && previous !== product.id) {
+      finalizeClubItemDiscount(previous)
+    }
+    setSelectedProductId(product.id)
+    // Clique no dropdown deixa o foco num botão que some — volta pra busca.
+    const el = document.activeElement
+    if (!el || el === document.body || el.tagName === 'BUTTON') searchRef.current?.focus()
+  }
+
+  function clearSearch() {
+    setTerm('')
+    setDebouncedTerm('')
+    setHighlight(0)
+  }
+
+  function addProduct(product: Product) {
+    setError(null)
+    clearSearch()
+    return runCartTask(() => addProductNow(product), 'Erro ao adicionar item.')
+  }
+
+  /** Leitura exata por código de barras (a busca não indexa código). UX-02: o código não fica no campo e aparece na mensagem. */
+  function addByBarcode(code: string) {
+    setError(null)
+    return runCartTask(async () => {
+      let product: Product
+      try {
+        product = (await findProductByBarcode(code)).product
+      } catch (e) {
+        if (isDomainError(e)) {
+          throw new Error(`Produto não encontrado: ${code}. Confira o código ou busque pelo nome.`)
+        }
+        throw e
+      }
+      await addProductNow(product)
+    }, 'Erro ao buscar o produto.')
+  }
+
+  /**
+   * Enter na busca (ou no handler global, com a busca sem foco). O termo é
+   * capturado e o campo limpo NA HORA, antes de processar: assim o próximo
+   * bipe já começa num campo vazio mesmo com este ainda na fila.
+   */
+  function submitSearch() {
+    const code = term.trim()
+    if (!code) return
+    // Clube Saldão — Enter com um único dígito pendente confirma o desconto
+    // na hora, sem esperar a pausa (CLUB_DISCOUNT_DIGIT_DELAY_MS).
+    if (sale?.discountSource === 'club' && selectedProductId && /^[1-9]$/.test(code)) {
+      setTerm('')
+      void applyClubPercent(selectedProductId, Number(code) * 10)
+      return
+    }
+    // `matches` vem de `debouncedTerm` (250ms atrás de `term`) — só confia
+    // nele quando o debounce já alcançou o texto atual. Bug real
+    // (2026-08-19): um leitor USB digita + Enter bem mais rápido que 250ms,
+    // então `matches` ainda refletia a ÚLTIMA busca por nome — todo código
+    // lido virava o primeiro item daquela busca antiga.
+    const searchIsFresh = debouncedTerm === code
+    const chosen = searchIsFresh ? (matches[highlight] ?? (matches.length === 1 ? matches[0] : undefined)) : undefined
+    if (chosen) {
+      void addProduct(chosen)
+      return
+    }
+    clearSearch()
+    void addByBarcode(code)
   }
 
   /**
@@ -336,19 +531,17 @@ export function SaleView() {
    * CLUB_DISCOUNT_DIGIT_DELAY_MS acima). Só observa `term`, nunca intercepta
    * a tecla em si — o dígito digita normal na busca (feedback visual pro
    * operador) e, se ninguém mais chegar antes do tempo, vira o desconto do
-   * item selecionado e o campo é limpo. Se mais caracteres chegarem
-   * (leitor de código de barras, ou uma busca de verdade começando com
-   * número), o cleanup cancela e nada acontece aqui — segue o fluxo normal.
-   * Fora de uma venda de sócio (`discountSource !== 'club'`), este efeito
-   * nunca dispara — dígitos continuam se comportando exatamente como antes.
+   * item selecionado e o campo é limpo. Se mais caracteres chegarem (leitor
+   * de código de barras), o cleanup cancela. Fora de venda de sócio nunca
+   * dispara.
    */
   useEffect(() => {
     if (sale?.discountSource !== 'club' || !selectedProductId || !/^[1-9]$/.test(term)) return
     const percent = Number(term) * 10
+    const productId = selectedProductId
     const timer = setTimeout(() => {
-      const item = sale.items.find((i) => i.productId === selectedProductId)
-      if (item) applyClubItemDiscountPercent(item, percent)
       setTerm('')
+      void applyClubPercent(productId, percent)
     }, CLUB_DISCOUNT_DIGIT_DELAY_MS)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -356,184 +549,215 @@ export function SaleView() {
 
   /**
    * Abre o pagamento (F4 ou botão "Finalizar") — numa venda de sócio,
-   * primeiro fecha em 30% qualquer item ainda pendente (o último item
-   * bipado nunca tem um "próximo bip" pra disparar `finalizeClubItemDiscount`
-   * sozinho lá em addProduct). Espera essas chamadas terminarem antes de
-   * mostrar a tela de pagamento, pra não abrir com um total que ainda vai
-   * mudar sozinho debaixo do operador.
+   * primeiro aplica um dígito ainda pendente na busca e fecha em 30% os itens
+   * sem decisão (ux-revisao §2, regra 5: só quem NÃO está em `clubDecisions`).
+   * Espera tudo (via fila) antes de mostrar a tela de pagamento, pra não abrir
+   * com um total que ainda vai mudar. UX-19: falha vira mensagem.
    */
   async function openPayment() {
     if (!sale) return
-    if (sale.discountSource === 'club') {
-      const pending = sale.items.filter((i) => !resolvedDiscountItemIds.has(i.id))
-      if (pending.length > 0) {
-        await Promise.all(
-          pending.map((i) =>
-            applyItemDiscount.mutateAsync({
-              saleId: sale.id,
-              itemId: i.id,
-              discountAmount: percentToAmount(i.quantity * i.unitPrice, CLUB_DEFAULT_DISCOUNT_PERCENT),
-            }),
-          ),
-        )
-        setResolvedDiscountItemIds((prev) => {
-          const next = new Set(prev)
-          pending.forEach((i) => next.add(i.id))
-          return next
-        })
-      }
+    setError(null)
+    if (sale.discountSource === 'club' && selectedProductId && /^[1-9]$/.test(term.trim())) {
+      const percent = Number(term.trim()) * 10
+      setTerm('')
+      void applyClubPercent(selectedProductId, percent)
     }
-    setPaymentOpen(true)
+    try {
+      await enqueue(async () => {
+        const current = latestSale()
+        if (!current || current.discountSource !== 'club') return
+        const decisions = useCartStore.getState().clubDecisions
+        for (const item of current.items.filter((i) => !(i.productId in decisions))) {
+          await applyItemDiscount.mutateAsync({
+            saleId: current.id,
+            itemId: item.id,
+            discountAmount: percentToAmount(item.quantity * item.unitPrice, CLUB_DEFAULT_DISCOUNT_PERCENT),
+          })
+          setClubDecision(item.productId, { kind: 'percent', percent: CLUB_DEFAULT_DISCOUNT_PERCENT })
+        }
+      })
+      if ((latestSale()?.items.length ?? 0) > 0) setPaymentOpen(true)
+    } catch (e) {
+      setError(describeError(e, 'Não foi possível abrir o pagamento.'))
+    }
   }
 
   /**
-   * Navegação do carrinho por teclado (2026-09-01) — sem nenhum resultado de
-   * busca pra navegar (dropdown fechado), Seta pra cima/baixo passa a mover
-   * a seleção entre os itens do carrinho, pra +/-/Delete (atalhos globais
-   * abaixo) funcionarem inteiramente pelo teclado, sem precisar clicar numa
-   * linha antes. Com o dropdown aberto (`matches.length > 0`), o
-   * comportamento de sempre continua — navega os resultados da busca.
+   * Esc / "Reiniciar venda" (UX-05, mantendo a decisão de 2026-08-26 "Esc
+   * reinicia a venda"): venda vazia cancela na hora (caso do CPF errado);
+   * com itens ou pagamento, o 1º Esc arma e mostra a faixa, o 2º (em até 3 s)
+   * cancela. Passa pela fila pra não cancelar no meio de um bipe.
    */
-  const handleSearchKey = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const cancelArmedRef = useRef(false)
+  useEffect(() => {
+    cancelArmedRef.current = cancelArmed
+    if (!cancelArmed) return
+    const t = setTimeout(() => setCancelArmed(false), CANCEL_CONFIRM_WINDOW_MS)
+    return () => clearTimeout(t)
+  }, [cancelArmed])
+
+  function requestCancel() {
+    const current = latestSale() ?? sale
+    if (!current) return
+    const hasContent =
+      current.items.length > 0 || current.payments.some((p) => p.status === 'aprovado')
+    if (hasContent && !cancelArmedRef.current) {
+      setCancelArmed(true)
+      return
+    }
+    setCancelArmed(false)
+    cancelArmedRef.current = false
+    void runCartTask(async () => {
+      await cancelSale.mutateAsync(current.id)
+      reset()
+      clearSearch()
+      setError(null)
+      setNonMemberNotice(false)
+    }, 'Erro ao cancelar a venda.')
+  }
+
+  /** ↑/↓ no carrinho (2026-09-01) — também com a busca sem foco (UX-06). */
+  function moveSelection(delta: 1 | -1) {
+    const list = latestSale()?.items ?? []
+    if (list.length === 0) return
+    const idx = list.findIndex((i) => i.productId === useCartStore.getState().selectedProductId)
+    const next = idx < 0 ? (delta > 0 ? 0 : list.length - 1) : Math.min(Math.max(idx + delta, 0), list.length - 1)
+    setSelectedProductId(list[next].productId)
+  }
+
+  /** +, −, Delete sobre o item selecionado (atalhos da barra). */
+  function handleCartKey(key: string): boolean {
+    const productId = useCartStore.getState().selectedProductId
+    if (!productId) return false
+    if (key === '+' || key === '=') void changeQty(productId, 1)
+    else if (key === '-') void changeQty(productId, -1)
+    else if (key === 'Delete') void removeLine(productId)
+    else return false
+    return true
+  }
+
+  /**
+   * Navegação por teclado na busca. Com o dropdown aberto, ↑/↓ navegam os
+   * resultados; sem ele, movem a seleção do carrinho. UX-06 (2026-10-22): com
+   * o campo VAZIO, +/−/Delete agem no item selecionado (antes viravam texto
+   * na busca) — nenhum leitor manda esses caracteres como primeiro char.
+   */
+  const handleSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      if (matches.length > 0) {
-        setHighlight((h) => Math.min(h + 1, matches.length - 1))
-      } else if (items.length > 0) {
-        const idx = items.findIndex((i) => i.productId === selectedProductId)
-        setSelectedProductId(items[Math.min(idx + 1, items.length - 1)].productId)
-      }
+      if (matches.length > 0 && term.trim()) setHighlight((h) => Math.min(h + 1, matches.length - 1))
+      else moveSelection(1)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      if (matches.length > 0) {
-        setHighlight((h) => Math.max(h - 1, 0))
-      } else if (items.length > 0) {
-        const idx = items.findIndex((i) => i.productId === selectedProductId)
-        setSelectedProductId(items[Math.max(idx - 1, 0)].productId)
-      }
+      if (matches.length > 0 && term.trim()) setHighlight((h) => Math.max(h - 1, 0))
+      else moveSelection(-1)
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (e.nativeEvent.isComposing || e.keyCode === 229) return
-      // Clube Saldão — Enter com um único dígito pendente confirma o
-      // desconto na hora, sem esperar a pausa (CLUB_DISCOUNT_DIGIT_DELAY_MS)
-      // — operador que já sabe o que quer não precisa aguardar.
-      if (sale?.discountSource === 'club' && selectedProductId && /^[1-9]$/.test(term.trim())) {
-        const item = sale.items.find((i) => i.productId === selectedProductId)
-        if (item) applyClubItemDiscountPercent(item, Number(term.trim()) * 10)
-        setTerm('')
-        return
-      }
-      // `matches` vem de `debouncedTerm` (250ms atrás de `term`) — só confia
-      // nele quando o debounce já alcançou o texto atual. Bug real
-      // (2026-08-19): um leitor de código de barras USB digita + Enter bem
-      // mais rápido que 250ms, então `matches`/`highlight` ainda refletiam a
-      // ÚLTIMA busca por nome feita antes do scan (o React Query mantém
-      // `data` do último resultado mesmo com a query desabilitada por termo
-      // vazio) — todo código lido virava o primeiro item daquela busca
-      // antiga, nunca o produto escaneado de verdade. Sem essa checagem de
-      // frescor, o fallback de leitura exata (`findProductByBarcode`) logo
-      // abaixo nunca era alcançado.
-      const searchIsFresh = debouncedTerm === term.trim()
-      if (searchIsFresh && matches[highlight]) {
-        addProduct(matches[highlight])
-      } else if (searchIsFresh && matches.length === 1) {
-        addProduct(matches[0])
-      } else if (term.trim()) {
-        // Sem match por nome/SKU (ou busca desatualizada) — busca não indexa
-        // código de barras, tenta leitura exata.
-        setError(null)
-        setAdding(true)
-        try {
-          const { product } = await findProductByBarcode(term.trim())
-          await addProduct(product)
-        } catch {
-          setError('Produto não encontrado.')
-        } finally {
-          setAdding(false)
-        }
-      }
+      submitSearch()
     } else if (e.key === 'Escape') {
       // Só consome o Escape se tiver texto pra limpar — campo já vazio deixa
-      // borbulhar pro handler global (reinicia a venda, ver useEffect de
-      // atalhos abaixo). Sem essa checagem, Esc nunca reiniciava a venda
-      // enquanto o cursor estivesse na busca (autoFocus — o caso comum).
+      // borbulhar pro handler global (reinicia a venda).
       if (term) {
         e.stopPropagation()
         setTerm('')
       }
+    } else if (term === '' && ['+', '=', '-', 'Delete'].includes(e.key)) {
+      if (handleCartKey(e.key)) e.preventDefault()
     }
   }
 
-  // Atalhos globais da tela de venda
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const el = document.activeElement
-      const typing =
-        el instanceof HTMLInputElement ||
-        el instanceof HTMLTextAreaElement ||
-        el instanceof HTMLSelectElement
+  /**
+   * Atalhos globais da tela de venda. O handler é recriado a cada render e
+   * lido por ref, então sempre enxerga o estado atual (sem closure velho).
+   */
+  const onGlobalKeyRef = useRef<(e: KeyboardEvent) => void>(() => {})
+  onGlobalKeyRef.current = (e: KeyboardEvent) => {
+    const el = document.activeElement
+    const typing = isTypingTarget(el)
+    const dialogOpen = paymentOpen || !!receipt
 
-      if (e.key === 'F2') {
-        e.preventDefault()
-        searchRef.current?.focus()
-        searchRef.current?.select()
-        return
-      }
-      if (e.key === 'F4') {
-        e.preventDefault()
-        if (sale && sale.items.length > 0) void openPayment()
-        return
-      }
-      if (e.key === 'Escape') {
-        // Precisa rodar antes do gate de `typing` (igual F2/F4 acima) — a
-        // busca fica com foco quase o tempo todo (autoFocus + refoco após
-        // adicionar item), então "só reage quando não tiver input focado"
-        // deixava esse atalho praticamente morto. Campos que já tratam Esc
-        // localmente (busca com texto, valor de desconto) chamam
-        // stopPropagation antes do evento chegar aqui, então não conflitam.
-        if (sale) cancelSale.mutate(sale.id, { onSuccess: () => { reset(); setClubNotice(null) } })
-        return
-      }
-      if (typing) return
-
-      if (e.key === '+' || e.key === '=') {
-        const item = sale?.items.find((i) => i.productId === selectedProductId)
-        if (item && sale) changeQty(sale.id, item, item.quantity + 1)
-      } else if (e.key === '-') {
-        const item = sale?.items.find((i) => i.productId === selectedProductId)
-        if (item && sale) changeQty(sale.id, item, item.quantity - 1)
-      } else if (e.key === 'Delete') {
-        const item = sale?.items.find((i) => i.productId === selectedProductId)
-        if (item) removeLine(item)
-      } else if (
-        e.key.length === 1 &&
-        !e.ctrlKey &&
-        !e.altKey &&
-        !e.metaKey &&
-        !paymentOpen &&
-        !receipt
-      ) {
-        // Leitor de código de barras USB (emulação de teclado): sem nenhum
-        // input focado, o primeiro caractere digitado foca a busca e é
-        // encaminhado pra não se perder — o restante do código + Enter
-        // chega direto no input, reaproveitando o fallback de leitura
-        // exata que já existe em handleSearchKey (findProductByBarcode).
-        //
-        // preventDefault() é essencial aqui: mover o foco pro input DENTRO
-        // do handler de keydown faz o navegador aplicar a inserção nativa
-        // de texto no elemento recém-focado (não no que originou o evento)
-        // — sem isso, o primeiro caractere seria duplicado (confirmado
-        // rodando de verdade: virava "77" em vez de "7").
-        e.preventDefault()
-        const char = e.key
-        setTerm((prev) => prev + char)
-        searchRef.current?.focus()
-      }
+    if (e.key === 'F2') {
+      e.preventDefault()
+      if (dialogOpen) return
+      if (cashOpen && !sale) cpfInputRef.current?.focus()
+      searchRef.current?.focus()
+      searchRef.current?.select()
+      return
     }
+    if (e.key === 'F4') {
+      e.preventDefault()
+      if (!dialogOpen && sale && sale.items.length > 0) void openPayment()
+      return
+    }
+    if (e.key === 'Escape') {
+      // Antes do gate de `typing`: a busca fica com foco quase o tempo todo.
+      // Campos que tratam Esc localmente (busca com texto, descontos, Modal)
+      // chamam stopPropagation antes do evento chegar aqui.
+      if (!dialogOpen) requestCancel()
+      return
+    }
+    if (typing || dialogOpen || e.defaultPrevented) return
+
+    // UX-01: sem venda, o portão de CPF está na tela — dígitos e Enter vão pra
+    // ele. Sem preventDefault: mover o foco dentro do keydown faz o navegador
+    // inserir o caractere no campo recém-focado (o mesmo efeito que
+    // duplicava o 1º dígito na busca, aqui é exatamente o que se quer).
+    if (cashOpen && !sale) {
+      if (e.key === 'Enter' || (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey)) {
+        if (e.key === 'Enter') e.preventDefault()
+        cpfInputRef.current?.focus()
+      }
+      return
+    }
+    if (!sale) return
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      moveSelection(e.key === 'ArrowDown' ? 1 : -1)
+    } else if (e.key === 'Enter') {
+      // UX-03: Enter de um bipe que chegou com a busca sem foco.
+      if (term.trim()) {
+        e.preventDefault()
+        submitSearch()
+        searchRef.current?.focus()
+      }
+    } else if (handleCartKey(e.key)) {
+      e.preventDefault()
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      // Leitor de código de barras USB (emulação de teclado): sem nenhum
+      // input focado, o primeiro caractere foca a busca e é encaminhado pra
+      // não se perder. preventDefault() é essencial aqui: mover o foco DENTRO
+      // do keydown faz o navegador inserir o caractere no elemento
+      // recém-focado — sem isso, o 1º caractere sairia duplicado ("77").
+      e.preventDefault()
+      const char = e.key
+      setTerm((prev) => prev + char)
+      searchRef.current?.focus()
+    }
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => onGlobalKeyRef.current(e)
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sale, selectedProductId, paymentOpen, receipt])
+  }, [])
+
+  // UX-01: recibo fechado ("Nova venda") → foco direto no CPF. O Modal do
+  // recibo tinha roubado o foco e, ao sumir, deixava o foco no body.
+  useEffect(() => {
+    if (!receipt && cashOpen && !saleId) cpfInputRef.current?.focus()
+  }, [receipt, cashOpen, saleId])
+
+  function printWithFeedback(payload: ReceiptPrintPayload) {
+    setPrintError(null)
+    printReceipt.mutate(payload, {
+      onError: (e) =>
+        setPrintError(
+          `${describeError(e, 'Não foi possível imprimir o cupom.')} Confira a impressora e use "Imprimir de novo".`,
+        ),
+    })
+  }
 
   /**
    * Pagamento dividido (2026-08-21) — pagamento(s) já foram registrados
@@ -548,15 +772,15 @@ export function SaleView() {
       const confirmed = await confirmSale.mutateAsync(sale.id)
       setPaymentOpen(false)
 
+      const received = useCartStore.getState().receivedByPaymentId
       const approvedPayments = confirmed.payments.filter((p) => p.status === 'aprovado')
       const changeTotal = approvedPayments.reduce((sum, p) => {
-        const received = receivedByPaymentId[p.id] ?? p.amount
-        return sum + Math.max(0, received - p.amount)
+        const r = received[p.id] ?? p.amount
+        return sum + Math.max(0, r - p.amount)
       }, 0)
       const customerDocument = saleCustomer?.document ? formatCpf(saleCustomer.document) : undefined
-      setReceipt({ sale: confirmed, changeTotal })
 
-      const printBasePayload: Omit<ReceiptPrintPayload, 'fiscal'> = {
+      const printBasePayload: PrintBasePayload = {
         saleId: confirmed.id,
         confirmedAt: confirmed.confirmedAt ?? new Date().toISOString(),
         items: confirmed.items.map((item) => ({
@@ -568,16 +792,18 @@ export function SaleView() {
         payments: approvedPayments.map((p) => ({
           label: paymentDisplayLabel(p),
           amount: p.amount,
-          received: receivedByPaymentId[p.id],
-          change: receivedByPaymentId[p.id] ? Math.max(0, receivedByPaymentId[p.id] - p.amount) : undefined,
+          received: received[p.id],
+          change: received[p.id] ? Math.max(0, received[p.id] - p.amount) : undefined,
         })),
         customerDocument,
       }
+      setPrintError(null)
+      setReceipt({ sale: confirmed, changeTotal, printPayload: printBasePayload })
 
       // Impressão/gaveta nunca bloqueiam nem falham a venda — já foi
       // confirmada no backend antes daqui, hardware é sempre opcional.
       if (hardwareSettings?.autoPrintReceipt) {
-        printReceipt.mutate(printBasePayload)
+        printWithFeedback(printBasePayload)
         // "Imprimir nota no momento da venda" — acompanha a NFC-e dessa
         // venda em segundo plano e imprime sozinho assim que ela ficar
         // pronta, mesmo que o operador saia desta tela antes disso (ver
@@ -589,88 +815,132 @@ export function SaleView() {
       }
 
       reset()
-      setTerm('')
-      setClubNotice(null)
-      setReceivedByPaymentId({})
+      clearSearch()
+      setNonMemberNotice(false)
+      setCancelArmed(false)
     } catch (e) {
-      setPaymentError(describeError(e, 'Erro ao confirmar pagamento.'))
+      const usedStoreCredit = sale.payments.some((p) => p.status === 'aprovado' && p.method === 'vale_troca')
+      const message = describeError(e, 'Erro ao confirmar pagamento.')
+      // UX-10 (4): resgate do Vale-Troca depende da central.
+      setPaymentError(
+        usedStoreCredit && !isDomainError(e)
+          ? `${message} Se a central estiver fora, remova o pagamento em Vale-Troca (lixeira) e use outra forma.`
+          : message,
+      )
     } finally {
       setPaymentSubmitting(false)
     }
   }
 
+  const closeReceipt = useCallback(() => {
+    setReceipt(null)
+    setPrintError(null)
+  }, [])
+
   const items = sale?.items ?? []
+  const itemCount = items.reduce((s, i) => s + i.quantity, 0)
+  const showClubHint = sale?.discountSource === 'club' && !clubHintDismissed
 
   return (
     <div className="flex h-full min-h-0">
       {/* Coluna esquerda: busca + carrinho */}
       <section className="flex min-w-0 flex-1 flex-col p-4">
         {!cashOpen && (
-          <div className="mb-3 flex items-center gap-2 rounded-lg bg-muted px-4 py-2.5 text-sm text-muted-foreground">
-            <Lock className="size-4" />
-            Abra o caixa antes de iniciar uma venda.
+          <div className="mb-3 flex items-center justify-between gap-2 rounded-lg bg-muted px-4 py-2.5 text-sm text-muted-foreground">
+            <span className="flex items-center gap-2">
+              <Lock className="size-4" />
+              Abra o caixa antes de iniciar uma venda.
+            </span>
+            <button
+              onClick={() => setView('caixa')}
+              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              <Wallet className="size-4" />
+              Abrir caixa
+              <kbd className="rounded bg-primary-foreground/15 px-1 font-mono text-[10px]">F6</kbd>
+            </button>
           </div>
         )}
 
         {error && (
-          <div className="mb-3 rounded-lg bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
+          <div className="mb-3 rounded-lg bg-destructive/10 px-4 py-2.5 text-sm font-medium text-destructive">
             {error}
           </div>
         )}
 
-        {clubNotice && (
+        {cancelArmed && sale && (
+          <div className="mb-3 rounded-lg bg-destructive/10 px-4 py-2.5 text-base font-semibold text-destructive" role="alert">
+            Pressione Esc de novo para cancelar a venda ({itemCount} {itemCount === 1 ? 'item' : 'itens'} ·{' '}
+            {formatBRL(sale.totalAmount)})
+          </div>
+        )}
+
+        {(showClubHint || nonMemberNotice) && (
           <div
-            className={`mb-3 flex items-center justify-between gap-2 rounded-lg px-4 py-2.5 text-sm ${
-              clubNotice === 'member' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+            className={`mb-3 flex items-center justify-between gap-2 rounded-lg px-4 py-2.5 text-base ${
+              showClubHint ? 'bg-primary/15 font-medium text-primary-foreground' : 'bg-muted text-muted-foreground'
             }`}
           >
             <span>
-              {clubNotice === 'member'
+              {showClubHint
                 ? 'Cliente do Clube Saldão — ao bipar cada produto, digite 1-9 pra escolher o desconto (10%-90%). Sem nada digitado, cai em 30%.'
                 : 'Cliente não pertence ao Clube Saldão.'}
             </span>
-            <button onClick={() => setClubNotice(null)} className="text-xs underline">
+            <button
+              onClick={() => {
+                setClubHintDismissed(true)
+                setNonMemberNotice(false)
+              }}
+              className="text-sm underline"
+            >
               Ok
             </button>
           </div>
         )}
 
         {cashOpen && !sale ? (
-          <CpfGateDialog submitting={gateSubmitting} error={gateError} onSubmit={startSaleWithDocument} />
+          <CpfGateDialog
+            submitting={gateSubmitting}
+            error={gateError}
+            onSubmit={startSaleWithDocument}
+            inputRef={cpfInputRef}
+          />
         ) : (
           <>
         {sale && (
           <div className="mb-2 flex items-center justify-between">
-            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-2 text-sm text-muted-foreground">
               {saleCustomer?.document ? `CPF: ${formatCpf(saleCustomer.document)}` : 'Venda sem CPF'}
               {creditBalance !== null && creditBalance > 0 && (
-                <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-primary">
-                  <Gift className="size-3" />
+                <span className="flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 font-medium text-primary-foreground">
+                  <Gift className="size-3.5" />
                   Vale-Troca: {formatBRL(creditBalance)}
                 </span>
               )}
             </span>
             <button
-              onClick={() =>
-                cancelSale.mutate(sale.id, { onSuccess: () => { reset(); setClubNotice(null) } })
-              }
+              onClick={requestCancel}
               disabled={cancelSale.isPending}
-              className="text-xs text-muted-foreground underline decoration-dotted transition-colors hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+              className={`text-sm underline decoration-dotted transition-colors hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50 ${
+                cancelArmed ? 'font-semibold text-destructive' : 'text-muted-foreground'
+              }`}
             >
-              Reiniciar venda (Esc)
+              {cancelArmed ? 'Confirmar cancelamento (Esc)' : 'Reiniciar venda (Esc)'}
             </button>
           </div>
         )}
 
-        {/* Busca */}
+        {/* Busca — nunca `disabled` durante a adição (UX-03/F1): o foco fica
+            no campo e o próximo bipe entra na fila de mutações do carrinho. */}
         <div className="relative">
           <div className="flex items-center gap-2 rounded-xl border-2 border-primary/40 bg-card px-3 shadow-sm focus-within:border-primary">
-            <Search className="size-5 text-muted-foreground" />
+            <Search className={`size-5 text-muted-foreground ${adding ? 'animate-pulse' : ''}`} />
             <input
               ref={searchRef}
               autoFocus
               value={term}
-              disabled={!cashOpen || adding}
+              disabled={!cashOpen}
+              aria-busy={adding}
               onChange={(e) => {
                 setTerm(e.target.value)
                 setHighlight(0)
@@ -710,7 +980,7 @@ export function SaleView() {
 
         {/* Carrinho */}
         <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
-          <div className="grid grid-cols-[1fr_5rem_7rem_6rem_2.5rem_2.5rem] items-center gap-2 border-b border-border px-4 py-2.5 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="grid grid-cols-[1fr_7rem_7rem_6rem_2.5rem_2.5rem] items-center gap-2 border-b border-border px-4 py-2.5 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             <span>Produto</span>
             <span className="text-center">Qtd</span>
             <span className="text-right">Preço</span>
@@ -734,39 +1004,39 @@ export function SaleView() {
                   <div key={item.id}>
                     <div
                       onClick={() => setSelectedProductId(item.productId)}
-                      className={`grid cursor-pointer grid-cols-[1fr_5rem_7rem_6rem_2.5rem_2.5rem] items-center gap-2 border-l-2 px-4 py-2.5 text-base transition-opacity ${
+                      className={`grid cursor-pointer grid-cols-[1fr_7rem_7rem_6rem_2.5rem_2.5rem] items-center gap-2 border-l-2 px-4 py-2.5 text-base transition-opacity ${
                         active ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-muted/50'
                       } ${pending ? 'opacity-50' : ''}`}
                     >
                       <div className="min-w-0">
                         <p className="truncate font-medium">{productNames[item.productId] ?? '…'}</p>
                         {hasItemDiscount && (
-                          <p className="text-xs font-medium text-primary">- {formatBRL(item.discountAmount)}</p>
+                          <p className="text-sm font-semibold text-primary-foreground">- {formatBRL(item.discountAmount)}</p>
                         )}
                       </div>
                       <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            if (sale) changeQty(sale.id, item, item.quantity - 1)
+                            void changeQty(item.productId, -1)
                           }}
                           disabled={pending}
-                          className="grid size-6 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed"
+                          className="grid size-8 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed"
                           aria-label="Diminuir"
                         >
-                          <Minus className="size-3" />
+                          <Minus className="size-4" />
                         </button>
                         <span className="w-6 text-center font-mono font-semibold">{item.quantity}</span>
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            if (sale) changeQty(sale.id, item, item.quantity + 1)
+                            void changeQty(item.productId, 1)
                           }}
                           disabled={pending}
-                          className="grid size-6 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed"
+                          className="grid size-8 place-items-center rounded-md bg-muted text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed"
                           aria-label="Aumentar"
                         >
-                          <Plus className="size-3" />
+                          <Plus className="size-4" />
                         </button>
                       </div>
                       <span className="text-right font-mono text-muted-foreground">
@@ -789,8 +1059,8 @@ export function SaleView() {
                             setItemDiscountError(null)
                           }}
                           disabled={pending}
-                          className={`grid size-7 place-items-center rounded-md transition-colors hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed ${
-                            hasItemDiscount ? 'text-primary' : 'text-muted-foreground'
+                          className={`grid size-7 place-items-center rounded-md transition-colors hover:bg-primary/15 hover:text-primary-foreground disabled:cursor-not-allowed ${
+                            hasItemDiscount ? 'text-primary-foreground' : 'text-muted-foreground'
                           }`}
                           aria-label="Desconto no item"
                         >
@@ -801,7 +1071,7 @@ export function SaleView() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            removeLine(item)
+                            void removeLine(item.productId)
                           }}
                           disabled={pending}
                           className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed"
@@ -966,7 +1236,7 @@ export function SaleView() {
               <span className="font-mono text-3xl font-bold">{formatBRL(sale?.totalAmount ?? 0)}</span>
             </div>
             <p className="text-right text-xs text-muted-foreground">
-              {items.reduce((s, i) => s + i.quantity, 0)} itens
+              {itemCount} itens
             </p>
           </div>
         </div>
@@ -993,16 +1263,17 @@ export function SaleView() {
             setPaymentError(null)
           }
         }}
-        onPaymentRegistered={(payment, received) =>
-          setReceivedByPaymentId((m) => ({ ...m, [payment.id]: received }))
-        }
+        onPaymentRegistered={(payment, received) => setReceived(payment.id, received)}
         onConfirm={handleConfirmPayment}
       />
       <ReceiptDialog
         sale={receipt?.sale ?? null}
         productNames={productNames}
         changeTotal={receipt?.changeTotal ?? 0}
-        onClose={() => setReceipt(null)}
+        onClose={closeReceipt}
+        onReprint={isElectron() && receipt ? () => printWithFeedback(receipt.printPayload) : undefined}
+        printing={printReceipt.isPending}
+        printError={printError}
       />
     </div>
   )

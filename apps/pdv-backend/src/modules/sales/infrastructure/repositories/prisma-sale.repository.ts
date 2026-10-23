@@ -1,10 +1,12 @@
 import { Injectable } from "@nestjs/common";
-import type { SaleDiscountSource, SaleStatus, SaleSyncPayload, SaleVoidSyncPayload } from "@easypdv/shared-types";
+import type { Prisma } from "@prisma/client";
+import type { SaleDiscountSource, SaleSyncPayload, SaleVoidSyncPayload } from "@easypdv/shared-types";
 import { Sale } from "../../domain/entities/sale.entity.js";
-import { SaleWarehouseNotResolvableError } from "../../domain/errors.js";
+import { SaleNotVoidableError, SaleWarehouseNotResolvableError } from "../../domain/errors.js";
 import { PrismaService } from "../../../../prisma/prisma.service.js";
 import type {
   AddSaleItemData,
+  FindSalesParams,
   RegisterPaymentData,
   SaleRepositoryPort,
   StartSaleData,
@@ -12,6 +14,14 @@ import type {
 import { toDomainSale } from "../mappers/sales.mapper.js";
 
 const SALE_INCLUDE = { items: true, payments: true } as const;
+
+/**
+ * Timeout folgado pras transações do carrinho (revisão final, 2026-10-22): o
+ * default do Prisma (5 s / maxWait 2 s) estourava num PC lento quando um lote
+ * do sync do Bling segurava o lock de escrita do SQLite — o operador via
+ * "Erro ao adicionar item" e tinha de bipar de novo.
+ */
+const CART_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 15_000 };
 
 @Injectable()
 export class PrismaSaleRepository implements SaleRepositoryPort {
@@ -22,11 +32,15 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     return record ? toDomainSale(record) : null;
   }
 
-  async findMany(params?: { status?: SaleStatus | SaleStatus[]; cashSessionId?: string; limit?: number }): Promise<Sale[]> {
+  async findMany(params?: FindSalesParams): Promise<Sale[]> {
     const records = await this.prisma.sale.findMany({
       where: {
         status: Array.isArray(params?.status) ? { in: params.status } : params?.status,
         cashSessionId: params?.cashSessionId,
+        // Histórico (F6): o estorno preserva confirmedAt, o rascunho
+        // abandonado ("Reiniciar venda") nunca teve — assim só sobram
+        // confirmadas e estornadas, sem rascunho ocupando o limite de 100.
+        confirmedAt: params?.finalizedOnly ? { not: null } : undefined,
       },
       include: SALE_INCLUDE,
       orderBy: { createdAt: "desc" },
@@ -47,36 +61,58 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     return toDomainSale(record);
   }
 
-  async addItem(data: AddSaleItemData): Promise<Sale> {
-    const totalAmount = data.quantity * data.unitPrice;
-    await this.prisma.saleItem.create({
-      data: {
-        saleId: data.saleId,
-        productId: data.productId,
-        quantity: data.quantity,
-        unitPrice: data.unitPrice,
-        totalAmount,
-      },
-    });
-    return this.recalculateTotal(data.saleId);
+  /*
+   * Mutações do carrinho (2026-10-22, PERF-03b): cada uma roda numa única
+   * transação — escreve a linha e recalcula o total juntas. Antes eram dois
+   * commits (um fsync a mais por bipe) e um crash entre eles deixava
+   * Sale.totalAmount desatualizado.
+   */
+  addItem(data: AddSaleItemData): Promise<Sale> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.saleItem.create({
+        data: {
+          saleId: data.saleId,
+          productId: data.productId,
+          quantity: data.quantity,
+          unitPrice: data.unitPrice,
+          totalAmount: data.quantity * data.unitPrice,
+        },
+      });
+      return this.recalculateTotal(tx, data.saleId);
+    }, CART_TRANSACTION_OPTIONS);
   }
 
-  async removeItem(saleId: string, itemId: string): Promise<Sale> {
-    await this.prisma.saleItem.delete({ where: { id: itemId } });
-    return this.recalculateTotal(saleId);
+  removeItem(saleId: string, itemId: string): Promise<Sale> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.saleItem.delete({ where: { id: itemId } });
+      return this.recalculateTotal(tx, saleId);
+    }, CART_TRANSACTION_OPTIONS);
   }
 
-  async applyDiscount(saleId: string, discountAmount: number, source: SaleDiscountSource | null): Promise<Sale> {
-    await this.prisma.sale.update({ where: { id: saleId }, data: { discountAmount, discountSource: source } });
-    return this.recalculateTotal(saleId);
+  applyDiscount(saleId: string, discountAmount: number, source: SaleDiscountSource | null): Promise<Sale> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.sale.update({ where: { id: saleId }, data: { discountAmount, discountSource: source } });
+      return this.recalculateTotal(tx, saleId);
+    }, CART_TRANSACTION_OPTIONS);
   }
 
-  async applyItemDiscount(saleId: string, itemId: string, discountAmount: number): Promise<Sale> {
-    const item = await this.prisma.saleItem.findUniqueOrThrow({ where: { id: itemId } });
-    const lineSubtotal = item.quantity * item.unitPrice;
-    const totalAmount = Math.max(0, lineSubtotal - discountAmount);
-    await this.prisma.saleItem.update({ where: { id: itemId }, data: { discountAmount, totalAmount } });
-    return this.recalculateTotal(saleId);
+  applyItemDiscount(saleId: string, itemId: string, discountAmount: number): Promise<Sale> {
+    return this.prisma.$transaction(async (tx) => {
+      const item = await tx.saleItem.findUniqueOrThrow({ where: { id: itemId } });
+      const lineSubtotal = item.quantity * item.unitPrice;
+      const totalAmount = Math.max(0, lineSubtotal - discountAmount);
+      await tx.saleItem.update({ where: { id: itemId }, data: { discountAmount, totalAmount } });
+      return this.recalculateTotal(tx, saleId);
+    }, CART_TRANSACTION_OPTIONS);
+  }
+
+  updateItemQuantity(saleId: string, itemId: string, quantity: number, discountAmount: number): Promise<Sale> {
+    return this.prisma.$transaction(async (tx) => {
+      const item = await tx.saleItem.findUniqueOrThrow({ where: { id: itemId } });
+      const totalAmount = Math.max(0, quantity * item.unitPrice - discountAmount);
+      await tx.saleItem.update({ where: { id: itemId }, data: { quantity, discountAmount, totalAmount } });
+      return this.recalculateTotal(tx, saleId);
+    }, CART_TRANSACTION_OPTIONS);
   }
 
   async attachCustomer(saleId: string, customerId: string): Promise<Sale> {
@@ -245,28 +281,12 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     }
     const warehouseByProduct = new Map(originalMovements.map((m) => [m.productId, m.warehouseId]));
 
-    const stockOperations = sale.items.flatMap((item) => {
+    const restockPlan = sale.items.map((item) => {
       const warehouseId = warehouseByProduct.get(item.productId);
       if (!warehouseId) {
         throw new SaleWarehouseNotResolvableError(saleId);
       }
-      return [
-        this.prisma.stockMovement.create({
-          data: {
-            warehouseId,
-            productId: item.productId,
-            type: "devolucao",
-            quantity: item.quantity,
-            referenceType: "sale",
-            referenceId: saleId,
-          },
-        }),
-        this.prisma.stockItem.upsert({
-          where: { warehouseId_productId: { warehouseId, productId: item.productId } },
-          create: { warehouseId, productId: item.productId, quantity: item.quantity },
-          update: { quantity: { increment: item.quantity } },
-        }),
-      ];
+      return { warehouseId, productId: item.productId, quantity: item.quantity };
     });
 
     const products = await this.prisma.product.findMany({
@@ -288,13 +308,30 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
       }),
     };
 
-    await this.prisma.$transaction([
-      this.prisma.sale.update({ where: { id: saleId }, data: { status: "cancelled" } }),
-      ...stockOperations,
-      this.prisma.syncOutbox.create({
+    // Revisão final (2026-10-22): transição condicional `confirmed → cancelled`
+    // dentro da transação. Entre o `canBeVoided` do use case e este ponto há
+    // consultas à central (até 8 s); um segundo pedido (Enter duplo) passava
+    // pela mesma checagem e estornava de novo — estoque devolvido 2×, dois
+    // `sale_void` e Vale-Troca creditado 2×. Só um pedido vence o updateMany.
+    await this.prisma.$transaction(async (tx) => {
+      const transitioned = await tx.sale.updateMany({ where: { id: saleId, status: "confirmed" }, data: { status: "cancelled" } });
+      if (transitioned.count === 0) {
+        throw new SaleNotVoidableError(saleId);
+      }
+      for (const { warehouseId, productId, quantity } of restockPlan) {
+        await tx.stockMovement.create({
+          data: { warehouseId, productId, type: "devolucao", quantity, referenceType: "sale", referenceId: saleId },
+        });
+        await tx.stockItem.upsert({
+          where: { warehouseId_productId: { warehouseId, productId } },
+          create: { warehouseId, productId, quantity },
+          update: { quantity: { increment: quantity } },
+        });
+      }
+      await tx.syncOutbox.create({
         data: { entityType: "sale_void", entityId: saleId, payload: JSON.stringify(voidPayload) },
-      }),
-      this.prisma.auditLog.create({
+      });
+      await tx.auditLog.create({
         data: {
           userId: actorUserId,
           action: "sale.voided",
@@ -302,8 +339,8 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
           entityId: saleId,
           metadata: JSON.stringify({ reason, totalAmount: sale.totalAmount, itemCount: sale.items.length }),
         },
-      }),
-    ]);
+      });
+    });
 
     const voided = await this.prisma.sale.findUniqueOrThrow({ where: { id: saleId }, include: SALE_INCLUDE });
     return toDomainSale(voided);
@@ -327,15 +364,15 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
    * da venda a cada chamada, senão adicionar/remover um item depois de um
    * desconto aplicado apagaria o desconto silenciosamente (bug real corrigido
    * nesta sprint: a versão anterior ignorava discountAmount por completo).
+   * Roda dentro da transação de quem chamou (PERF-03b) e soma via aggregate,
+   * sem carregar as linhas.
    */
-  private async recalculateTotal(saleId: string): Promise<Sale> {
-    const [items, sale] = await Promise.all([
-      this.prisma.saleItem.findMany({ where: { saleId } }),
-      this.prisma.sale.findUniqueOrThrow({ where: { id: saleId } }),
-    ]);
-    const subtotal = items.reduce((sum, item) => sum + item.totalAmount, 0);
+  private async recalculateTotal(tx: Prisma.TransactionClient, saleId: string): Promise<Sale> {
+    const aggregate = await tx.saleItem.aggregate({ where: { saleId }, _sum: { totalAmount: true } });
+    const sale = await tx.sale.findUniqueOrThrow({ where: { id: saleId }, select: { discountAmount: true } });
+    const subtotal = aggregate._sum.totalAmount ?? 0;
     const totalAmount = Math.max(0, subtotal - sale.discountAmount);
-    const record = await this.prisma.sale.update({
+    const record = await tx.sale.update({
       where: { id: saleId },
       data: { totalAmount },
       include: SALE_INCLUDE,

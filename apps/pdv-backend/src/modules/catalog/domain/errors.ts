@@ -48,3 +48,11 @@ export class PriceNotSetError extends DomainError {
     super(`Produto ${productId} não tem preço definido na tabela ativa`);
   }
 }
+
+/** PERF-06 (2026-10-22) — dois syncs do Bling ao mesmo tempo (botão + poll) seriam dois escritores no mesmo catálogo. */
+export class BlingSyncAlreadyRunningError extends DomainError {
+  readonly kind: DomainErrorKind = "conflict";
+  constructor() {
+    super("Já existe uma sincronização com o Bling em andamento. Aguarde terminar e tente de novo.");
+  }
+}

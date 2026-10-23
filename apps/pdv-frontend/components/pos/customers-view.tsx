@@ -46,7 +46,14 @@ function StoreCreditAdjustSection({ document }: { document: string }) {
   })
   const digits = onlyDigits(document)
   const validCpf = isValidCpf(digits)
-  const { data: balanceData, isLoading: balanceLoading } = useStoreCreditBalance(validCpf ? digits : null)
+  const {
+    data: balanceData,
+    isLoading: balanceLoading,
+    isError: balanceError,
+    refetch: refetchBalance,
+  } = useStoreCreditBalance(validCpf ? digits : null)
+  // `balance: null` (ou erro) = central fora/terminal não ativado — não é R$ 0,00 (UX-10).
+  const balanceUnavailable = balanceError || (balanceData !== undefined && balanceData.balance === null)
   const adjustStoreCredit = useAdjustStoreCredit()
   const [amount, setAmount] = useState('')
   const [reason, setReason] = useState('')
@@ -79,9 +86,22 @@ function StoreCreditAdjustSection({ document }: { document: string }) {
       <div className="mb-2 flex items-center gap-2 text-sm font-medium">
         <Wallet className="size-4 text-muted-foreground" />
         Vale-Troca
-        <span className="ml-auto font-mono text-base">
-          {balanceLoading ? '…' : formatBRL(balanceData?.balance ?? 0)}
-        </span>
+        {balanceLoading ? (
+          <span className="ml-auto font-mono text-base">…</span>
+        ) : balanceUnavailable ? (
+          <span className="ml-auto flex items-center gap-2 text-xs font-normal text-muted-foreground">
+            Saldo indisponível (sem conexão com a central)
+            <button
+              type="button"
+              onClick={() => void refetchBalance()}
+              className="rounded border border-border px-2 py-0.5 font-medium text-foreground hover:bg-muted"
+            >
+              Tentar de novo
+            </button>
+          </span>
+        ) : (
+          <span className="ml-auto font-mono text-base">{formatBRL(balanceData?.balance ?? 0)}</span>
+        )}
       </div>
       {canAdjust && (
         <div className="space-y-2">
@@ -105,7 +125,7 @@ function StoreCreditAdjustSection({ document }: { document: string }) {
               type="button"
               onClick={() => apply(1)}
               disabled={adjustStoreCredit.isPending}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-primary px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-primary-foreground/40 px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <PlusCircle className="size-3.5" /> Adicionar
             </button>

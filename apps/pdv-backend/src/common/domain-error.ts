@@ -1,4 +1,5 @@
-export type DomainErrorKind = "not_found" | "conflict" | "unauthorized" | "forbidden";
+/** `too_many_requests` (SEG-02, 2026-10-22) → 429 — limite de tentativas de login. */
+export type DomainErrorKind = "not_found" | "conflict" | "unauthorized" | "forbidden" | "too_many_requests";
 
 /**
  * Base para erros de domínio — carrega o "tipo" de falha HTTP sem que o

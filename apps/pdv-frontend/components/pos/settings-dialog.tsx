@@ -12,7 +12,15 @@ import {
   usePrintReceipt,
   useUpdateHardwareSettings,
 } from '@/hooks/use-hardware'
-import { useBackupList, useCreateBackup, useRestoreBackup } from '@/hooks/use-backup'
+import {
+  RESTORE_BACKUP_ROLES,
+  RESTORE_FORBIDDEN_MESSAGE,
+  useBackupList,
+  useCreateBackup,
+  useRestoreBackup,
+} from '@/hooks/use-backup'
+import { useSyncStatus } from '@/hooks/use-sync'
+import { useAuthStore } from '@/lib/auth-store'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -30,6 +38,12 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const { data: backups = [], isLoading: loadingBackups } = useBackupList()
   const createBackup = useCreateBackup()
   const restoreBackup = useRestoreBackup()
+  // SEG-05: só gerência restaura (o Main confere de novo via /auth/me). Os
+  // demais continuam vendo a lista e podendo fazer backup.
+  const canRestore = useAuthStore((s) => !!s.user && RESTORE_BACKUP_ROLES.includes(s.user.role))
+  // Mesma query do indicador de sincronização do pos-shell (sem polling extra).
+  const { data: syncStatus } = useSyncStatus()
+  const unsyncedCount = (syncStatus?.pendingCount ?? 0) + (syncStatus?.failedCount ?? 0)
 
   const [printerName, setPrinterName] = useState('')
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(true)
@@ -225,6 +239,13 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                           Isso vai substituir os dados atuais pelo backup de{' '}
                           {new Date(b.createdAt).toLocaleString('pt-BR')}. Não pode ser desfeito.
                         </p>
+                        {unsyncedCount > 0 && (
+                          <p className="font-medium text-destructive">
+                            {unsyncedCount === 1
+                              ? '1 registro ainda não foi enviado à central e será perdido.'
+                              : `${unsyncedCount} registros ainda não foram enviados à central e serão perdidos.`}
+                          </p>
+                        )}
                         <div className="flex gap-2">
                           <button
                             onClick={() => setConfirmRestore(null)}
@@ -247,17 +268,23 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                         <span className="text-muted-foreground">
                           {new Date(b.createdAt).toLocaleString('pt-BR')} · {formatBytes(b.sizeBytes)}
                         </span>
-                        <button
-                          onClick={() => setConfirmRestore(b.fileName)}
-                          className="flex items-center gap-1 rounded-md px-2 py-1 font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                          <RotateCcw className="size-3" /> Restaurar
-                        </button>
+                        {canRestore && (
+                          <button
+                            onClick={() => setConfirmRestore(b.fileName)}
+                            className="flex items-center gap-1 rounded-md px-2 py-1 font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <RotateCcw className="size-3" /> Restaurar
+                          </button>
+                        )}
                       </div>
                     )}
                   </li>
                 ))}
               </ul>
+            )}
+
+            {!canRestore && backups.length > 0 && (
+              <p className="text-xs text-muted-foreground">{RESTORE_FORBIDDEN_MESSAGE}</p>
             )}
 
             {backupMessage && <p className="text-xs text-muted-foreground">{backupMessage}</p>}

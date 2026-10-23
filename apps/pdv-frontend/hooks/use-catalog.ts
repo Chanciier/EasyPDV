@@ -115,8 +115,10 @@ export function useSetPrice() {
         method: 'POST',
         body: { productId: input.productId, price: input.price, promotionalPrice: input.promotionalPrice },
       }),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['product-price', variables.productId] })
+    // Prefixo inteiro (PERF-02): `useProductPrices` passa a usar uma chave em
+    // lote (`['product-price', 'batch', ...ids]`) que a chave por id não pegaria.
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['product-price'] })
     },
   })
 }

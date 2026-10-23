@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { RegisterCashMovementInput } from "@easypdv/shared-validation";
 import { CashSessionNotFoundError, CashSessionNotOpenError } from "../../domain/errors.js";
+import { assertCanOperateCashSession } from "../../domain/cash-session-access.js";
 import {
   CASH_REPOSITORY,
   type CashMovementRecord,
@@ -11,6 +12,7 @@ import {
   type AuditLogRepositoryPort,
 } from "../../../audit/application/ports/audit-log-repository.port.js";
 
+/** Risco #37 (2026-10-22, SEG-09): sangria/suprimento só na própria sessão, salvo gerência. */
 @Injectable()
 export class RegisterCashMovementUseCase {
   constructor(
@@ -22,11 +24,13 @@ export class RegisterCashMovementUseCase {
     sessionId: string,
     input: RegisterCashMovementInput,
     authorizedByUserId: string | null,
+    actorRole: string | null,
   ): Promise<CashMovementRecord> {
     const session = await this.cashRepository.findSessionById(sessionId);
     if (!session) {
       throw new CashSessionNotFoundError(sessionId);
     }
+    assertCanOperateCashSession(session, authorizedByUserId, actorRole);
     if (!session.isOpen) {
       throw new CashSessionNotOpenError(sessionId);
     }

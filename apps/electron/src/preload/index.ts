@@ -23,7 +23,10 @@ contextBridge.exposeInMainWorld("easypdv", {
   // Backup local (Sprint 15) — ver docs/ELECTRON.md.
   createBackup: () => ipcRenderer.invoke("backup:create"),
   listBackups: () => ipcRenderer.invoke("backup:list"),
-  restoreBackup: (fileName: string) => ipcRenderer.invoke("backup:restore", fileName),
+  // SEG-05 (2026-10-22): o accessToken de quem está logado vai junto — o
+  // Main confere o papel em GET /auth/me antes de restaurar.
+  restoreBackup: (fileName: string, accessToken: string) =>
+    ipcRenderer.invoke("backup:restore", fileName, accessToken),
 
   // Atualização automática (2026-09-03) — botão "Atualizar agora" no
   // pos-shell. onUpdateDownloaded é um evento (Main -> Renderer, não

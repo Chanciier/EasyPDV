@@ -7,6 +7,8 @@ import {
 } from "../../../organizations/infrastructure/decorators/current-terminal.decorator.js";
 import { TerminalApiKeyGuard } from "../../../organizations/infrastructure/guards/terminal-api-key.guard.js";
 import { OrgJwtAuthGuard } from "../../../organizations/infrastructure/guards/org-jwt-auth.guard.js";
+import { OrgRolesGuard } from "../../../organizations/infrastructure/guards/org-roles.guard.js";
+import { OrgRoles } from "../../../organizations/infrastructure/decorators/org-roles.decorator.js";
 import type { SyncJobStatus } from "../../domain/entities/sync-job.entity.js";
 import { RequestSyncUseCase } from "../../application/use-cases/request-sync.use-case.js";
 import { GetSyncJobUseCase } from "../../application/use-cases/get-sync-job.use-case.js";
@@ -57,19 +59,22 @@ export class SyncController {
   }
 
   @Get("jobs")
-  @UseGuards(OrgJwtAuthGuard)
+  @UseGuards(OrgJwtAuthGuard, OrgRolesGuard)
+  @OrgRoles("administrador", "gerente")
   list(@Query("status") status?: SyncJobStatus) {
     return this.listSyncJobsUseCase.execute(status);
   }
 
   @Get("jobs/:id")
-  @UseGuards(OrgJwtAuthGuard)
+  @UseGuards(OrgJwtAuthGuard, OrgRolesGuard)
+  @OrgRoles("administrador", "gerente")
   get(@Param("id") id: string) {
     return this.getSyncJobUseCase.execute(id);
   }
 
   @Post("jobs/:id/retry")
-  @UseGuards(OrgJwtAuthGuard)
+  @UseGuards(OrgJwtAuthGuard, OrgRolesGuard)
+  @OrgRoles("administrador", "gerente")
   async retry(@Param("id") id: string) {
     await this.retrySyncJobUseCase.execute(id);
     return { success: true };

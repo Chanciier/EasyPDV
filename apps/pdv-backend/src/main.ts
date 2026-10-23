@@ -147,7 +147,12 @@ async function ensureDefaultCashRegister(prisma: PrismaService): Promise<void> {
  * Claude/Projetos/EasyPDV/Arquitetura e Stack.md no cofre Obsidian.
  */
 async function bootstrap() {
+  // PERF-10 (2026-10-22): mede o `migrate deploy` de todo boot antes de
+  // decidir se vale pular a CLI quando não há migration pendente. console.log
+  // porque o logger do Nest ainda não existe aqui.
+  const migrationsStartedAt = Date.now();
   runMigrations();
+  console.log(`[EasyPDV] migrate deploy concluído em ${Date.now() - migrationsStartedAt} ms`);
 
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));

@@ -3,8 +3,9 @@
 import { useMemo, useState } from 'react'
 import { Search, Receipt, TrendingUp, Hash, CheckCircle2, Clock3, AlertCircle, Ban, ExternalLink } from 'lucide-react'
 import type { FiscalDocument, Sale, UserRole } from '@easypdv/shared-types'
-import { formatCpf } from '@easypdv/shared-validation'
+import { formatCpf, onlyDigits } from '@easypdv/shared-validation'
 import { formatBRL, normalize } from '@/lib/pos-data'
+import { isElectron } from '@/hooks/use-hardware'
 import { ApiError, describeError } from '@/lib/api-client'
 import { PAYMENT_LABELS, paymentLabel } from '@/lib/payment-labels'
 import { useAuthStore } from '@/lib/auth-store'
@@ -21,21 +22,44 @@ import { StatCard } from './ui/stat-card'
 // já corrigido em cash-view.tsx, achado real de produção, 2026-09-17).
 const VOID_ROLES: UserRole[] = ['administrador', 'gerente', 'proprietario']
 
+/**
+ * CPF sempre mascarado no Histórico e no estorno (ajuste do sign-off,
+ * 2026-10-22): a tela fica à vista do cliente na frente do caixa.
+ */
+function maskCpf(document: string | null | undefined): string | null {
+  const d = onlyDigits(document ?? '')
+  if (d.length !== 11) return null
+  return `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**`
+}
+
+/** Soma das pernas de Vale-Troca aprovadas — o que o estorno devolve ao saldo do cliente (K6). */
+function storeCreditUsed(sale: Sale): number {
+  return sale.payments
+    .filter((p) => p.status === 'aprovado' && p.method === 'vale_troca')
+    .reduce((sum, p) => sum + p.amount, 0)
+}
+
+function formatTime(iso: string | null): string {
+  return iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'
+}
+
+type VoidNotice = { saleId: string; status: 'refunded' | 'pending'; amount: number }
+
 const FISCAL_STATUS_META: Record<
   FiscalDocument['status'],
   { label: string; icon: typeof CheckCircle2; className: string }
 > = {
   pending: { label: 'NFC-e pendente', icon: Clock3, className: 'bg-muted text-muted-foreground' },
-  issued: { label: 'NFC-e emitida', icon: CheckCircle2, className: 'bg-primary/10 text-primary' },
+  issued: { label: 'NFC-e emitida', icon: CheckCircle2, className: 'bg-primary/15 text-primary-foreground' },
   cancelled: { label: 'NFC-e cancelada', icon: Ban, className: 'bg-muted text-muted-foreground' },
   error: { label: 'Erro na NFC-e', icon: AlertCircle, className: 'bg-destructive/10 text-destructive' },
 }
 
 function FiscalStatusBadge({ saleId }: { saleId: string }) {
-  // pollWhilePending: emissão manual (botão "Emitir cupom fiscal" abaixo)
-  // pode deixar o status "pending" por alguns segundos (SEFAZ é assíncrono)
-  // — sem isso a badge ficava presa até o operador fechar e reabrir o modal.
-  const { data: fiscal } = useFiscalStatus(saleId, { pollWhilePending: true })
+  // 'pending-only' (PERF-07): emissão manual (botão "Emitir cupom fiscal")
+  // deixa o status "pending" por alguns segundos (SEFAZ é assíncrono) — só
+  // nesse caso repete; sem documento ou já resolvido, não fica consultando.
+  const { data: fiscal } = useFiscalStatus(saleId, { poll: 'pending-only' })
   if (!fiscal) return null
 
   // Venda sem CPF (2026-08-25): nunca vira NFC-e de verdade, só um
@@ -66,9 +90,9 @@ function FiscalStatusBadge({ saleId }: { saleId: string }) {
           target="_blank"
           rel="noreferrer"
           className="flex items-center gap-0.5 underline underline-offset-2 hover:opacity-80"
-          title="Ver DANFE"
+          title="Abre no navegador"
         >
-          DANFE
+          DANFE ↗
           <ExternalLink className="size-3" />
         </a>
       )}
@@ -83,7 +107,15 @@ function FiscalStatusBadge({ saleId }: { saleId: string }) {
 
 
 export function HistoryView() {
-  const { data: sales = [], isLoading } = useSalesList({ status: ['confirmed', 'cancelled'] })
+  // K3/F6: `finalizedOnly` tira do Histórico os rascunhos abandonados
+  // ("Reiniciar venda"), que antes apareciam como "Cancelada" e ocupavam o
+  // limite de 100. O filtro local cobre um backend que ainda não conheça o
+  // parâmetro.
+  const { data: rawSales = [], isLoading } = useSalesList({
+    status: ['confirmed', 'cancelled'],
+    finalizedOnly: true,
+  })
+  const sales = useMemo(() => rawSales.filter((s) => s.confirmedAt !== null), [rawSales])
   const { data: dashboard } = useDashboardReport()
   const user = useAuthStore((s) => s.user)
   const canVoid = !!user && VOID_ROLES.includes(user.role)
@@ -94,15 +126,15 @@ export function HistoryView() {
   const [voidOpen, setVoidOpen] = useState(false)
   const [voidReason, setVoidReason] = useState('')
   const [voidError, setVoidError] = useState<string | null>(null)
+  const [voidNotice, setVoidNotice] = useState<VoidNotice | null>(null)
+  const [printError, setPrintError] = useState<string | null>(null)
   const issueFiscalReceipt = useIssueFiscalReceipt()
   const retryFiscalReceipt = useRetryFiscalReceipt()
   const reissueFiscalReceipt = useReissueFiscalReceipt()
   const setPendingFiscalPrint = useFiscalPrintStore((s) => s.setPending)
-  // pollWhilePending: emitir manualmente (handleIssueFiscal abaixo) deixa o
-  // status "pending" por alguns segundos (SEFAZ é assíncrono) até virar
-  // "issued"/"error" — sem isso a tela ficava presa no status antigo até o
-  // operador fechar e reabrir o modal.
-  const { data: detailFiscal } = useFiscalStatus(detail?.id ?? null, { pollWhilePending: true })
+  // 'pending-only' (PERF-07): só repete enquanto a NFC-e está "pending"
+  // (emissão manual em andamento); para em null e nos estados finais.
+  const { data: detailFiscal } = useFiscalStatus(detail?.id ?? null, { poll: 'pending-only' })
   const { data: detailCustomer } = useCustomer(detail?.customerId ?? null)
 
   function openDetail(sale: Sale) {
@@ -110,20 +142,35 @@ export function HistoryView() {
     setVoidOpen(false)
     setVoidReason('')
     setVoidError(null)
+    setPrintError(null)
   }
 
+  /**
+   * Estorno (F-2/F-4, K6 — 2026-10-22). Se a venda usou Vale-Troca, o backend
+   * estorna localmente e depois devolve o saldo na central; o resultado
+   * (`storeCreditRefund`) fica visível — o modal NÃO fecha sozinho nesse caso,
+   * e quando a devolução fica "pending" o aviso de ajuste manual permanece
+   * também no topo da tela até o operador dispensar.
+   */
   async function handleVoidSale() {
-    if (!detail) return
+    // Enter repetido enquanto o estorno ainda roda não dispara um segundo pedido.
+    if (!detail || voidSale.isPending) return
     if (!voidReason.trim()) {
       setVoidError('Informe o motivo do estorno.')
       return
     }
     setVoidError(null)
     try {
-      await voidSale.mutateAsync({ saleId: detail.id, reason: voidReason.trim() })
-      setDetail(null)
+      const result = await voidSale.mutateAsync({ saleId: detail.id, reason: voidReason.trim() })
       setVoidOpen(false)
       setVoidReason('')
+      if (result.storeCreditRefund) {
+        const { storeCreditRefund, ...voided } = result
+        setDetail(voided)
+        setVoidNotice({ saleId: detail.id, status: storeCreditRefund.status, amount: storeCreditRefund.amount })
+      } else {
+        setDetail(null)
+      }
     } catch (e) {
       setVoidError(describeError(e, 'Erro ao estornar venda.'))
     }
@@ -151,19 +198,33 @@ export function HistoryView() {
       payments: sale.payments
         .filter((p) => p.status === 'aprovado')
         .map((p) => ({ label: paymentLabel(p), amount: p.amount })),
+      // 2ª via igual ao cupom original (CPF completo, como a NFC-e); a máscara é só na tela.
       customerDocument: detailCustomer?.document ? formatCpf(detailCustomer.document) : undefined,
     }
   }
 
+  /**
+   * Reimpressão na térmica (UX-13, 2026-10-22): sempre disponível pra venda
+   * confirmada — antes só aparecia com status fiscal "issued", então com a
+   * central fora ou NFC-e pendente não dava nem pra reimprimir o comprovante.
+   * O bloco fiscal (QR/chave) só entra com NFC-e emitida e os 3 campos.
+   */
   function handlePrint() {
-    if (!detail || detailFiscal?.status !== 'issued') return
+    if (!detail) return
+    setPrintError(null)
     const basePayload = buildPrintBasePayload(detail)
-    const { documentNumber, accessKey, qrCodeUrl } = detailFiscal
-    printReceipt.mutate(
-      documentNumber && accessKey && qrCodeUrl
-        ? { ...basePayload, fiscal: { documentNumber, accessKey, qrCodeUrl } }
-        : basePayload,
-    )
+    const fiscal =
+      detailFiscal?.type === 'nfce' && detailFiscal.status === 'issued' ? detailFiscal : null
+    const payload =
+      fiscal?.documentNumber && fiscal.accessKey && fiscal.qrCodeUrl
+        ? {
+            ...basePayload,
+            fiscal: { documentNumber: fiscal.documentNumber, accessKey: fiscal.accessKey, qrCodeUrl: fiscal.qrCodeUrl },
+          }
+        : basePayload
+    printReceipt.mutate(payload, {
+      onError: (e) => setPrintError(`${describeError(e, 'Não foi possível imprimir.')} Confira a impressora.`),
+    })
   }
 
   /**
@@ -205,14 +266,24 @@ export function HistoryView() {
     reissueFiscalReceipt.mutate(detail.id)
   }
 
+  /** UX-12: busca também por valor ("45,90") e hora ("14:3"), que é como o operador procura. */
   const filtered = useMemo(() => {
     const t = normalize(term)
     if (!t) return sales
     return sales.filter((s) => {
-      const paymentLabel = s.payments[0] ? PAYMENT_LABELS[s.payments[0].method] : ''
-      return normalize(s.id).includes(t) || normalize(paymentLabel).includes(t)
+      const labels = s.payments.map((p) => PAYMENT_LABELS[p.method]).join(' ')
+      return (
+        normalize(s.id).includes(t) ||
+        normalize(labels).includes(t) ||
+        normalize(formatBRL(s.totalAmount)).includes(t) ||
+        formatTime(s.confirmedAt).includes(t)
+      )
     })
   }, [term, sales])
+
+  const detailHasIssuedNfce = detailFiscal?.type === 'nfce' && detailFiscal.status === 'issued'
+  const detailStoreCredit = detail ? storeCreditUsed(detail) : 0
+  const detailCpfMasked = maskCpf(detailCustomer?.document)
 
   const detailProductIds = useMemo(() => detail?.items.map((i) => i.productId) ?? [], [detail])
   const detailProductQueries = useProducts(detailProductIds)
@@ -238,12 +309,24 @@ export function HistoryView() {
       <div className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-card px-3">
         <Search className="size-4 text-muted-foreground" />
         <input
+          autoFocus
           value={term}
           onChange={(e) => setTerm(e.target.value)}
-          placeholder="Buscar por cupom ou forma de pagamento"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && filtered[0]) {
+              e.preventDefault()
+              openDetail(filtered[0])
+            }
+          }}
+          placeholder="Buscar por valor, hora, cupom ou forma de pagamento — Enter abre o primeiro"
           className="h-10 w-full bg-transparent text-sm outline-none"
+          aria-label="Buscar venda"
         />
       </div>
+
+      {voidNotice && (
+        <VoidNoticeBanner notice={voidNotice} onDismiss={() => setVoidNotice(null)} className="mb-4" />
+      )}
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card">
         <div className="grid grid-cols-[10rem_1fr_9rem_8rem_7rem_7rem] items-center gap-3 border-b border-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -269,24 +352,17 @@ export function HistoryView() {
               >
                 <span className="truncate font-mono text-xs text-muted-foreground">{s.id}</span>
                 <span className="truncate font-medium">
-                  {s.customerId ?? 'Consumidor Final'}
+                  {s.customerId ? 'CPF ✓' : 'Consumidor Final'}
                 </span>
                 <span className="text-muted-foreground">
                   {s.payments[0] ? PAYMENT_LABELS[s.payments[0].method] : '—'}
                 </span>
-                <span className="text-muted-foreground">
-                  {s.confirmedAt
-                    ? new Date(s.confirmedAt).toLocaleTimeString('pt-BR', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : '—'}
-                </span>
+                <span className="text-muted-foreground">{formatTime(s.confirmedAt)}</span>
                 <span>
                   {s.status === 'cancelled' ? (
                     <span className="flex items-center gap-1 text-xs font-medium text-destructive">
                       <Ban className="size-3.5" />
-                      Cancelada
+                      Estornada
                     </span>
                   ) : (
                     <span className="text-xs text-muted-foreground">Confirmada</span>
@@ -339,12 +415,12 @@ export function HistoryView() {
             </div>
           ) : (
             <>
-              {canVoid && detail?.status !== 'cancelled' && (
+              {canVoid && detail?.status === 'confirmed' && !detailHasIssuedNfce && (
                 <button
                   onClick={() => setVoidOpen(true)}
                   className="rounded-lg px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
                 >
-                  Cancelar venda
+                  Estornar venda
                 </button>
               )}
               {detailFiscal?.type === 'comprovante_nao_fiscal' && (
@@ -352,7 +428,7 @@ export function HistoryView() {
                   onClick={handleIssueFiscal}
                   disabled={issueFiscalReceipt.isPending}
                   title="Emite uma NFC-e de verdade pra Consumidor Final, sem CPF"
-                  className="rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg border border-primary-foreground/40 px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {issueFiscalReceipt.isPending ? 'Emitindo…' : 'Emitir cupom fiscal'}
                 </button>
@@ -362,7 +438,7 @@ export function HistoryView() {
                   onClick={handleRetryFiscal}
                   disabled={retryFiscalReceipt.isPending || reissueFiscalReceipt.isPending}
                   title="Reenvia a NFC-e rejeitada pra SEFAZ"
-                  className="rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg border border-primary-foreground/40 px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {retryFiscalReceipt.isPending ? 'Reenviando…' : 'Tentar novamente'}
                 </button>
@@ -372,37 +448,69 @@ export function HistoryView() {
                   onClick={handleReissueFiscal}
                   disabled={retryFiscalReceipt.isPending || reissueFiscalReceipt.isPending}
                   title="Descarta essa NFC-e e emite uma nova, com data de emissão atual — use se 'Tentar novamente' continuar rejeitando"
-                  className="rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg border border-primary-foreground/40 px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {reissueFiscalReceipt.isPending ? 'Emitindo…' : 'Emitir nova NFC-e'}
                 </button>
               )}
-              {detailFiscal?.status === 'issued' && (
+              <button
+                onClick={() => window.print()}
+                title="Imprime esta tela pela impressora do Windows"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted"
+              >
+                Imprimir tela
+              </button>
+              {detail?.status === 'confirmed' && isElectron() && (
                 <button
                   onClick={handlePrint}
                   disabled={printReceipt.isPending}
-                  className="rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {detailFiscal.type === 'comprovante_nao_fiscal' ? 'Imprimir cupom' : 'Imprimir cupom fiscal'}
+                  {printReceipt.isPending ? 'Imprimindo…' : detailHasIssuedNfce ? 'Imprimir cupom fiscal' : 'Imprimir cupom'}
                 </button>
               )}
-              <button
-                onClick={() => window.print()}
-                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
-              >
-                Reimprimir
-              </button>
             </>
           )
         }
       >
         {detail && (
           <div className="space-y-3 font-mono text-sm">
-            <div className="flex justify-between text-muted-foreground">
+            <div className="flex justify-between gap-3 text-muted-foreground">
               <span>{detail.confirmedAt ? new Date(detail.confirmedAt).toLocaleString('pt-BR') : '—'}</span>
-              <span>{detail.customerId ?? 'Consumidor Final'}</span>
+              <span className="truncate text-right">
+                {detail.customerId
+                  ? [detailCustomer?.name, detailCpfMasked ? `CPF ${detailCpfMasked}` : null].filter(Boolean).join(' · ') ||
+                    'Cliente identificado'
+                  : 'Consumidor Final'}
+              </span>
             </div>
             <FiscalStatusBadge saleId={detail.id} />
+            {detail.status === 'cancelled' && (
+              <div className="flex items-center gap-1.5 font-sans text-sm font-medium text-destructive">
+                <Ban className="size-4" />
+                Venda estornada
+              </div>
+            )}
+            {canVoid && detail.status === 'confirmed' && detailHasIssuedNfce && (
+              <div className="rounded-lg bg-muted px-3 py-2 font-sans text-sm text-muted-foreground">
+                NFC-e já autorizada — o cancelamento precisa ser feito no Bling.
+              </div>
+            )}
+            {voidOpen && detailStoreCredit > 0 && (
+              <div className="rounded-lg bg-primary/15 px-3 py-2 font-sans text-sm text-primary-foreground">
+                Esta venda usou <strong>{formatBRL(detailStoreCredit)} de Vale-Troca</strong>
+                {detailCpfMasked ? ` (CPF ${detailCpfMasked})` : ''}. O estorno devolve esse valor ao saldo do
+                cliente.
+              </div>
+            )}
+            {voidNotice && voidNotice.saleId === detail.id && (
+              <VoidNoticeBanner notice={voidNotice} />
+            )}
+            {printError && (
+              <div className="rounded-lg bg-destructive/10 px-3 py-2 font-sans text-xs text-destructive">
+                {printError}
+              </div>
+            )}
             {voidError && (
               <div className="rounded-lg bg-destructive/10 px-3 py-2 font-sans text-xs text-destructive">
                 {voidError}
@@ -452,6 +560,38 @@ export function HistoryView() {
           </div>
         )}
       </Modal>
+    </div>
+  )
+}
+
+/** Resultado da devolução de Vale-Troca no estorno (K6). "pending" fica até o operador dispensar. */
+function VoidNoticeBanner({
+  notice,
+  onDismiss,
+  className = '',
+}: {
+  notice: VoidNotice
+  onDismiss?: () => void
+  className?: string
+}) {
+  const ok = notice.status === 'refunded'
+  return (
+    <div
+      role="alert"
+      className={`flex items-start justify-between gap-3 rounded-lg px-3 py-2 font-sans text-sm ${
+        ok ? 'bg-primary/15 text-primary-foreground' : 'bg-destructive/10 text-destructive'
+      } ${className}`}
+    >
+      <span>
+        {ok
+          ? `Venda estornada. ${formatBRL(notice.amount)} devolvidos ao Vale-Troca do cliente.`
+          : `Venda estornada, mas o Vale-Troca de ${formatBRL(notice.amount)} não pôde ser devolvido agora (sem conexão com a central). Ajuste o saldo manualmente em Clientes: +${formatBRL(notice.amount)}, motivo "Estorno da venda ${notice.saleId}".`}
+      </span>
+      {onDismiss && (
+        <button onClick={onDismiss} className="shrink-0 text-xs underline">
+          Ok
+        </button>
+      )}
     </div>
   )
 }

@@ -2,6 +2,8 @@ import { Body, Controller, Get, Param, Patch, UseGuards } from "@nestjs/common";
 import { setWhatsappConsentSchema, type SetWhatsappConsentInput } from "@easypdv/shared-validation";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe.js";
 import { OrgJwtAuthGuard } from "../../../organizations/infrastructure/guards/org-jwt-auth.guard.js";
+import { OrgRolesGuard } from "../../../organizations/infrastructure/guards/org-roles.guard.js";
+import { OrgRoles } from "../../../organizations/infrastructure/decorators/org-roles.decorator.js";
 import {
   CurrentOrgUser,
   type AuthenticatedOrgUser,
@@ -19,7 +21,8 @@ import { SetWhatsappConsentUseCase } from "../../../customers/application/use-ca
  * escopo multi-tenant).
  */
 @Controller("admin/club")
-@UseGuards(OrgJwtAuthGuard)
+@UseGuards(OrgJwtAuthGuard, OrgRolesGuard)
+@OrgRoles("administrador", "gerente")
 export class AdminClubController {
   constructor(
     private readonly listClubMembersForAdminUseCase: ListClubMembersForAdminUseCase,

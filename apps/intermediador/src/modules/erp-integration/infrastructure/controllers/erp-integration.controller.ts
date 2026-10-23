@@ -2,6 +2,8 @@ import { Controller, Get, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { TerminalApiKeyGuard } from "../../../organizations/infrastructure/guards/terminal-api-key.guard.js";
 import { OrgJwtAuthGuard } from "../../../organizations/infrastructure/guards/org-jwt-auth.guard.js";
+import { OrgRolesGuard } from "../../../organizations/infrastructure/guards/org-roles.guard.js";
+import { OrgRoles } from "../../../organizations/infrastructure/decorators/org-roles.decorator.js";
 import {
   CurrentTerminal,
   type AuthenticatedTerminal,
@@ -36,7 +38,8 @@ export class ErpIntegrationController {
   ) {}
 
   @Get("bling/connect")
-  @UseGuards(OrgJwtAuthGuard)
+  @UseGuards(OrgJwtAuthGuard, OrgRolesGuard)
+  @OrgRoles("administrador", "gerente")
   connect(@CurrentOrgUser() orgUser: AuthenticatedOrgUser, @Res() res: Response) {
     const url = this.connectBlingUseCase.execute(orgUser.organizationId);
     res.redirect(url);
@@ -53,7 +56,8 @@ export class ErpIntegrationController {
   }
 
   @Get("bling/status")
-  @UseGuards(OrgJwtAuthGuard)
+  @UseGuards(OrgJwtAuthGuard, OrgRolesGuard)
+  @OrgRoles("administrador", "gerente")
   status(@CurrentOrgUser() orgUser: AuthenticatedOrgUser) {
     return this.getBlingConnectionStatusUseCase.execute(orgUser.organizationId);
   }

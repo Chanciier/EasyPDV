@@ -38,7 +38,7 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
       return null;
     }
     if (!response.ok) {
-      await throwDescriptiveHttpError(response, `GET /fiscal/sale/${saleId}`);
+      await throwDescriptiveHttpError(response, "GET /fiscal/sale/:saleId");
     }
     return (await response.json()) as FiscalStatusPayload;
   }
@@ -55,7 +55,7 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
       signal: AbortSignal.timeout(FISCAL_ACTION_TIMEOUT_MS),
     });
     if (!response.ok) {
-      await throwDescriptiveHttpError(response, `POST /fiscal/sale/${saleId}/issue`);
+      await throwDescriptiveHttpError(response, "POST /fiscal/sale/:saleId/issue");
     }
     return (await response.json()) as FiscalStatusPayload;
   }
@@ -72,7 +72,7 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
       signal: AbortSignal.timeout(FISCAL_ACTION_TIMEOUT_MS),
     });
     if (!response.ok) {
-      await throwDescriptiveHttpError(response, `POST /fiscal/sale/${saleId}/retry`);
+      await throwDescriptiveHttpError(response, "POST /fiscal/sale/:saleId/retry");
     }
     return (await response.json()) as FiscalStatusPayload;
   }
@@ -89,7 +89,7 @@ export class HttpFiscalGateway implements FiscalGatewayPort {
       signal: AbortSignal.timeout(FISCAL_ACTION_TIMEOUT_MS),
     });
     if (!response.ok) {
-      await throwDescriptiveHttpError(response, `POST /fiscal/sale/${saleId}/reissue`);
+      await throwDescriptiveHttpError(response, "POST /fiscal/sale/:saleId/reissue");
     }
     return (await response.json()) as FiscalStatusPayload;
   }

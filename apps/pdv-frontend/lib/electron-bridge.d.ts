@@ -15,7 +15,8 @@ export interface EasyPdvBridge {
   setSettings: (partial: Partial<HardwareSettings>) => Promise<HardwareSettings>;
   createBackup: () => Promise<BackupInfo>;
   listBackups: () => Promise<BackupInfo[]>;
-  restoreBackup: (fileName: string) => Promise<void>;
+  /** SEG-05: o Main confere o papel do dono do token em GET /auth/me (só gerência restaura). */
+  restoreBackup: (fileName: string, accessToken: string) => Promise<void>;
   onUpdateDownloaded: (callback: () => void) => () => void;
   applyUpdateNow: () => Promise<{ applied: boolean }>;
 }

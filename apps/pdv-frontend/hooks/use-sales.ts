@@ -8,15 +8,31 @@ import type {
   ResolvedPrice,
   Sale,
   SaleStatus,
+  VoidSaleResult,
 } from '@easypdv/shared-types'
 import { apiRequest } from '@/lib/api-client'
 
-export function useSalesList(params?: { status?: SaleStatus | SaleStatus[]; cashSessionId?: string }) {
+export type { VoidSaleResult }
+
+/**
+ * `finalizedOnly` (contrato K3): só vendas que chegaram a ser confirmadas
+ * (confirmadas e estornadas). Sem ele, cada "Reiniciar venda" virava uma
+ * linha "Cancelada" no Histórico e ocupava o limite de 100 registros.
+ */
+export function useSalesList(params?: {
+  status?: SaleStatus | SaleStatus[]
+  cashSessionId?: string
+  finalizedOnly?: boolean
+}) {
   return useQuery({
     queryKey: ['sales', 'list', params ?? {}],
     queryFn: () =>
       apiRequest<Sale[]>('/sales', {
-        query: { status: params?.status, cashSessionId: params?.cashSessionId },
+        query: {
+          status: params?.status,
+          cashSessionId: params?.cashSessionId,
+          finalizedOnly: params?.finalizedOnly ? 'true' : undefined,
+        },
       }),
   })
 }
@@ -30,14 +46,65 @@ export function useProductSearch(query: string) {
   })
 }
 
-/** N pequeno (resultados da busca, itens do carrinho) — sem endpoint em lote no backend ainda. */
+/** Limite do contrato K1 (`GET /products/prices?ids=` aceita 1–200 ids). */
+const PRICE_BATCH_MAX = 200
+
+type PriceWaiter = { resolve: (price: ResolvedPrice | null) => void; reject: (error: unknown) => void }
+const pendingPriceRequests = new Map<string, PriceWaiter[]>()
+let priceFlushTimer: ReturnType<typeof setTimeout> | null = null
+
+async function flushPriceRequests() {
+  priceFlushTimer = null
+  const batch = new Map(pendingPriceRequests)
+  pendingPriceRequests.clear()
+  const ids = Array.from(batch.keys())
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += PRICE_BATCH_MAX) chunks.push(ids.slice(i, i + PRICE_BATCH_MAX))
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        const prices = await apiRequest<ResolvedPrice[]>('/products/prices', { query: { ids: chunk.join(',') } })
+        const byId = new Map(prices.map((p) => [p.productId, p]))
+        for (const id of chunk) batch.get(id)?.forEach((w) => w.resolve(byId.get(id) ?? null))
+      } catch (error) {
+        for (const id of chunk) batch.get(id)?.forEach((w) => w.reject(error))
+      }
+    }),
+  )
+}
+
+/** Junta todos os pedidos de preço do mesmo tick numa requisição só (K1). */
+function loadPriceBatched(productId: string): Promise<ResolvedPrice | null> {
+  return new Promise((resolve, reject) => {
+    const waiters = pendingPriceRequests.get(productId) ?? []
+    waiters.push({ resolve, reject })
+    pendingPriceRequests.set(productId, waiters)
+    if (!priceFlushTimer) priceFlushTimer = setTimeout(() => void flushPriceRequests(), 0)
+  })
+}
+
+/** Estável no módulo: o `combine` só reexecuta quando os resultados mudam. */
+function combinePriceResults(results: { data: ResolvedPrice | null | undefined; isLoading: boolean }[]) {
+  return results.map((r) => ({ data: r.data ?? undefined, isLoading: r.isLoading }))
+}
+
+/**
+ * Preços resolvidos de vários produtos (PERF-02 / contrato K1). Antes era um
+ * `GET /products/:id/price` por linha (100 na tela Produtos). Agora o cache
+ * continua por produto (`['product-price', id]`, então invalidar um id ou o
+ * prefixo segue funcionando), mas tudo o que falta no cache no mesmo render
+ * sai numa única chamada em lote; o que já está no cache nem vai à rede.
+ * Formato de retorno mantido: array alinhado a `productIds`, cada posição com
+ * `.data` (undefined = sem preço / carregando) e `.isLoading`.
+ */
 export function useProductPrices(productIds: string[]) {
   return useQueries({
     queries: productIds.map((id) => ({
       queryKey: ['product-price', id],
-      queryFn: () => apiRequest<ResolvedPrice>(`/products/${id}/price`),
+      queryFn: () => loadPriceBatched(id),
       staleTime: 60_000,
     })),
+    combine: combinePriceResults,
   })
 }
 
@@ -83,13 +150,43 @@ export function useStartSale() {
   })
 }
 
+/**
+ * `product` opcional (PERF-03a): quem já tem o produto na mão (bipe ou busca)
+ * semeia `['product', id]` — o nome aparece na linha na hora, sem o "…" e sem
+ * um `GET /products/:id` a mais por item novo.
+ */
 export function useAddSaleItem() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { saleId: string; productId: string; quantity: number }) =>
+    mutationFn: (input: { saleId: string; productId: string; quantity: number; product?: Product }) =>
       apiRequest<Sale>(`/sales/${input.saleId}/items`, {
         method: 'POST',
         body: { productId: input.productId, quantity: input.quantity },
+      }),
+    onMutate: (input) => {
+      if (input.product) queryClient.setQueryData(['product', input.product.id], input.product)
+    },
+    onSuccess: (sale) => queryClient.setQueryData(['sale', sale.id], sale),
+  })
+}
+
+/**
+ * Muda a quantidade de um item mantendo o mesmo id e preço (PERF-03c /
+ * contrato K2) — antes era DELETE + POST, o item ganhava id novo e perdia o
+ * desconto. Sem `discountAmount` o backend mantém o desconto em R$ (limitado
+ * ao novo subtotal); com ele, grava quantidade + desconto numa transação só
+ * (usado pra reaplicar o % do Clube sobre a nova quantidade).
+ */
+export function useUpdateSaleItemQuantity() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { saleId: string; itemId: string; quantity: number; discountAmount?: number }) =>
+      apiRequest<Sale>(`/sales/${input.saleId}/items/${input.itemId}`, {
+        method: 'PATCH',
+        body:
+          input.discountAmount === undefined
+            ? { quantity: input.quantity }
+            : { quantity: input.quantity, discountAmount: input.discountAmount },
       }),
     onSuccess: (sale) => queryClient.setQueryData(['sale', sale.id], sale),
   })
@@ -205,26 +302,37 @@ export function useConfirmSale() {
   })
 }
 
+/** Intervalo do modo "until-final": começa em 3 s e cresce até 10 s. */
+function untilFinalInterval(updateCount: number): number {
+  return Math.min(10_000, 3_000 + updateCount * 1_000)
+}
+
 /**
- * Consulta sob demanda (não polling) — o pdv-backend já tenta buscar o status
- * mais recente no Intermediador a cada chamada, caindo pro cache local se a
- * rede falhar. `null` é normal: nem toda venda tem NFC-e (emissão é opt-in
- * no Intermediador, ver Sprint 12).
+ * Status fiscal de uma venda. O pdv-backend tenta a central a cada chamada e
+ * cai pro cache local se a rede falhar. `null` é normal: nem toda venda tem
+ * NFC-e (emissão é opt-in).
+ *
+ * Dois modos de polling (PERF-07):
+ * - `'pending-only'` (Histórico): só repete enquanto o documento está
+ *   `pending`. Para em `null` e em qualquer estado final — antes ficava a 3 s
+ *   pra sempre com o detalhe de uma venda sem nota aberto.
+ * - `'until-final'` (impressão automática, FiscalPrintWatcher): logo depois
+ *   de confirmar a venda o documento ainda não existe (`null`), então continua
+ *   consultando até `issued`/`error`/`cancelled`, com intervalo crescendo de
+ *   3 s pra 10 s. O teto de ~3 min fica no próprio watcher.
  */
-export function useFiscalStatus(saleId: string | null, options?: { pollWhilePending?: boolean }) {
+export function useFiscalStatus(saleId: string | null, options?: { poll?: 'pending-only' | 'until-final' }) {
+  const poll = options?.poll
   return useQuery({
     queryKey: ['fiscal-status', saleId],
     queryFn: () => apiRequest<FiscalDocument | null>(`/sales/${saleId}/fiscal`),
     enabled: !!saleId,
-    // "Imprimir nota no momento da venda" (2026-08-21): a emissão da NFC-e é
-    // assíncrona (passa pelo Bling em segundo plano) — sem polling, o
-    // status só atualiza se o usuário reabrir a tela manualmente. Só reconsulta
-    // enquanto ainda não tem um resultado final (sem documento, ou "pending"),
-    // pra não continuar batendo pra sempre numa venda já resolvida.
-    refetchInterval: options?.pollWhilePending
+    refetchInterval: poll
       ? (query) => {
           const status = query.state.data?.status
-          return status === 'issued' || status === 'error' ? false : 3000
+          if (poll === 'pending-only') return status === 'pending' ? 3_000 : false
+          if (status === 'issued' || status === 'error' || status === 'cancelled') return false
+          return untilFinalInterval(query.state.dataUpdateCount)
         }
       : undefined,
   })
@@ -236,7 +344,7 @@ export function useFiscalStatus(saleId: string | null, options?: { pollWhilePend
  * "comprovante_nao_fiscal" (a NFC-e sai pra "Consumidor Final", sem CPF —
  * válida normalmente, CPF na nota é sempre opcional). Pode voltar "pending"
  * (SEFAZ é assíncrono) — quem chama continua usando useFiscalStatus com
- * pollWhilePending pra acompanhar até "issued"/"error".
+ * `poll: 'pending-only'` pra acompanhar até "issued"/"error".
  */
 export function useIssueFiscalReceipt() {
   const queryClient = useQueryClient()
@@ -297,12 +405,17 @@ export function useCancelSale() {
   })
 }
 
-/** Estorno de venda confirmada (Sprint 14) — devolve estoque, sem reembolso automático. Restrito a administrador/gerente no backend. */
+/**
+ * Estorno de venda confirmada (Sprint 14) — devolve estoque. Se a venda usou
+ * Vale-Troca, o backend tenta devolver o saldo na central depois do estorno
+ * local (K6): `storeCreditRefund.status = 'pending'` = estorno feito, saldo
+ * não devolvido (ajuste manual em Clientes). Restrito à gerência no backend.
+ */
 export function useVoidSale() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: { saleId: string; reason: string }) =>
-      apiRequest<Sale>(`/sales/${input.saleId}/void`, {
+      apiRequest<VoidSaleResult>(`/sales/${input.saleId}/void`, {
         method: 'POST',
         body: { reason: input.reason },
       }),

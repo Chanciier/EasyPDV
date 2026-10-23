@@ -80,7 +80,7 @@ export class HttpClubGateway implements ClubGatewayPort {
       signal: AbortSignal.timeout(DEFAULT_INTERMEDIADOR_TIMEOUT_MS),
     });
     if (!response.ok) {
-      await throwDescriptiveHttpError(response, `DELETE /club/members/${document}`);
+      await throwDescriptiveHttpError(response, "DELETE /club/members/:document");
     }
   }
 }
